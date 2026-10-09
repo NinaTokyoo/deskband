@@ -1,0 +1,23 @@
+修掉镜像动画"太慢"的真因：拖动中每个 MOVE 都重启动画
+
+用户反馈镜像动画太慢，要求与 0115 同速。
+
+先逐行对比，确认 FLIP_MS(200)、ticker 里的公式、easeOutCubic 都与 0115
+完全相同 —— 所以慢的不是时长。
+
+真因：startFlip 的提前返回条件是
+    if (abs(flip - target) < 0.01f && !flipRunning) return
+只有"动画已完成"时才跳过，否则一律
+    flipFrom = flip; flipStart = now
+而拖动时 MOVE 事件每秒几十次，只要 flip 还没到目标，**每次都会重置计时起点**，
+动画被无限推后 —— 200ms 的动作被拖成"爬行"，表现为"镜像动画太慢"。
+
+修法：已经在朝**同一个目标**翻转时不重启
+    if (flipRunning && abs(flipTo - target) < 0.01f) return
+
+这样一次翻转就是实打实的 FLIP_MS(200ms)，与 0115 同速。
+
+顺带修掉一行过时注释（原来写着 flipRunning 不再被置 true，
+上一版恢复动画后该说明已不成立）。
+
+25 个单测全绿。

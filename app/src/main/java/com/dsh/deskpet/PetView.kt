@@ -509,8 +509,7 @@ class PetView(context: Context) : View(context) {
                 }
                 need = true
             }
-            // 注：镜像翻转现在是"越过中线立即完成"，flipRunning 不再被置 true；
-            // 这段保留是为了以后想恢复过渡动画时可以直接启用。
+            // 注：flipRunning 只在真正翻转时被置 true（见 startFlip）
             if (hopping) {
                 val t = ((now - hopStart).toFloat() / HOP_MS).coerceIn(0f, 1f)
                 if (t >= 1f) hopping = false
@@ -656,7 +655,16 @@ class PetView(context: Context) : View(context) {
      * 所以这里用很短的时长（[FLIP_MS]），做得干脆，不要拖沓。
      */
     private fun startFlip(target: Float) {
-        if (abs(flip - target) < 0.01f && !flipRunning) return
+        // ⚠️ 已经在朝**同一个目标**翻转时，绝不重启动画。
+        //
+        // 拖动中每个 MOVE 事件都会调到这里；若每次都重置起点，
+        // 动画计时会一直被推后，200ms 的动作被拖成"爬行" ——
+        // 表现就是"镜像动画太慢"。
+        if (flipRunning && abs(flipTo - target) < 0.01f) return
+        if (abs(flip - target) < 0.01f && !flipRunning) {
+            flip = target
+            return
+        }
         flipFrom = flip
         flipTo = target
         flipStart = SystemClock.uptimeMillis()
