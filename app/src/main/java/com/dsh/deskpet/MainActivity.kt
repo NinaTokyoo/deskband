@@ -72,7 +72,8 @@ class MainActivity : Activity() {
         editZoneH = findViewById(R.id.editZoneH)
 
         applyEdgeToEdge()
-        setupZoneControls()
+        // A 区尺寸调节功能已按用户要求取消（布局里那张卡片是 gone，这里也不接管）
+        // setupZoneControls()
 
         btnOverlay.setOnClickListener { openOverlaySettings() }
         btnNotify.setOnClickListener { requestNotificationPermission() }

@@ -134,8 +134,11 @@
                 android:textSize="15sp" />
         </LinearLayout>
 
-        <!-- A 区尺寸调节 -->
-        <LinearLayout style="@style/Card">
+        <!-- A 区尺寸调节：功能已按用户要求取消，保留代码但不再显示 -->
+        <LinearLayout
+            android:id="@+id/cardZone"
+            style="@style/Card"
+            android:visibility="gone">
 
             <TextView
                 style="@style/CardTitle"

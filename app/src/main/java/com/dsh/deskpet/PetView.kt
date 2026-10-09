@@ -128,8 +128,11 @@ class PetView(context: Context) : View(context) {
 
     fun setState(newState: Int) {
         if (state == newState) return
+        val prevRot = PetState.rotationForSnap(state)
         state = newState
         cacheSizes()
+        val newRot = PetState.rotationForSnap(newState)
+        if (abs(prevRot - newRot) > 0.01f) startRotAnim(prevRot, newRot)
         invalidate()
     }
 
@@ -160,6 +163,20 @@ class PetView(context: Context) : View(context) {
     private var flipStart = 0L
     private var flipRunning = false
 
+    // ---- 旋转动画（0 <-> ∓90 之间平滑过渡）----
+    /** 当前显示用的角度（动画过程中是中间值） */
+    private var shownRotation = 0f
+    private var rotAnimFrom = 0f
+    private var rotAnimTo = 0f
+    private var rotAnimStart = 0L
+    private var rotAnimRunning = false
+
+    /** 松手后待生效的状态（补间结束才应用） */
+    private var pendingState: Int? = null
+
+    @Suppress("unused")
+    private var pendingLeft = false
+
     private var dragging = false
     private var dragOffsetX = 0f
     private var dragOffsetY = 0f
@@ -189,6 +206,17 @@ class PetView(context: Context) : View(context) {
                     anchorX = tweenToX
                     anchorY = tweenToY
                     tweening = false
+                    // 补间走完才换状态，避免中途改尺寸导致的跳变
+                    applyPendingState()
+                }
+                need = true
+            }
+            if (rotAnimRunning) {
+                val t = ((now - rotAnimStart).toFloat() / ROT_MS).coerceIn(0f, 1f)
+                shownRotation = rotAnimFrom + (rotAnimTo - rotAnimFrom) * easeOutCubic(t)
+                if (t >= 1f) {
+                    shownRotation = rotAnimTo
+                    rotAnimRunning = false
                 }
                 need = true
             }
@@ -243,6 +271,44 @@ class PetView(context: Context) : View(context) {
     }
 
     private fun startTween(toX: Float, toY: Float) = animateTo(toX, toY)
+
+    /** 旋转动画：在 0 与 ∓90 之间平滑过渡，避免分界线附近"闪来闪去" */
+    private fun startRotAnim(from: Float, to: Float) {
+        if (abs(from - to) < 0.01f) {
+            shownRotation = to
+            rotAnimRunning = false
+            return
+        }
+        rotAnimFrom = from
+        rotAnimTo = to
+        rotAnimStart = SystemClock.uptimeMillis()
+        rotAnimRunning = true
+        handler.removeCallbacks(ticker)
+        handler.post(ticker)
+    }
+
+    /**
+     * 拖动中切换状态：**旋转走动画**，避免在 B/E 分界线附近来回闪。
+     *
+     * 位置不做补间（拖动本来就跟手），只平滑角度。
+     */
+    private fun setDragState(newState: Int) {
+        if (state == newState) return
+        val prevRot = PetState.rotationForSnap(state)
+        val prevShown = shownRotation
+        state = newState
+        cacheSizes()
+        val newRot = PetState.rotationForSnap(newState)
+        if (abs(prevRot - newRot) > 0.01f) {
+            // 从"当前显示的角度"接着转，避免动画被打断时跳一下
+            startRotAnim(prevShown, newRot)
+        }
+        placeWindow()
+    }
+
+    /** 旋转动画期间，用于绘制的实际角度 */
+    private fun displayRotation(): Float =
+        if (rotAnimRunning) shownRotation else PetState.rotationForSnap(state)
 
     /** 跨半屏时的镜像翻转动画 */
     private fun startFlip(target: Float) {
@@ -367,7 +433,8 @@ class PetView(context: Context) : View(context) {
             dx /= squash
         }
 
-        val rot = PetState.rotationForSnap(state)
+        // 命中判定用**显示角度**，和实际画出来的朝向保持一致
+        val rot = displayRotation()
         if (abs(rot) > 0.01f) {
             val rad = Math.toRadians(-rot.toDouble())
             val c = cos(rad).toFloat()
@@ -496,10 +563,20 @@ class PetView(context: Context) : View(context) {
             val rot = PetState.eRotation(leftHalf, x, cellW.toFloat(), b.width().toFloat())
             if (rot != 0f) st = if (leftHalf) PetState.BORDER_L else PetState.BORDER_R
         }
-        setState(st)
+        setDragState(st)
     }
 
     /** 松手吸附：贴边 + 平滑补间过去（不瞬移） */
+    /**
+     * 松手吸附。
+     *
+     * ⚠️ 关键：**先把位置补间过去，到终点再切换状态**。
+     *
+     * 之前是"先切状态再补间"，而切状态会立刻改格子尺寸（角落素材与正立素材
+     * 宽高不同）并触发窗口 resize —— 于是补间的起点坐标含义突然变了，
+     * 看起来就是一卡一卡地跳。现在补间期间保持旧状态与旧尺寸，
+     * 到达终点后再换状态，位置不跳。
+     */
     private fun settle() {
         val b = host?.bounds() ?: return
         val x = anchorX
@@ -509,19 +586,9 @@ class PetView(context: Context) : View(context) {
         val dr = PetState.sideDist(x, trackW.toFloat(), b.width().toFloat(), leftHalf)
 
         val zone = PetState.zoneOf(db, dr, leftHalf)
-        var st = PetState.stateForZone(zone, leftHalf)
-        if (zone == PetState.ZONE_E) {
-            val rot = PetState.eRotation(leftHalf, x, cellW.toFloat(), b.width().toFloat())
-            if (rot != 0f) st = if (leftHalf) PetState.BORDER_L else PetState.BORDER_R
-        }
-        state = st
-        cacheSizes()
-        // 吸附完成时翻转值要对齐到所在半屏，避免残影
-        flip = if (leftHalf) 1f else 0f
-        flipFrom = flip
-        flipTo = flip
-        flipRunning = false
+        val want = PetState.stateForZone(zone, leftHalf)
 
+        // 先按**当前尺寸**算贴边位置
         val target = PetState.snapPosition(
             x, y, trackW.toFloat(), trackH.toFloat(), db, dr,
             b.width().toFloat(), b.height().toFloat(), leftHalf
@@ -531,9 +598,40 @@ class PetView(context: Context) : View(context) {
             b.width().toFloat(), b.height().toFloat()
         )
 
-        startTween(c[0], c[1])
+        // 吸附完成时翻转值对齐所在半屏
+        flip = if (leftHalf) 1f else 0f
+        flipFrom = flip
+        flipTo = flip
+        flipRunning = false
+
+        // 状态切换推迟到补间结束
+        pendingState = want
+        pendingLeft = leftHalf
+
+        // 位置没变就不用补间，直接切状态
+        if (abs(x - c[0]) < 1f && abs(y - c[1]) < 1f) {
+            anchorX = c[0]
+            anchorY = c[1]
+            applyPendingState()
+        } else {
+            animateTo(c[0], c[1])
+        }
+
         placeWindow()
-        host?.onSettled(state, tweenToX.roundToInt(), tweenToY.roundToInt())
+        host?.onSettled(want, c[0].roundToInt(), c[1].roundToInt())
+    }
+
+    /** 补间结束后才真正切状态（换素材 + 换旋转），避免中途改尺寸造成跳变 */
+    private fun applyPendingState() {
+        val st = pendingState ?: return
+        pendingState = null
+        val prevRot = PetState.rotationForSnap(state)
+        state = st
+        cacheSizes()
+        val newRot = PetState.rotationForSnap(st)
+        if (prevRot != newRot) startRotAnim(prevRot, newRot)
+        placeWindow()
+        invalidate()
     }
 
     private fun onTapped() {
@@ -551,7 +649,8 @@ class PetView(context: Context) : View(context) {
         placeWindow()
 
         val hop = hopOffset()
-        val rot = PetState.rotationForSnap(state)
+        // 用带动画的角度，避免在 B/E 分界线附近瞬间翻转
+        val rot = displayRotation()
         val cx = boxOffX + cellW / 2f
         val cy = boxOffY + cellH / 2f
 
@@ -652,6 +751,7 @@ class PetView(context: Context) : View(context) {
         private const val HIT_ALPHA_MIN = 16
         private const val SNAP_MS = 220f
         private const val FLIP_MS = 200f
+        private const val ROT_MS = 180f
         private const val HOP_MS = 380f
         private const val HOP_FRACTION = 0.08f
 
