@@ -148,7 +148,7 @@
                 android:id="@+id/btnSaveSize"
                 style="@style/PrimaryButton"
                 android:layout_marginTop="14dp"
-                android:text="@string/bounce_save" />
+                android:text="@string/save_apply" />
 
             <CheckBox
                 android:id="@+id/chkAuto"
@@ -263,7 +263,7 @@
                 android:id="@+id/btnSaveBounce"
                 style="@style/PrimaryButton"
                 android:layout_marginTop="16dp"
-                android:text="@string/bounce_save" />
+                android:text="@string/save_apply" />
         </LinearLayout>
 
         <!-- 小提示 -->

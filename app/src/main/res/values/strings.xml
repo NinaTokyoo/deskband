@@ -30,6 +30,9 @@
     <string name="size_value">当前占屏幕高度 %2$d%%　（×%1$s）</string>
     <string name="size_input">倍率</string>
     <string name="size_saved">大小已保存</string>
+
+    <!-- 两张卡片的保存按钮共用同一文案，但各自独立 -->
+    <string name="save_apply">保存并应用</string>
     <string name="chk_autostart">开机自动叫它出来</string>
 
     <!-- 吸附状态 -->
@@ -50,7 +53,6 @@
     <string name="bounce_ms_value">×%1$s　（%2$d ms）</string>
     <string name="bounce_amp_input">倍率</string>
     <string name="bounce_ms_input">倍率</string>
-    <string name="bounce_save">保存并应用</string>
     <string name="bounce_saved">回弹设置已保存</string>
 
     <!-- A 区尺寸调节 -->
