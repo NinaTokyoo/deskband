@@ -452,13 +452,6 @@ class PetView(context: Context) : View(context) {
     /** 松手后待生效的状态（补间结束才应用） */
     private var pendingState: Int? = null
 
-    /** 松手时"先旋转、后贴边"：旋转完成后补做位置补间 */
-    private var pendingSnap = false
-
-    /** 松手时"先旋转、后贴边"：旋转完成后要补间的目标中心点 */
-    private var pendingSnapX = 0f
-    private var pendingSnapY = 0f
-
     /** 上一次的区号，用于 B/E 分界的滞回判定 */
     private var lastZone = PetState.ZONE_E
 
@@ -636,19 +629,10 @@ class PetView(context: Context) : View(context) {
     private fun onRotationDone() {
         if (!frozen) return
         frozen = false
-        if (dragging) {
-            cacheSizesKeepingCenter()
-            placeWindow()
-        } else if (pendingSnap) {
-            // 松手时"先旋转后贴边"：现在旋转完了，补做位置补间
-            pendingSnap = false
-            cacheSizesKeepingCenter()
-            placeWindow()
-            animateTo(pendingSnapX, pendingSnapY)
-        } else {
-            cacheSizesKeepingCenter()
-            placeWindow()
-        }
+        // 无论是拖动中还是松手后，解冻时都**保持素材中心点不动**，
+        // 尺寸切换就不会让画面横移。位置补间（若在跑）继续朝目标走。
+        cacheSizesKeepingCenter()
+        placeWindow()
     }
     /** 旋转动画期间，用于绘制的实际角度 */
     private fun displayRotation(): Float =
@@ -666,19 +650,19 @@ class PetView(context: Context) : View(context) {
     private fun sizeRotation(): Float = if (frozen) frozenRot else PetState.rotationForSnap(state)
 
     /**
-     * 跨半屏的镜像**立即**翻转。
+     * 跨半屏的镜像翻转：**快速小动画**。
      *
-     * 用户要求：素材中心点一越过屏幕中线就**立刻完成**镜像翻转，
-     * 所以这里不做过渡动画，直接把翻转值落到目标（中间态清零）。
-     * （早先的 200ms 压扁过渡会让翻转看起来"慢半拍"，已取消。）
+     * 用户要求：素材中心点一越过屏幕中线就翻，用一个简单快速的小动画完成。
+     * 所以这里用很短的时长（[FLIP_MS]），做得干脆，不要拖沓。
      */
     private fun startFlip(target: Float) {
         if (abs(flip - target) < 0.01f && !flipRunning) return
-        flip = target
-        flipFrom = target
+        flipFrom = flip
         flipTo = target
-        flipRunning = false
-        invalidate()
+        flipStart = SystemClock.uptimeMillis()
+        flipRunning = true
+        choreographer.removeFrameCallback(frameCallback)
+        scheduleFrame()
     }
 
     // ---------------------------------------------------------------- 位置
@@ -1076,8 +1060,11 @@ class PetView(context: Context) : View(context) {
         val targetCenterX = c[0] + centerFromTrackXSized(tW)
         val targetCenterY = c[1] + centerFromTrackYSized(tH)
 
-        // ---- 顺序：需要旋转时**先快速转完，再贴边** ----
-        // 用户要求：松手时若素材还没转，要在贴边之前迅速完成旋转。
+        // ---- 顺序：需要旋转时，**一边转一边往边上靠，且旋转先完成** ----
+        // 用户要求：素材未旋转时松手，要一边旋转一边靠近边框，
+        // 并在吸附到边框之前完成旋转。
+        // 做法：旋转与位移**同时**开始，但旋转时长更短
+        // （ROT_SNAP_MS < SNAP_MS），于是到边之前就已经转正。
         val needRotate = abs(curSizeRot - wantRot) > 0.01f
         if (needRotate) {
             frozenRot = curSizeRot
@@ -1085,17 +1072,15 @@ class PetView(context: Context) : View(context) {
             state = want
             cacheSizes()
             startRotAnim(shownRotation, wantRot, ROT_SNAP_MS)
-            // 位置补间推迟到旋转结束（见 onRotationDone）
-            pendingSnapX = targetCenterX
-            pendingSnapY = targetCenterY
-            pendingSnap = true
+            // 状态与尺寸已在此处理，别再让补间结束时的 applyPendingState 重做一遍
+            pendingState = null
+            animateTo(targetCenterX, targetCenterY, SNAP_MS.toLong())
             placeWindow()
             invalidate()
             host?.onSettled(want, c[0].roundToInt(), c[1].roundToInt())
             return
         }
 
-        pendingSnap = false
         if (abs(curCenterX() - targetCenterX) < 1f && abs(curCenterY() - targetCenterY) < 1f) {
             anchorX = targetCenterX
             anchorY = targetCenterY
@@ -1262,7 +1247,7 @@ class PetView(context: Context) : View(context) {
         private const val FRAME_MS = 16L
         private const val HIT_ALPHA_MIN = 16
         private const val SNAP_MS = 220f
-        private const val FLIP_MS = 200f
+        private const val FLIP_MS = 110f
         private const val ROT_MS = 180f
 
         /** 松手贴边前的那次旋转：要"迅速完成"，所以更短 */
