@@ -27,18 +27,32 @@ class Prefs(context: Context) {
         set(v) { sp.edit().putString(KEY_SKIN, v).apply() }
 
     /**
-     * 宠物高度占可活动区域高度的比例。
+     * 宠物大小的**倍率**（用户可调，0.5~5）。
      *
-     * 用户**没手动调过**时，一律返回 [DEFAULT_SIZE]，而不是读回旧值 ——
-     * 否则改默认值对老装机无效（SharedPreferences 里还留着上次的 0.15）。
+     * 1.0 = 标准值 [SIZE_BASE]（占可用高度的 8%）。
+     * 用户要求"以现在的大小为 1，幅度 0.5 到 5"，所以界面调的是倍率。
      */
-    var sizeFraction: Float
-        get() = if (sp.getBoolean(KEY_SIZE_TUNED, false)) {
-            sp.getFloat(KEY_SIZE, DEFAULT_SIZE).coerceIn(MIN_SIZE, MAX_SIZE)
-        } else {
-            DEFAULT_SIZE
+    var sizeScale: Float
+        get() = sp.getFloat(KEY_SIZE_SCALE, 1f).coerceIn(SIZE_SCALE_MIN, SIZE_SCALE_MAX)
+        set(v) {
+            sp.edit()
+                .putFloat(KEY_SIZE_SCALE, v.coerceIn(SIZE_SCALE_MIN, SIZE_SCALE_MAX))
+                .putBoolean(KEY_SIZE_TUNED, true)
+                .apply()
         }
-        set(v) { sp.edit().putFloat(KEY_SIZE, v.coerceIn(MIN_SIZE, MAX_SIZE)).apply() }
+
+    /**
+     * 由倍率折算出的实际比例（宠物高度 / 可用高度）。
+     *
+     * 用户**没手动调过**时直接用标准值，而不是读回旧存档 ——
+     * 否则改默认值对老装机无效（SharedPreferences 里还留着上一次的数）。
+     */
+    val sizeFraction: Float
+        get() = if (sp.getBoolean(KEY_SIZE_TUNED, false)) {
+            (SIZE_BASE * sizeScale).coerceIn(MIN_SIZE, MAX_SIZE)
+        } else {
+            SIZE_BASE
+        }
 
     /** 用户是否手动调过大小 */
     var sizeTuned: Boolean
@@ -118,6 +132,7 @@ class Prefs(context: Context) {
         private const val KEY_SKIN = "skin"
         private const val KEY_SIZE = "size_fraction"
         private const val KEY_SIZE_TUNED = "size_tuned"
+        private const val KEY_SIZE_SCALE = "size_scale"
         private const val KEY_SNAP = "snap_state"
         private const val KEY_LEFT = "pos_left"
         private const val KEY_TOP = "pos_top"
@@ -139,10 +154,16 @@ class Prefs(context: Context) {
         /** 默认角色：素材目录名 */
         val DEFAULT_SKIN = PetSprite.FALLBACK
 
-        const val MIN_SIZE = 0.06f
-        const val MAX_SIZE = 0.40f
+        // ---- 大小：标准值与可调倍率范围 ----
+        /** 标准大小：占可用高度的 8%，倍率 1.0 对应它 */
+        const val SIZE_BASE = 0.08f
 
-        /** 默认大小：占屏幕可用高度的 8% */
-        const val DEFAULT_SIZE = 0.08f
+        /** 大小倍率范围：0.5 ~ 5（用户指定） */
+        const val SIZE_SCALE_MIN = 0.5f
+        const val SIZE_SCALE_MAX = 5f
+
+        /** 由倍率范围推出的实际比例上下限：4% ~ 40% */
+        const val MIN_SIZE = SIZE_BASE * SIZE_SCALE_MIN
+        const val MAX_SIZE = SIZE_BASE * SIZE_SCALE_MAX
     }
 }

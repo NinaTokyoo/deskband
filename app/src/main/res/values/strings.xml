@@ -26,8 +26,10 @@
 
     <!-- 外观 -->
     <string name="section_look">③ 调外观</string>
-    <string name="label_size">大小</string>
-    <string name="size_value">当前占屏幕高度：%1$d%%</string>
+    <string name="label_size">大小倍率</string>
+    <string name="size_value">当前占屏幕高度 %2$d%%　（×%1$s）</string>
+    <string name="size_input">倍率</string>
+    <string name="size_saved">大小已保存</string>
     <string name="chk_autostart">开机自动叫它出来</string>
 
     <!-- 吸附状态 -->

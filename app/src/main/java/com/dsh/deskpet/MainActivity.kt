@@ -34,6 +34,8 @@ class MainActivity : Activity() {
     private lateinit var btnToggle: Button
     private lateinit var seekSize: SeekBar
     private lateinit var txtSize: TextView
+    private lateinit var editSize: EditText
+    private lateinit var btnSaveSize: Button
     private lateinit var spinnerSkin: Spinner
     private lateinit var chkAuto: CheckBox
 
@@ -62,6 +64,8 @@ class MainActivity : Activity() {
         btnToggle = findViewById(R.id.btnToggle)
         seekSize = findViewById(R.id.seekSize)
         txtSize = findViewById(R.id.txtSize)
+        editSize = findViewById(R.id.editSize)
+        btnSaveSize = findViewById(R.id.btnSaveSize)
         spinnerSkin = findViewById(R.id.spinnerSkin)
         chkAuto = findViewById(R.id.chkAuto)
         seekBounceAmp = findViewById(R.id.seekBounceAmp)
@@ -82,21 +86,43 @@ class MainActivity : Activity() {
         seekSize.max = 1000
         seekSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
-                val f = fractionOf(progress)
-                txtSize.text = getString(R.string.size_value, (f * 100).roundToInt())
-                if (fromUser) {
-                    prefs.sizeFraction = f
-                    prefs.sizeTuned = true
-                    PetService.notifyChanged(this@MainActivity)
-                }
+                if (!fromUser) return
+                prefs.sizeScale = sizeScaleOf(progress)
+                bindSizeControls()
+                // 大小变了要重新计算绘制尺寸与窗口尺寸，必须通知服务
+                PetService.notifyChanged(this@MainActivity)
             }
 
             override fun onStartTrackingTouch(sb: SeekBar?) = Unit
             override fun onStopTrackingTouch(sb: SeekBar?) = Unit
         })
 
+        // 数字输入：回车或失焦时生效（支持小数，如 1.5）
+        val applySize = {
+            parseScale(editSize.text.toString(), Prefs.SIZE_SCALE_MIN, Prefs.SIZE_SCALE_MAX)
+                ?.let {
+                    prefs.sizeScale = it
+                    PetService.notifyChanged(this)
+                }
+            bindSizeControls()
+        }
+        editSize.setOnEditorActionListener { _, _, _ -> applySize(); clearInputFocus(); true }
+        editSize.setOnFocusChangeListener { _, has -> if (!has) applySize() }
+
+        btnSaveSize.setOnClickListener {
+            parseScale(editSize.text.toString(), Prefs.SIZE_SCALE_MIN, Prefs.SIZE_SCALE_MAX)
+                ?.let {
+                    prefs.sizeScale = it
+                    PetService.notifyChanged(this)
+                }
+            bindSizeControls()
+            clearInputFocus()
+            Toast.makeText(this, R.string.size_saved, Toast.LENGTH_SHORT).show()
+        }
+
         chkAuto.setOnCheckedChangeListener { _, checked -> prefs.autoStart = checked }
 
+        bindSizeControls()
         loadSkins()
     }
 
@@ -155,8 +181,7 @@ class MainActivity : Activity() {
 
         chkAuto.isChecked = prefs.autoStart
 
-        seekSize.progress = progressOf(prefs.sizeFraction)
-        txtSize.text = getString(R.string.size_value, (prefs.sizeFraction * 100).roundToInt())
+        bindSizeControls()
     }
 
     private fun hasNotificationPermission(): Boolean {
@@ -303,33 +328,65 @@ class MainActivity : Activity() {
     }
 
     /**
-     * 滑块进度(0..1000) <-> 倍率(0.1..10)。
+     * 滑块进度(0..1000) <-> 倍率。
      *
-     * 用**对数刻度**：线性的话 0.1~1 只占 9% 的行程，很难调；
+     * 用**对数刻度**：线性的话低倍率段只占很小一段行程，很难调；
      * 取对数后 1.0 正好落在滑条中间，两侧手感一致。
      */
-    private fun scaleOf(progress: Int): Float {
-        val lo = log10(Prefs.SCALE_MIN.toDouble())
-        val hi = log10(Prefs.SCALE_MAX.toDouble())
+    private fun scaleOf(progress: Int, min: Float, max: Float): Float {
+        val lo = log10(min.toDouble())
+        val hi = log10(max.toDouble())
         val t = progress.coerceIn(0, 1000) / 1000.0
         return Math.pow(10.0, lo + (hi - lo) * t).toFloat()
     }
 
-    private fun progressOfScale(v: Float): Int {
-        val lo = log10(Prefs.SCALE_MIN.toDouble())
-        val hi = log10(Prefs.SCALE_MAX.toDouble())
-        val x = log10(v.coerceIn(Prefs.SCALE_MIN, Prefs.SCALE_MAX).toDouble())
+    private fun progressOfScale(v: Float, min: Float, max: Float): Int {
+        val lo = log10(min.toDouble())
+        val hi = log10(max.toDouble())
+        val x = log10(v.coerceIn(min, max).toDouble())
         return (((x - lo) / (hi - lo)) * 1000.0).roundToInt().coerceIn(0, 1000)
     }
 
-    private fun parseScale(s: String): Float? =
-        s.trim().removePrefix("×").removePrefix("x").toFloatOrNull()
-            ?.coerceIn(Prefs.SCALE_MIN, Prefs.SCALE_MAX)
+    private fun scaleOf(progress: Int): Float =
+        scaleOf(progress, Prefs.SCALE_MIN, Prefs.SCALE_MAX)
 
-    /** 倍率显示成 1 位小数（整数则不显示 .0） */
+    private fun progressOfScale(v: Float): Int =
+        progressOfScale(v, Prefs.SCALE_MIN, Prefs.SCALE_MAX)
+
+    private fun parseScale(s: String, min: Float, max: Float): Float? =
+        s.trim().removePrefix("×").removePrefix("x").toFloatOrNull()?.coerceIn(min, max)
+
+    private fun parseScale(s: String): Float? =
+        parseScale(s, Prefs.SCALE_MIN, Prefs.SCALE_MAX)
+
+    /**
+     * 倍率的显示格式：**固定一位小数**（用户要求，例如 1 显示成 "1.0"）。
+     *
+     * 不用 String.format 是为了避开 locale 差异（某些地区小数点是逗号）。
+     */
     private fun fmtScale(v: Float): String {
-        val r = (v * 10f).roundToInt() / 10f
-        return if (r == r.toInt().toFloat()) r.toInt().toString() else r.toString()
+        val tenths = (v * 10f).roundToInt()
+        return "${tenths / 10}.${tenths % 10}"
+    }
+
+    // ---------------------------------------------------------------- 大小调节
+
+    /** 滑块进度(0..1000) <-> 大小倍率(0.5..5)，同样用对数刻度让 1.0 落在中间 */
+    private fun sizeScaleOf(progress: Int): Float =
+        scaleOf(progress, Prefs.SIZE_SCALE_MIN, Prefs.SIZE_SCALE_MAX)
+
+    private fun progressOfSizeScale(v: Float): Int =
+        progressOfScale(v, Prefs.SIZE_SCALE_MIN, Prefs.SIZE_SCALE_MAX)
+
+    /** 把当前值刷到滑块 / 文本框 / 摘要文字 */
+    private fun bindSizeControls() {
+        val sc = prefs.sizeScale
+        val frac = prefs.sizeFraction
+        seekSize.progress = progressOfSizeScale(sc)
+        editSize.setText(fmtScale(sc))
+        txtSize.text = getString(
+            R.string.size_value, fmtScale(sc), (frac * 100f).roundToInt()
+        )
     }
 
     /** 把当前值刷到滑块 / 文本框 / 摘要文字 */
@@ -360,13 +417,4 @@ class MainActivity : Activity() {
         val imm = getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager
         imm?.hideSoftInputFromWindow(currentFocus?.windowToken, 0)
     }
-
-    // ---------------------------------------------------------------- 大小映射
-
-    private fun progressOf(fraction: Float): Int =
-        (((fraction - Prefs.MIN_SIZE) / (Prefs.MAX_SIZE - Prefs.MIN_SIZE)) * 1000f)
-            .roundToInt().coerceIn(0, 1000)
-
-    private fun fractionOf(progress: Int): Float =
-        Prefs.MIN_SIZE + (Prefs.MAX_SIZE - Prefs.MIN_SIZE) * (progress / 1000f)
 }

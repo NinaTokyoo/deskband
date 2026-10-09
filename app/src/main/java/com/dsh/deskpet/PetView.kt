@@ -78,7 +78,7 @@ class PetView(context: Context) : View(context) {
     var state: Int = PetState.CORNER_BR
         private set
 
-    private var sizeFrac = Prefs.DEFAULT_SIZE
+    private var sizeFrac = Prefs.SIZE_BASE
 
     /** 素材格子左上角（屏幕坐标） */
     private var anchorX = 0f

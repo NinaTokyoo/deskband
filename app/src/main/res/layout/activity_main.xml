@@ -118,12 +118,37 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp" />
 
-            <TextView
-                android:id="@+id/txtSize"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textColor="@color/text_secondary"
-                android:textSize="13sp" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/txtSize"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+
+                <EditText
+                    android:id="@+id/editSize"
+                    android:layout_width="92dp"
+                    android:layout_height="wrap_content"
+                    android:inputType="numberDecimal"
+                    android:imeOptions="actionDone"
+                    android:maxLength="5"
+                    android:textSize="14sp"
+                    android:gravity="center"
+                    android:hint="@string/size_input" />
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/btnSaveSize"
+                style="@style/PrimaryButton"
+                android:layout_marginTop="14dp"
+                android:text="@string/bounce_save" />
 
             <CheckBox
                 android:id="@+id/chkAuto"
