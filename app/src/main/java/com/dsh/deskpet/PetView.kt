@@ -7,6 +7,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
+import android.view.Choreographer
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -64,6 +65,7 @@ class PetView(context: Context) : View(context) {
     var sprite: PetSprite? = null
         set(value) {
             field = value
+            clearScaledCache()
             cacheSizes()
             cancelTween()
             invalidate()
@@ -121,6 +123,18 @@ class PetView(context: Context) : View(context) {
     private var artU = 0.5f
     private var artV = 0.5f
 
+    /** 素材中心点缓存：state -> [artU, artV]，避免每次 cacheSizes 重扫位图 */
+    private val artCenterCache = HashMap<Int, FloatArray>()
+
+    /**
+     * 预缩放位图缓存：把素材**一次性缩放到目标格子尺寸**，
+     * 之后每帧就是 1:1 贴图，不再做缩放采样。
+     *
+     * 之前每帧都把 1024x875（或 1440x1352）的源图缩放绘制到 ~541x463，
+     * 缩放采样是每帧最重的一项开销。
+     */
+    private val scaledCache = HashMap<String, Bitmap>()
+
     /**
      * 旋转动画期间是否"冻结"尺寸。
      *
@@ -177,16 +191,27 @@ class PetView(context: Context) : View(context) {
         footOffX = (bboxW - HOP_PAD_X * 2 - trackW) / 2
         footOffY = (bboxH - topPad() - HOP_PAD_BOTTOM - trackH) / 2
 
-        artU = 0.5f
-        artV = 0.5f
-        runCatching {
-            val bmp = bitmapFor(state) ?: return@runCatching
-            val b = alphaBounds(bmp)
-            if (b != null && b[2] > b[0] && b[3] > b[1]) {
-                artU = (b[0] + b[2]) / 2f / bmp.width
-                artV = (b[1] + b[3]) / 2f / bmp.height
+        // 素材中心点：按 alpha 外接框算，结果**按状态缓存**。
+        // alphaBounds 要整张位图逐行扫描，而 cacheSizes 在状态切换时会被反复调用，
+        // 每次重扫就是掉帧的一个来源。
+        var u = 0.5f
+        var v = 0.5f
+        artCenterCache[state]?.let {
+            u = it[0]
+            v = it[1]
+        } ?: run {
+            val bmp = runCatching { bitmapFor(state) }.getOrNull()
+            if (bmp != null) {
+                val b = alphaBounds(bmp)
+                if (b != null && b[2] > b[0] && b[3] > b[1]) {
+                    u = (b[0] + b[2]) / 2f / bmp.width
+                    v = (b[1] + b[3]) / 2f / bmp.height
+                }
             }
+            artCenterCache[state] = floatArrayOf(u, v)
         }
+        artU = u
+        artV = v
 
         // 未冻结时记录"当前足迹对应的朝向"，供下一次冻结使用
         if (!frozen) curSizeRot = PetState.rotationForSnap(state)
@@ -337,6 +362,20 @@ class PetView(context: Context) : View(context) {
     // ---------------------------------------------------------------- 动画
 
     private val handler = Handler(Looper.getMainLooper())
+
+    /**
+     * 动画帧用 **Choreographer（vsync 对齐）**，不用 postDelayed(16)。
+     *
+     * postDelayed 有两个毛病：不跟 vsync 同步，容易产生"一帧画两次 / 漏一帧"；
+     * 而且延迟按固定值走，和屏幕刷新率对不齐就会周期性卡顿。
+     */
+    private val choreographer = Choreographer.getInstance()
+    private val frameCallback = Choreographer.FrameCallback { ticker.run() }
+
+    private fun scheduleFrame() {
+        choreographer.removeFrameCallback(frameCallback)
+        choreographer.postFrameCallback(frameCallback)
+    }
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
     private val src = Rect()
     private val dst = RectF()
@@ -471,7 +510,7 @@ class PetView(context: Context) : View(context) {
                 need = true
             }
             invalidate()
-            if (need) handler.postDelayed(this, FRAME_MS)
+            if (need) scheduleFrame()
         }
     }
 
@@ -495,8 +534,8 @@ class PetView(context: Context) : View(context) {
         tweenMs = durationMs.toFloat()
         tweenStart = SystemClock.uptimeMillis()
         tweening = true
-        handler.removeCallbacks(ticker)
-        handler.post(ticker)
+        choreographer.removeFrameCallback(frameCallback)
+        scheduleFrame()
     }
 
     private fun startTween(toX: Float, toY: Float) = animateTo(toX, toY)
@@ -514,8 +553,8 @@ class PetView(context: Context) : View(context) {
         rotAnimTo = to
         rotAnimStart = SystemClock.uptimeMillis()
         rotAnimRunning = true
-        handler.removeCallbacks(ticker)
-        handler.post(ticker)
+        choreographer.removeFrameCallback(frameCallback)
+        scheduleFrame()
     }
 
     /**
@@ -608,8 +647,8 @@ class PetView(context: Context) : View(context) {
         flipTo = target
         flipStart = SystemClock.uptimeMillis()
         flipRunning = true
-        handler.removeCallbacks(ticker)
-        handler.post(ticker)
+        choreographer.removeFrameCallback(frameCallback)
+        scheduleFrame()
     }
 
     // ---------------------------------------------------------------- 位置
@@ -769,7 +808,8 @@ class PetView(context: Context) : View(context) {
         val v = cv / cellH
         if (u < 0f || u > 1f || v < 0f || v > 1f) return false
 
-        val bmp = runCatching { bitmapFor(state) }.getOrNull() ?: return true
+        // 用预缩放位图做 alpha 取样：比全分辨率图小得多，getPixel 更快
+        val bmp = runCatching { scaledBitmap(state) }.getOrNull() ?: return true
         val bx = (u * (bmp.width - 1)).toInt().coerceIn(0, bmp.width - 1)
         val by = (v * (bmp.height - 1)).toInt().coerceIn(0, bmp.height - 1)
         return runCatching { ((bmp.getPixel(bx, by) ushr 24) and 0xFF) >= HIT_ALPHA_MIN }
@@ -782,6 +822,35 @@ class PetView(context: Context) : View(context) {
         // 翻转旋转角符号（见 PetState.rotationForSnap）已经能让两侧都"头朝内"，
         // 再加纵向翻转反而会把人物倒过来。
         return s.bitmap(st, mirror = PetState.isLeft(st), flipV = false)
+    }
+
+    /**
+     * 取**已缩放到格子尺寸**的位图（每帧 1:1 贴图用）。
+     *
+     * 注意这里用**未旋转**的格子尺寸 —— 旋转是画布变换，不改变格子宽高，
+     * 所以比例永远不变。
+     */
+    private fun scaledBitmap(st: Int): Bitmap? {
+        val s = sprite ?: return null
+        val key = st.toString() + "x" + cellW + "x" + cellH
+        scaledCache[key]?.let { if (!it.isRecycled) return it }
+        val src = bitmapFor(st) ?: return null
+        val out = runCatching {
+            Bitmap.createScaledBitmap(src, cellW.coerceAtLeast(1), cellH.coerceAtLeast(1), true)
+        }.getOrNull() ?: return src
+        // 尺寸切换不频繁，缓存不会无限增长；超了就先清掉重来
+        if (scaledCache.size > 12) {
+            for (b in scaledCache.values) if (!b.isRecycled && b !== out) b.recycle()
+            scaledCache.clear()
+        }
+        scaledCache[key] = out
+        return out
+    }
+
+    private fun clearScaledCache() {
+        for (b in scaledCache.values) if (!b.isRecycled) b.recycle()
+        scaledCache.clear()
+        artCenterCache.clear()
     }
 
     private fun hopOffset(): Float {
@@ -863,17 +932,17 @@ class PetView(context: Context) : View(context) {
 
         val db = PetState.bottomDist(y, trackH.toFloat(), b.height().toFloat())
         val dr = PetState.sideDist(x, trackW.toFloat(), b.width().toFloat(), leftHalf)
+        // 旋转判定看**素材中心点**有没有越过 B/E 分界线
+        val cd = PetState.centerSideDist(
+            curCenterX(), b.width().toFloat(), leftHalf
+        )
 
         // 带滞回的分区判定：B/E 分界线附近不会来回闪
-        val zone = PetState.zoneWithHysteresis(db, dr, leftHalf, lastZone)
+        val zone = PetState.zoneWithHysteresis(db, dr, leftHalf, lastZone, cd)
         lastZone = zone
 
-        var st = PetState.stateForZone(zone, leftHalf)
-        // E 区：正立摆放时右边缘超出屏幕 -> 转 90°
-        if (zone == PetState.ZONE_E) {
-            val rot = PetState.eRotation(leftHalf, x, cellW.toFloat(), b.width().toFloat())
-            if (rot != 0f) st = if (leftHalf) PetState.BORDER_L else PetState.BORDER_R
-        }
+        // B 区即"中心点已越界" -> 旋转形态；E 区保持正立
+        val st = PetState.stateForZone(zone, leftHalf)
         setDragState(st)
     }
 
@@ -919,19 +988,16 @@ class PetView(context: Context) : View(context) {
         val db = PetState.bottomDist(y, trackH.toFloat(), b.height().toFloat())
         val dr = PetState.sideDist(x, trackW.toFloat(), b.width().toFloat(), leftHalf)
 
-        // 与拖动时保持一致，用带滞回的分区判定
-        val zone = PetState.zoneWithHysteresis(db, dr, leftHalf, lastZone)
+        // 与拖动时保持一致，用带滞回的分区判定 + **中心点越界**判据
+        val cd = PetState.centerSideDist(curCenterX(), b.width().toFloat(), leftHalf)
+        val zone = PetState.zoneWithHysteresis(db, dr, leftHalf, lastZone, cd)
         lastZone = zone
-        var want = PetState.stateForZone(zone, leftHalf)
-        if (zone == PetState.ZONE_E) {
-            val rot = PetState.eRotation(leftHalf, x, cellW.toFloat(), b.width().toFloat())
-            if (rot != 0f) want = if (leftHalf) PetState.BORDER_L else PetState.BORDER_R
-        }
+        val want = PetState.stateForZone(zone, leftHalf)
 
-        // 先按**当前尺寸**算贴边位置
+        // 先按**当前尺寸**算贴边位置（复用已判定的 zone，保证与状态一致）
         val target = PetState.snapPosition(
             x, y, trackW.toFloat(), trackH.toFloat(), db, dr,
-            b.width().toFloat(), b.height().toFloat(), leftHalf
+            b.width().toFloat(), b.height().toFloat(), leftHalf, zone
         )
         val c = PetState.clampToScreen(
             target[0], target[1], trackW.toFloat(), trackH.toFloat(),
@@ -988,8 +1054,8 @@ class PetView(context: Context) : View(context) {
     private fun onTapped() {
         hopping = true
         hopStart = SystemClock.uptimeMillis()
-        handler.removeCallbacks(ticker)
-        handler.post(ticker)
+        choreographer.removeFrameCallback(frameCallback)
+        scheduleFrame()
         host?.onTapped()
     }
 
@@ -1033,14 +1099,12 @@ class PetView(context: Context) : View(context) {
             canvas.scale(squash, 1f, cx, cy)
         }
 
-        val bmp = bitmapFor(state) ?: run {
+        // 用**预缩放**好的位图：每帧 1:1 贴图，省掉整幅缩放采样
+        val bmp = scaledBitmap(state) ?: run {
             canvas.restoreToCount(save)
             return
         }
-        src.set(0, 0, bmp.width, bmp.height)
-        dst.set(cellLocalX(), cellLocalY(),
-            cellLocalX() + cellW, cellLocalY() + cellH)
-        canvas.drawBitmap(bmp, src, dst, paint)
+        canvas.drawBitmap(bmp, cellLocalX(), cellLocalY(), paint)
         canvas.restoreToCount(save)
 
         // A 区指示线画在最上层
@@ -1053,7 +1117,7 @@ class PetView(context: Context) : View(context) {
     fun setPaused(p: Boolean) {
         if (paused == p) return
         paused = p
-        if (p) handler.removeCallbacks(ticker) else invalidate()
+        if (p) choreographer.removeFrameCallback(frameCallback) else invalidate()
     }
 
     // ---------------------------------------------------------------- A 区指示线
@@ -1074,8 +1138,8 @@ class PetView(context: Context) : View(context) {
     fun flashGuides(durationMs: Long = 2500L) {
         guideUntil = SystemClock.uptimeMillis() + durationMs
         invalidate()
-        handler.removeCallbacks(ticker)
-        handler.post(ticker)
+        choreographer.removeFrameCallback(frameCallback)
+        scheduleFrame()
     }
 
     private fun drawGuides(canvas: Canvas) {
@@ -1107,7 +1171,7 @@ class PetView(context: Context) : View(context) {
     }
 
     override fun onDetachedFromWindow() {
-        handler.removeCallbacks(ticker)
+        choreographer.removeFrameCallback(frameCallback)
         super.onDetachedFromWindow()
     }
 

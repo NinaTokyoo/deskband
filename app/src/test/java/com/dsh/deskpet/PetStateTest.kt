@@ -150,15 +150,25 @@ class PetStateTest {
     }
 
     @Test
-    fun E_rotates_only_when_the_upright_box_would_overflow() {
-        val w = 400f   // 正立格子宽
-        // 右边缘还在屏幕内 -> 不转
-        assertEquals(0f, PetState.eRotation(false, 1000f, w, SW), 0.001f)
-        assertEquals(0f, PetState.eRotation(false, SW - w, w, SW), 0.001f)
-        // 右边缘越界 -> 转（右侧 +90，头朝左）
-        assertEquals(-90f, PetState.eRotation(false, SW - w + 10f, w, SW), 0.001f)
-        // 左半屏 -> -90
-        assertEquals(90f, PetState.eRotation(true, SW - w + 10f, w, SW), 0.001f)
+    fun rotation_is_decided_by_whether_the_CENTER_crosses_the_BE_line() {
+        PetState.setZoneSize(200f, 365f)
+        // 故意把 dr（边缘距离）给成很大的值，证明判定用的是**中心点**
+        val farEdge = 5000f
+        // 中心点离侧边 200（正好在分界线上）-> B，旋转
+        assertEquals(PetState.ZONE_B,
+            PetState.zoneWithHysteresis(1000f, farEdge, false, PetState.ZONE_E, 200f))
+        // 中心点离侧边 120 -> 深入 B，旋转
+        assertEquals(PetState.ZONE_B,
+            PetState.zoneWithHysteresis(1000f, farEdge, false, PetState.ZONE_E, 120f))
+        // 中心点离侧边 250 -> 还在 E，保持正立
+        assertEquals(PetState.ZONE_E,
+            PetState.zoneWithHysteresis(1000f, farEdge, false, PetState.ZONE_E, 250f))
+    }
+
+    @Test
+    fun centerSideDist_measures_from_the_pets_own_side() {
+        assertEquals(300f, PetState.centerSideDist(1140f, 1440f, false), 0.01f)
+        assertEquals(300f, PetState.centerSideDist(300f, 1440f, true), 0.01f)
     }
 
     @Test

@@ -149,19 +149,21 @@ object PetState {
      * @param prev 上一次的区号，用于决定用哪个门槛
      */
     fun zoneWithHysteresis(
-        db: Float, dr: Float, leftHalf: Boolean, prev: Int
+        db: Float, dr: Float, leftHalf: Boolean, prev: Int,
+        centerDist: Float = dr
     ): Int {
         // A / C 的判定不涉及这个抖动，直接算
         if (db <= currentAH && dr <= currentAW) return ZONE_A
         if (db <= currentAH) return ZONE_C
 
+        // B / E 用**中心点**到侧边的距离判定（用户规则）
         val inB: Boolean
         if (prev == ZONE_B) {
             // 已经在 B：要明显离开才退出
-            inB = dr <= currentAW + HYSTERESIS_PX
+            inB = centerDist <= currentAW + HYSTERESIS_PX
         } else {
-            // 不在 B：要真正贴边才进入
-            inB = dr <= currentAW
+            // 不在 B：中心点要真正越过分界线才进入
+            inB = centerDist <= currentAW
         }
         return if (inB) ZONE_B else ZONE_E
     }
@@ -173,14 +175,18 @@ object PetState {
 
     /**
      * 松手时贴哪条边：[0] = 贴底边，[1] = 贴侧边。
+     *
+     * ⚠️ 必须传入**已经判定好的 zone**，不要在这里重新 zoneOf。
+     * 因为分区判定用的是"中心点是否越过 B/E 分界线"，而 zoneOf 用的是
+     * 边缘距离，两者在素材较大时会得出不同结论 —— 结果就是判成了 B（该贴侧边）
+     * 却按 E 去贴最近边，贴到底边上了（用户反馈的"侧边不吸附"）。
      */
-    fun snapEdges(db: Float, dr: Float, leftHalf: Boolean): IntArray =
-        when (zoneOf(db, dr, leftHalf)) {
-            ZONE_A -> intArrayOf(1, 1)
-            ZONE_C -> intArrayOf(1, 0)
-            ZONE_B -> intArrayOf(0, 1)
-            else -> if (nearerEdgeIsBottom(db, dr)) intArrayOf(1, 0) else intArrayOf(0, 1)
-        }
+    fun snapEdgesForZone(zone: Int): IntArray = when (zone) {
+        ZONE_A -> intArrayOf(1, 1)
+        ZONE_C -> intArrayOf(1, 0)
+        ZONE_B -> intArrayOf(0, 1)
+        else -> intArrayOf(0, 0)   // E：由调用方按"更近的一边"决定
+    }
 
     /**
      * 该用哪个状态（同时决定素材与旋转）。
@@ -198,20 +204,16 @@ object PetState {
     }
 
     /**
-     * E 区是否旋转 —— 用户规则：**以图片右侧为准，右侧越界则旋转**。
+     * 素材**中心点**离本侧吸附边的距离。
      *
-     * 注意不能拿"右边离屏幕右侧的距离"判断：素材本来就只有半屏宽，
-     * 那样永远不越界、就永远不转了（踩过这个坑）。
-     * 正确的判据是：**正立摆放时素材右边缘有没有超出屏幕右边界**。
+     * 用户最新规则：**旋转与否，就看素材中心点有没有越过 B/E 分界线。**
+     * 分界线在离侧边 [currentAW] 处，所以中心点距离 <= aW 就算"进了 B"，
+     * 该旋转；否则算 E，保持正立。
      *
-     * @param x         宠物格子左上角的屏幕 x
-     * @param uprightW  正立时格子的宽度
+     * 这与 [sideDist]（按素材**边缘**量）是两个不同的基准，别混用。
      */
-    fun eRotation(leftHalf: Boolean, x: Float, uprightW: Float, screenW: Float): Float {
-        val overflows = (x + uprightW) > screenW + 0.5f
-        if (!overflows) return 0f
-        return if (leftHalf) rotationForSnap(BORDER_L) else rotationForSnap(BORDER_R)
-    }
+    fun centerSideDist(cx: Float, screenW: Float, leftHalf: Boolean): Float =
+        if (leftHalf) cx.coerceAtLeast(0f) else (screenW - cx).coerceAtLeast(0f)
 
     // ---------------------------------------------------------------- 距离
 
@@ -242,9 +244,18 @@ object PetState {
         trackW: Float, trackH: Float,
         db: Float, dr: Float,
         screenW: Float, screenH: Float,
-        leftHalf: Boolean
+        leftHalf: Boolean,
+        zone: Int = -1
     ): FloatArray {
-        val edges = snapEdges(db, dr, leftHalf)
+        // 分区优先用调用方判定好的 zone（与状态判定保持同一套规则）；
+        // 没传时退化为按边缘距离现算（仅旧调用方会走到这里）。
+        val z = if (zone >= 0) zone else zoneOf(db, dr, leftHalf)
+        val edges = if (z == ZONE_E) {
+            // E 区：贴更近的那条边
+            if (nearerEdgeIsBottom(db, dr)) intArrayOf(1, 0) else intArrayOf(0, 1)
+        } else {
+            snapEdgesForZone(z)
+        }
         var nx = x
         var ny = y
         if (edges[0] == 1) ny = screenH - trackH
