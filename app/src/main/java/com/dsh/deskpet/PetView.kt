@@ -1071,7 +1071,9 @@ class PetView(context: Context) : View(context) {
             frozen = true
             state = want
             cacheSizes()
-            startRotAnim(shownRotation, wantRot, ROT_SNAP_MS)
+            // 旋转用标准时长 ROT_MS(180)，与 0115 版本手感一致；
+            // 位移 SNAP_MS(220) 更长，所以**到边之前旋转就已经完成**。
+            startRotAnim(shownRotation, wantRot)
             // 状态与尺寸已在此处理，别再让补间结束时的 applyPendingState 重做一遍
             pendingState = null
             animateTo(targetCenterX, targetCenterY, SNAP_MS.toLong())
@@ -1247,11 +1249,8 @@ class PetView(context: Context) : View(context) {
         private const val FRAME_MS = 16L
         private const val HIT_ALPHA_MIN = 16
         private const val SNAP_MS = 220f
-        private const val FLIP_MS = 110f
+        private const val FLIP_MS = 200f
         private const val ROT_MS = 180f
-
-        /** 松手贴边前的那次旋转：要"迅速完成"，所以更短 */
-        private const val ROT_SNAP_MS = 110f
         private const val HOP_MS = 380f
         private const val HOP_FRACTION = 0.08f
 
