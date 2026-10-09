@@ -444,13 +444,20 @@ class PetView(context: Context) : View(context) {
     private var rotAnimFrom = 0f
     private var rotAnimTo = 0f
     private var rotAnimStart = 0L
+
+    /** 本次旋转动画时长（拖动中用 ROT_MS，松手贴边前用更快的 ROT_SNAP_MS） */
+    private var rotAnimMs = ROT_MS
     private var rotAnimRunning = false
 
     /** 松手后待生效的状态（补间结束才应用） */
     private var pendingState: Int? = null
 
-    /** 松手时旋转还没转完，等转完再做吸附定位 */
-    private var pendingSettle = false
+    /** 松手时"先旋转、后贴边"：旋转完成后补做位置补间 */
+    private var pendingSnap = false
+
+    /** 松手时"先旋转、后贴边"：旋转完成后要补间的目标中心点 */
+    private var pendingSnapX = 0f
+    private var pendingSnapY = 0f
 
     /** 上一次的区号，用于 B/E 分界的滞回判定 */
     private var lastZone = PetState.ZONE_E
@@ -490,7 +497,7 @@ class PetView(context: Context) : View(context) {
                 need = true
             }
             if (rotAnimRunning) {
-                val t = ((now - rotAnimStart).toFloat() / ROT_MS).coerceIn(0f, 1f)
+                val t = ((now - rotAnimStart).toFloat() / rotAnimMs).coerceIn(0f, 1f)
                 shownRotation = rotAnimFrom + (rotAnimTo - rotAnimFrom) * easeOutCubic(t)
                 if (t >= 1f) {
                     shownRotation = rotAnimTo
@@ -509,6 +516,8 @@ class PetView(context: Context) : View(context) {
                 }
                 need = true
             }
+            // 注：镜像翻转现在是"越过中线立即完成"，flipRunning 不再被置 true；
+            // 这段保留是为了以后想恢复过渡动画时可以直接启用。
             if (hopping) {
                 val t = ((now - hopStart).toFloat() / HOP_MS).coerceIn(0f, 1f)
                 if (t >= 1f) hopping = false
@@ -552,8 +561,13 @@ class PetView(context: Context) : View(context) {
 
     private fun startTween(toX: Float, toY: Float) = animateTo(toX, toY)
 
-    /** 旋转动画：在 0 与 ∓90 之间平滑过渡，避免分界线附近"闪来闪去" */
-    private fun startRotAnim(from: Float, to: Float) {
+    /**
+     * 旋转动画：在 0 与 ∓90 之间平滑过渡。
+     *
+     * @param durationMs 时长。拖动中切换用默认 180ms（避免分界线附近闪）；
+     *                   松手贴边前的那次旋转用 [ROT_SNAP_MS]（更快，因为要在贴边前完成）
+     */
+    private fun startRotAnim(from: Float, to: Float, durationMs: Float = ROT_MS) {
         if (abs(from - to) < 0.01f) {
             shownRotation = to
             rotAnimRunning = false
@@ -563,6 +577,7 @@ class PetView(context: Context) : View(context) {
         }
         rotAnimFrom = from
         rotAnimTo = to
+        rotAnimMs = durationMs
         rotAnimStart = SystemClock.uptimeMillis()
         rotAnimRunning = true
         choreographer.removeFrameCallback(frameCallback)
@@ -624,15 +639,16 @@ class PetView(context: Context) : View(context) {
         if (dragging) {
             cacheSizesKeepingCenter()
             placeWindow()
-        } else if (pendingSettle) {
-            // 松手时旋转还没转完 -> 现在补做吸附定位
-            cacheSizes()
-            settleInternal()
+        } else if (pendingSnap) {
+            // 松手时"先旋转后贴边"：现在旋转完了，补做位置补间
+            pendingSnap = false
+            cacheSizesKeepingCenter()
+            placeWindow()
+            animateTo(pendingSnapX, pendingSnapY)
         } else {
             cacheSizesKeepingCenter()
             placeWindow()
         }
-        pendingSettle = false
     }
     /** 旋转动画期间，用于绘制的实际角度 */
     private fun displayRotation(): Float =
@@ -649,18 +665,20 @@ class PetView(context: Context) : View(context) {
      */
     private fun sizeRotation(): Float = if (frozen) frozenRot else PetState.rotationForSnap(state)
 
-    /** 跨半屏时的镜像翻转动画 */
+    /**
+     * 跨半屏的镜像**立即**翻转。
+     *
+     * 用户要求：素材中心点一越过屏幕中线就**立刻完成**镜像翻转，
+     * 所以这里不做过渡动画，直接把翻转值落到目标（中间态清零）。
+     * （早先的 200ms 压扁过渡会让翻转看起来"慢半拍"，已取消。）
+     */
     private fun startFlip(target: Float) {
-        if (abs(flip - target) < 0.01f && !flipRunning) {
-            flip = target
-            return
-        }
-        flipFrom = flip
+        if (abs(flip - target) < 0.01f && !flipRunning) return
+        flip = target
+        flipFrom = target
         flipTo = target
-        flipStart = SystemClock.uptimeMillis()
-        flipRunning = true
-        choreographer.removeFrameCallback(frameCallback)
-        scheduleFrame()
+        flipRunning = false
+        invalidate()
     }
 
     // ---------------------------------------------------------------- 位置
@@ -976,11 +994,6 @@ class PetView(context: Context) : View(context) {
      * 到达终点后再换状态，位置不跳。
      */
     private fun settle() {
-        // 旋转动画还没结束（尺寸仍冻结）时，先记下；等转完再吸附
-        if (frozen && rotAnimRunning) {
-            pendingSettle = true
-            return
-        }
         settleInternal()
     }
 
@@ -1063,6 +1076,26 @@ class PetView(context: Context) : View(context) {
         val targetCenterX = c[0] + centerFromTrackXSized(tW)
         val targetCenterY = c[1] + centerFromTrackYSized(tH)
 
+        // ---- 顺序：需要旋转时**先快速转完，再贴边** ----
+        // 用户要求：松手时若素材还没转，要在贴边之前迅速完成旋转。
+        val needRotate = abs(curSizeRot - wantRot) > 0.01f
+        if (needRotate) {
+            frozenRot = curSizeRot
+            frozen = true
+            state = want
+            cacheSizes()
+            startRotAnim(shownRotation, wantRot, ROT_SNAP_MS)
+            // 位置补间推迟到旋转结束（见 onRotationDone）
+            pendingSnapX = targetCenterX
+            pendingSnapY = targetCenterY
+            pendingSnap = true
+            placeWindow()
+            invalidate()
+            host?.onSettled(want, c[0].roundToInt(), c[1].roundToInt())
+            return
+        }
+
+        pendingSnap = false
         if (abs(curCenterX() - targetCenterX) < 1f && abs(curCenterY() - targetCenterY) < 1f) {
             anchorX = targetCenterX
             anchorY = targetCenterY
@@ -1231,6 +1264,9 @@ class PetView(context: Context) : View(context) {
         private const val SNAP_MS = 220f
         private const val FLIP_MS = 200f
         private const val ROT_MS = 180f
+
+        /** 松手贴边前的那次旋转：要"迅速完成"，所以更短 */
+        private const val ROT_SNAP_MS = 110f
         private const val HOP_MS = 380f
         private const val HOP_FRACTION = 0.08f
 

@@ -1,0 +1,26 @@
+越过中线立即完成镜像翻转；松手时先快速转完再贴边
+
+用户两点要求：
+
+1) 素材中心点越过屏幕中线时，镜像翻转要**立刻完成**
+   原来 startFlip 走 200ms 压扁过渡，视觉上"慢半拍"。
+   改为立即翻转：直接 flip = target，中间态清零，不做过渡。
+   （ticker 里的 flipRunning 分支保留但不再被置 true，
+     注释说明是为以后想恢复过渡动画时可直接启用。）
+
+2) 素材未旋转时松手，要**在贴边之前迅速完成旋转**
+   原来顺序是"先平移到贴边位 -> 补间结束才 applyPendingState 开始旋转"，
+   即旋转发生在贴边之后。
+
+   改为：settleInternal 里若需要旋转，
+     - 先冻结尺寸、切状态、startRotAnim(..., ROT_SNAP_MS) 立刻开始转
+     - 位置补间**推迟**到旋转结束：记 pendingSnapX/Y
+     - onRotationDone 里（非拖动）执行 animateTo(pendingSnapX/Y) 完成贴边
+
+   新增 ROT_SNAP_MS = 110ms（比拖动中的 180ms 更快，因为要在贴边前完成），
+   startRotAnim 增加 durationMs 参数，rotAnimMs 记录本次时长。
+
+   顺带清理：settle() 里 pendingSettle 分支已无意义（新流程用 pendingSnap），
+   连同字段一起删掉。
+
+25 个单测全绿。
