@@ -1,0 +1,14 @@
+{
+  "name": "广井菊里",
+  "corner": {
+    "file": "corner.png",
+    "w": 1359,
+    "h": 1440
+  },
+  "border": {
+    "file": "border.png",
+    "w": 1022,
+    "h": 928
+  },
+  "borderRotationDeg": 90
+}

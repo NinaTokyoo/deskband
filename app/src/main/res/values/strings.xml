@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">桌宠</string>
+    <string name="subtitle">让它待在桌面上陪着你。点一下它会开心跳一下，拖起来能换边。</string>
+
+    <!-- 切换形象（放在最上面） -->
+    <string name="section_skin">切换形象</string>
+    <string name="label_skin_hint">选一个角色，它会立刻换过来</string>
+
+    <!-- 权限 -->
+    <string name="section_perm">① 先开权限</string>
+    <string name="perm_overlay_on">悬浮窗权限：已开启</string>
+    <string name="perm_overlay_off">悬浮窗权限：未开启（必须开，否则桌宠出不来）</string>
+    <string name="perm_overlay_btn_on">悬浮窗权限已开启</string>
+    <string name="perm_overlay_btn_off">去开启悬浮窗权限</string>
+    <string name="perm_notify_on">通知权限：已开启</string>
+    <string name="perm_notify_off">通知权限：未开启（不开也能用，只是看不到常驻通知）</string>
+    <string name="perm_notify_btn_off">开启通知权限</string>
+
+    <!-- 开关 -->
+    <string name="section_switch">② 叫它出来</string>
+    <string name="btn_start">开启桌宠</string>
+    <string name="btn_stop">收起桌宠</string>
+    <string name="need_overlay">还没有悬浮窗权限，先去设置里打开</string>
+    <string name="start_failed">启动失败，请确认悬浮窗权限已开启</string>
+
+    <!-- 外观 -->
+    <string name="section_look">③ 调外观</string>
+    <string name="label_size">大小</string>
+    <string name="size_value">当前占屏幕高度：%1$d%%</string>
+    <string name="chk_autostart">开机自动叫它出来</string>
+
+    <!-- 吸附状态 -->
+    <string name="section_snap">④ 吸附位置</string>
+    <string name="snap_auto">自动（拖到哪里就吸哪里）</string>
+    <string name="snap_br">右下角</string>
+    <string name="snap_bl">左下角</string>
+    <string name="snap_r">右边框</string>
+    <string name="snap_l">左边框</string>
+    <string name="snap_hint">悬浮时只有单击和拖动，其他设置都在这里改。</string>
+
+    <string name="tip">小提示：\n· 点一下 → 它会开心地跳一下\n· 按住拖动 → 松手后吸附到最近的角或边框\n· 拖出角落 → 超过 120px 开始模糊，到 200px 变成边框形态\n· 拖过屏幕中线 → 它会翻个身，换到另一边\n· 桌面上的它不能改设置，只能点、只能拖</string>
+
+    <!-- 通知 -->
+    <string name="notif_channel">桌宠</string>
+    <string name="notif_channel_desc">桌宠在桌面上运行时显示的常驻通知</string>
+    <string name="notif_title">桌宠正在陪着你</string>
+    <string name="notif_text">点这里回到设置，或直接收起桌宠</string>
+    <string name="action_stop">收起</string>
+</resources>

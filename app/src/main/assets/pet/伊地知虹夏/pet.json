@@ -1,0 +1,14 @@
+{
+  "name": "伊地知虹夏",
+  "corner": {
+    "file": "corner.png",
+    "w": 1342,
+    "h": 1440
+  },
+  "border": {
+    "file": "border.png",
+    "w": 1024,
+    "h": 945
+  },
+  "borderRotationDeg": 90
+}

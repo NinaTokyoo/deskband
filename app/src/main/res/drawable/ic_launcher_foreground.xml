@@ -1,0 +1,37 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 头顶的小呆毛 -->
+    <path
+        android:fillColor="#5FD3F3"
+        android:pathData="M54,26 L48.5,42 L59.5,42 Z" />
+
+    <!-- 身体 -->
+    <path
+        android:fillColor="#5FD3F3"
+        android:pathData="M28,62 a26,26 0 0,1 52,0 a26,26 0 0,1 -52,0 z" />
+
+    <!-- 眼睛 -->
+    <path
+        android:fillColor="#12202B"
+        android:pathData="M41,57 a4,4 0 0,1 8,0 a4,4 0 0,1 -8,0 z" />
+    <path
+        android:fillColor="#12202B"
+        android:pathData="M59,57 a4,4 0 0,1 8,0 a4,4 0 0,1 -8,0 z" />
+
+    <!-- 腮红 -->
+    <path
+        android:fillColor="#4DFF9CB0"
+        android:pathData="M33,66 a4.5,3 0 0,1 9,0 a4.5,3 0 0,1 -9,0 z" />
+    <path
+        android:fillColor="#4DFF9CB0"
+        android:pathData="M66,66 a4.5,3 0 0,1 9,0 a4.5,3 0 0,1 -9,0 z" />
+
+    <!-- 嘴 -->
+    <path
+        android:fillColor="#12202B"
+        android:pathData="M49,67 q5,5 10,0 q-5,2 -10,0 z" />
+</vector>

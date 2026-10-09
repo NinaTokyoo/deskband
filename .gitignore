@@ -1,0 +1,29 @@
+# 构建产物
+build/
+.gradle/
+.kotlin/
+local.properties
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# 签名密钥：发布用的，不进版本库
+keystore/
+
+# 本机 JDK 路径（每台机器不同）
+.jdk-home
+
+# 素材投放区：原图太大且可能要换，先不入库
+pet-assets/
+
+# 用于说明问题的对比图，体积大
+docs/asset-pair-check.png
+docs/orientation-preview.png
+docs/size-compare.png
+docs/border-orientation-final.png
+docs/left-mirror-check.png
+docs/rotation-decide.png
+docs/whitebg-demo.png
+docs/whitebg-halo-test.png
