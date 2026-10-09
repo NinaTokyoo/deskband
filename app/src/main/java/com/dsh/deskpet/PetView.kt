@@ -315,6 +315,9 @@ class PetView(context: Context) : View(context) {
      *
      * 用户说明："松手吸附是吸附到松手位置对应的像素位置" ——
      * 所以这里**不移动宠物**，只记下状态。位置就停在松手的地方。
+     *
+     * 但因为不再自动对齐边缘，必须自己兜住"别被拖出屏幕"，
+     * 否则宠物会有一半留在屏幕外（实测踩过：pos_left 变成 -121）。
      */
     private fun settle() {
         val b = host?.bounds() ?: return
@@ -328,14 +331,25 @@ class PetView(context: Context) : View(context) {
 
         state = PetState.snapTarget(db, dr, leftHalf)
 
-        // 保留松手位置：把拖动偏移固化成锚点，不做任何吸附对齐
-        anchorX = x
-        anchorY = y
+        // 保留松手位置，但夹住不让它跑出屏幕
+        val c = clampToScreen(x, y, sz[0], sz[1])
+        anchorX = c[0]
+        anchorY = c[1]
         dragOffsetX = 0f
         dragOffsetY = 0f
 
         host?.onSettled(state, leftInset(), topInset())
         invalidate()
+    }
+
+    /** 至少留一半身体在屏幕内，避免被拖丢 */
+    private fun clampToScreen(x: Float, y: Float, w: Int, h: Int): FloatArray {
+        val b = host?.bounds() ?: return floatArrayOf(x, y)
+        return PetState.clampToScreen(
+            x, y, w.toFloat(), h.toFloat(),
+            b.width().toFloat(), b.height().toFloat(),
+            MIN_VISIBLE_FRACTION
+        )
     }
 
     private fun onTapped() {
@@ -544,5 +558,8 @@ class PetView(context: Context) : View(context) {
 
     private companion object {
         const val FRAME_MS = 16L
+
+        /** 拖动时至少要有这么大比例的身体留在屏幕内 */
+        const val MIN_VISIBLE_FRACTION = 0.5f
     }
 }

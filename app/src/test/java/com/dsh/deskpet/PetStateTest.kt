@@ -292,6 +292,34 @@ class PetStateTest {
         assertTrue("最大单步跳变 $maxJump (在 $at) 应 < 0.06", maxJump < 0.06f)
     }
 
+    // ---------------------------------------------------------- 别被拖丢
+
+    @Test
+    fun `position is clamped so the pet cannot be dragged off screen`() {
+        val w = 475f; val h = 463f
+        val sw = 1440f; val sh = 3084f
+
+        // 拖到完全在屏幕外 -> 夹回，至少露一半
+        val farLeft = PetState.clampToScreen(-2000f, 1000f, w, h, sw, sh)
+        assertTrue("左边不能丢", farLeft[0] >= -w + w * 0.5f - 0.01f)
+        val farRight = PetState.clampToScreen(9999f, 1000f, w, h, sw, sh)
+        assertTrue("右边不能丢", farRight[0] <= sw - w * 0.5f + 0.01f)
+        val farUp = PetState.clampToScreen(500f, -2000f, w, h, sw, sh)
+        assertTrue("上边不能丢", farUp[1] >= -h + h * 0.5f - 0.01f)
+        val farDown = PetState.clampToScreen(500f, 9999f, w, h, sw, sh)
+        assertTrue("下边不能丢", farDown[1] <= sh - h * 0.5f + 0.01f)
+
+        // 已经在屏幕内的位置**不应被改动**（吸附要能停在松手处）
+        val inside = PetState.clampToScreen(800f, 1500f, w, h, sw, sh)
+        assertEquals(800f, inside[0], 0.01f)
+        assertEquals(1500f, inside[1], 0.01f)
+
+        // 角上的原位（紧贴右下）也不能被改动，否则"吸附到角落"就失效了
+        val corner = PetState.clampToScreen(sw - w, sh - h, w, h, sw, sh)
+        assertEquals(sw - w, corner[0], 0.01f)
+        assertEquals(sh - h, corner[1], 0.01f)
+    }
+
     // ---------------------------------------------------------- 比例不变（用户硬要求）
 
     @Test

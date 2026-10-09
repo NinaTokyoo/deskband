@@ -225,6 +225,30 @@ object PetState {
         if (zoneOf(db, dr) == ZONE_A) 0f else 1f
 
     /**
+     * 把绘制格子夹在屏幕内，保证**至少有一部分身体可见**。
+     *
+     * 因为吸附不再自动对齐边缘，用户可以把宠物往外拖，
+     * 不加这个兜底就会被拖丢（实测踩过：pos_left 变成 -121，半个身子在屏幕外）。
+     *
+     * @param minVisible 至少要露出多大比例的身体，默认一半
+     */
+    fun clampToScreen(
+        x: Float, y: Float,
+        w: Float, h: Float,
+        screenW: Float, screenH: Float,
+        minVisible: Float = 0.5f
+    ): FloatArray {
+        if (w <= 0f || h <= 0f) return floatArrayOf(x, y)
+        val f = minVisible.coerceIn(0f, 1f)
+        val keepX = w * f
+        val keepY = h * f
+        return floatArrayOf(
+            x.coerceIn(-w + keepX, screenW - keepX),
+            y.coerceIn(-h + keepY, screenH - keepY)
+        )
+    }
+
+    /**
      * 计算素材画到屏幕上的格子尺寸。
      *
      * 关键：**永远按素材自身的正立比例等比缩放**，不因为旋转而互换宽高。
