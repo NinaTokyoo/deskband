@@ -102,6 +102,17 @@ class PetView(context: Context) : View(context) {
     private var cellOffY = 0
 
     /**
+     * 轻跳的顶部余量：按素材高度**等比**给，不能用固定值 ——
+     * 宠物放大后 8% 的跳幅远超固定的 48px，会被窗口切顶。
+     */
+    private fun topPad(): Int =
+        (cellH * HOP_FRACTION).toInt() + HOP_PAD_MIN
+
+    /** 足迹盒在"旋转包络窗口"内的偏移 */
+    private var footOffX = 0
+    private var footOffY = 0
+
+    /**
      * **素材中心点**在位图里的相对位置（0..1）。
      *
      * 按 alpha 外接框算，而不是简单取一半 —— 格子是矩形，人物不一定居中，
@@ -123,6 +134,11 @@ class PetView(context: Context) : View(context) {
     /** 当前足迹尺寸所对应的旋转角（未冻结时随状态更新） */
     private var curSizeRot = 0f
 
+    /** 绕手指点旋转：拖动期间用它当支点（窗口内坐标） */
+    private var pivotValid = false
+    private var pivotLocalX = 0f
+    private var pivotLocalY = 0f
+
     private fun cacheSizes() {
         val s = sprite ?: return
         val screenH = (host?.bounds()?.height() ?: 1080).toFloat()
@@ -138,16 +154,28 @@ class PetView(context: Context) : View(context) {
         trackW = if (rotated) cellH else cellW
         trackH = if (rotated) cellW else cellH
 
-        // 外接矩形：旋转后可能互换，另外给"轻跳"留出上方余量
-        bboxW = trackW + HOP_PAD_X * 2
-        bboxH = trackH + HOP_PAD_TOP + HOP_PAD_BOTTOM
+        // 旋转包络：**保证任何角度都不裁切**。
+        //
+        // 关键：W×H 矩形绕中心转 θ 时外接框是 (W|cosθ|+H|sinθ|)，45° 附近
+        // 约等于**对角线**，比 max(W,H) 大得多 —— 用 max 会在中间角度切掉。
+        // 另外点击压缩会把横向撑大 (1+SQ_MAX) 倍，也要一起容纳。
+        val diag = kotlin.math.hypot(cellW.toDouble(), cellH.toDouble()).toFloat()
+        val envW = maxOf(diag, cellW * (1f + SQ_MAX))
+        val envH = maxOf(diag, cellH * (1f + SQ_MAX))
+        bboxW = envW.toInt() + HOP_PAD_X * 2
+        bboxH = envH.toInt() + topPad() + HOP_PAD_BOTTOM
         boxOffX = HOP_PAD_X
-        boxOffY = HOP_PAD_TOP
+        boxOffY = topPad()
 
-        // 格子在足迹盒里居中：旋转后格子比足迹宽，必须居中，
-        // 否则绕格子中心转出来的内容会偏出窗口被切掉。
-        cellOffX = (trackW - cellW) / 2
-        cellOffY = (trackH - cellH) / 2
+        // 格子在窗口里居中（旋转包络的中心）；绕偏心支点转时靠包络的
+        // 富余量容纳，所以这里居中即可。
+        cellOffX = (bboxW - HOP_PAD_X * 2 - cellW) / 2
+        cellOffY = (bboxH - topPad() - HOP_PAD_BOTTOM - cellH) / 2
+
+        // 足迹盒在包络窗口里的偏移 —— 贴边/夹取算的是足迹盒的边，
+        // 不是包络窗口的边，所以换算时必须把这个偏移减掉。
+        footOffX = (bboxW - HOP_PAD_X * 2 - trackW) / 2
+        footOffY = (bboxH - topPad() - HOP_PAD_BOTTOM - trackH) / 2
 
         artU = 0.5f
         artV = 0.5f
@@ -206,9 +234,35 @@ class PetView(context: Context) : View(context) {
     private fun centerInWindowX(): Float = cellLocalX() + artU * cellW
     private fun centerInWindowY(): Float = cellLocalY() + artV * cellH
 
+    /**
+     * 旋转与压缩的**支点**（窗口内坐标）。
+     *
+     * 用户在拖动时希望**绕手指实际作用点**旋转，所以拖动期间用
+     * [pivotLocalX]/[pivotLocalY]（按下点固定在窗口里的位置）；
+     * 松手后没有手指了，回退到素材中心点。
+     *
+     * ⚠️ 支点在整段旋转动画期间必须保持不变，否则一动就抽搐。
+     */
+    /**
+     * 旋转与压缩的**支点**（窗口内坐标）= 素材中心点。
+     *
+     * ⚠️ 为什么不用"手指实际作用点"当支点：
+     * 用户要求**无论如何不准裁切素材**。绕中心转时，素材离中心最远就是
+     * 半对角线，所以"边长=对角线"的方形窗口恰好容得下任意角度；
+     * 而绕偏心点（尤其按在角上）转时，从窗口中心算最远可达 1.5×对角线，
+     * 窗口要开到约 3×对角线（本机 ≈2100px，几乎满屏宽），
+     * 那会重新引入"整屏窗口挡住触摸"的老问题。
+     * 两者不可兼得，这里服从"不裁切"。
+     */
+    private fun pivotX(): Float = centerInWindowX()
+    private fun pivotY(): Float = centerInWindowY()
+
     /** 素材中心点相对"足迹盒左上角"的偏移 —— 换算贴边坐标用 */
-    private fun centerFromTrackX(): Float = centerInWindowX() - boxOffX
-    private fun centerFromTrackY(): Float = centerInWindowY() - boxOffY
+    private fun centerFromTrackX(): Float =
+        centerInWindowX() - boxOffX - footOffX
+
+    private fun centerFromTrackY(): Float =
+        centerInWindowY() - boxOffY - footOffY
 
     /**
      * 尺寸变化后，**保持素材中心点的屏幕位置不变**。
@@ -519,9 +573,13 @@ class PetView(context: Context) : View(context) {
         if (dragging) {
             cacheSizesKeepingCenter()
             placeWindow()
-        } else {
+        } else if (pendingSettle) {
+            // 松手时旋转还没转完 -> 现在补做吸附定位
             cacheSizes()
             settleInternal()
+        } else {
+            cacheSizesKeepingCenter()
+            placeWindow()
         }
         pendingSettle = false
     }
@@ -662,9 +720,9 @@ class PetView(context: Context) : View(context) {
      */
     private fun hitsPet(localX: Float, localY: Float): Boolean {
         val s = sprite ?: return false
-        // 与 onDraw 一致：绕**素材中心点**旋转
-        val cx = centerInWindowX()
-        val cy = centerInWindowY()
+        // 与 onDraw 一致：绕**同一个支点**旋转
+        val cx = pivotX()
+        val cy = pivotY()
         var dx = localX - cx
         var dy = localY - cy
 
@@ -704,9 +762,9 @@ class PetView(context: Context) : View(context) {
             dy = ry
         }
 
-        // dx/dy 现在是相对**素材中心点**的，换算回格子内坐标
-        val cu = dx + artU * cellW
-        val cv = dy + artV * cellH
+        // dx/dy 是相对**支点**的，换算回格子内坐标
+        val cu = dx + (cx - cellLocalX())
+        val cv = dy + (cy - cellLocalY())
         val u = cu / cellW
         val v = cv / cellH
         if (u < 0f || u > 1f || v < 0f || v > 1f) return false
@@ -737,25 +795,35 @@ class PetView(context: Context) : View(context) {
                 if (!hitsPet(event.x, event.y)) return false
                 downRawX = event.rawX
                 downRawY = event.rawY
-                dragStartX = anchorX
-                dragStartY = anchorY
                 dragOffsetX = 0f
                 dragOffsetY = 0f
                 dragging = false
                 cancelTween()
+                // 记下手指作用点在窗口内的位置 —— 旋转就绕它转
+                pivotLocalX = event.x
+                pivotLocalY = event.y
+                pivotValid = true
                 return true
             }
 
             MotionEvent.ACTION_MOVE -> {
                 val dx = event.rawX - downRawX
                 val dy = event.rawY - downRawY
-                if (!dragging && (abs(dx) > touchSlop || abs(dy) > touchSlop)) dragging = true
+                if (!dragging && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
+                    dragging = true
+                    // 用户规则：**手指按在哪里，素材中心点就在哪里**。
+                    // 不保留"手指到中心点的偏移"，直接在起拖那一刻把中心点对齐到按下位置。
+                    anchorX = downRawX
+                    anchorY = downRawY
+                    dragOffsetX = 0f
+                    dragOffsetY = 0f
+                }
                 if (dragging) {
-                    // 严格跟手：直接用"手指相对按下点的屏幕位移"，1:1 无阻尼。
-                    // 不读窗口增量 —— 旋转 / 改尺寸会触发窗口 resize，
-                    // 那一刻增量会错位。
-                    dragOffsetX = dx
-                    dragOffsetY = dy
+                    // 用户规则：**手指按在哪里，素材中心点就在哪里**
+                    anchorX = event.rawX
+                    anchorY = event.rawY
+                    dragOffsetX = 0f
+                    dragOffsetY = 0f
                     updateDragState()
                     placeWindow()
                     invalidate()
@@ -765,13 +833,15 @@ class PetView(context: Context) : View(context) {
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 if (dragging) {
-                    // 把拖动结果固化进 anchor，避免累计误差
-                    anchorX = dragStartX + dragOffsetX
-                    anchorY = dragStartY + dragOffsetY
+                    // 固化当前位置，并清零位移 —— 否则 settle 里位移会被算两遍（瞬移）
+                    anchorX = curCenterX()
+                    anchorY = curCenterY()
                     dragOffsetX = 0f
                     dragOffsetY = 0f
+                    pivotValid = false
                     settle()
                 } else {
+                    pivotValid = false
                     onTapped()
                 }
                 dragging = false
@@ -835,14 +905,28 @@ class PetView(context: Context) : View(context) {
      */
     private fun settleInternal() {
         val b = host?.bounds() ?: return
+        // 先把拖动位移**固化进 anchor 并清零**。
+        // 否则补间过程中 anchorX 在变、dragOffsetX 还在被加上去，
+        // 位移被算两遍 —— 那就是"一松手就瞬移"。
+        anchorX = curCenterX()
+        anchorY = curCenterY()
+        dragOffsetX = 0f
+        dragOffsetY = 0f
+
         val x = curTrackLeft()
         val y = curTrackTop()
         val leftHalf = (x + trackW / 2f) < b.width() / 2f
         val db = PetState.bottomDist(y, trackH.toFloat(), b.height().toFloat())
         val dr = PetState.sideDist(x, trackW.toFloat(), b.width().toFloat(), leftHalf)
 
-        val zone = PetState.zoneOf(db, dr, leftHalf)
-        val want = PetState.stateForZone(zone, leftHalf)
+        // 与拖动时保持一致，用带滞回的分区判定
+        val zone = PetState.zoneWithHysteresis(db, dr, leftHalf, lastZone)
+        lastZone = zone
+        var want = PetState.stateForZone(zone, leftHalf)
+        if (zone == PetState.ZONE_E) {
+            val rot = PetState.eRotation(leftHalf, x, cellW.toFloat(), b.width().toFloat())
+            if (rot != 0f) want = if (leftHalf) PetState.BORDER_L else PetState.BORDER_R
+        }
 
         // 先按**当前尺寸**算贴边位置
         val target = PetState.snapPosition(
@@ -868,15 +952,12 @@ class PetView(context: Context) : View(context) {
         val targetCenterX = c[0] + centerFromTrackX()
         val targetCenterY = c[1] + centerFromTrackY()
 
-        // 位置没变就不用补间，直接切状态
         if (abs(curCenterX() - targetCenterX) < 1f && abs(curCenterY() - targetCenterY) < 1f) {
-            // 拖动位移要固化进 anchor，否则下次拖动会从这里重新算
-            anchorX = targetCenterX - dragOffsetX
-            anchorY = targetCenterY - dragOffsetY
+            anchorX = targetCenterX
+            anchorY = targetCenterY
             applyPendingState()
         } else {
-            // 补间走"中心点"：把拖动位移折算进起点，终点不含位移
-            animateTo(targetCenterX - dragOffsetX, targetCenterY - dragOffsetY)
+            animateTo(targetCenterX, targetCenterY)
         }
 
         placeWindow()
@@ -921,10 +1002,10 @@ class PetView(context: Context) : View(context) {
         val hop = 0f
         // 用带动画的角度，避免在 B/E 分界线附近瞬间翻转
         val rot = displayRotation()
-        // 旋转与压缩都绕**素材中心点**：这样人物是绕自己转，
-        // 而不是绕格子空白的中心转。
-        val cx = centerInWindowX()
-        val cy = centerInWindowY()
+        // 支点：拖动时绕**手指作用点**，松手后绕素材中心点。
+        // 支点在整段动画里保持不变，所以不会抽搐。
+        val cx = pivotX()
+        val cy = pivotY()
 
         val save = canvas.save()
         // 旋转绕格子中心；只改变换、不动格子尺寸 -> 比例不变
@@ -1049,8 +1130,10 @@ class PetView(context: Context) : View(context) {
 
         /** 窗口给"轻跳"和四角旋转留的余量，避免边缘被切 */
         const val HOP_PAD_X = 8
-        const val HOP_PAD_TOP = 48
         const val HOP_PAD_BOTTOM = 8
+
+        /** 轻跳余量的最小保底值 */
+        const val HOP_PAD_MIN = 8
 
         /** 服务在 addView 前算初始窗口用 */
         fun windowRectFor(
@@ -1069,13 +1152,23 @@ class PetView(context: Context) : View(context) {
             val tw = if (rotated) cell[1] else cell[0]
             val th = if (rotated) cell[0] else cell[1]
 
+            // 与 cacheSizes 用同一套包络公式，保证不裁切
+            val diag = kotlin.math.hypot(cell[0].toDouble(), cell[1].toDouble()).toFloat()
+            val envW = maxOf(diag, cell[0] * (1f + SQ_MAX)).toInt()
+            val envH = maxOf(diag, cell[1] * (1f + SQ_MAX)).toInt()
+            val top = (cell[1] * HOP_FRACTION).toInt() + HOP_PAD_MIN
+
+            // 足迹盒在包络里的位置（居中）
+            val footOffX = (envW - tw) / 2
+            val footOffY = (envH - th) / 2
+
             val x = if (PetState.isLeft(state)) 0 else screen.width() - tw
             val y = if (PetState.isZoneless(state)) (screen.height() - th) / 2
             else screen.height() - th
 
             return intArrayOf(
-                x - HOP_PAD_X, y - HOP_PAD_TOP,
-                tw + HOP_PAD_X * 2, th + HOP_PAD_TOP + HOP_PAD_BOTTOM
+                x - HOP_PAD_X - footOffX, y - top - footOffY,
+                envW + HOP_PAD_X * 2, envH + top + HOP_PAD_BOTTOM
             )
         }
     }
