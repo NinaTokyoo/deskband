@@ -1,0 +1,34 @@
+修掉"未旋转就吸附、然后再旋转"
+
+## 根因：needRotate 用了记账值而不是实际显示角度
+
+settleInternal 原来判断
+    val needRotate = abs(curSizeRot - wantRot) > 0.01f
+而 curSizeRot 是**尺寸记账值**，只在 cacheSizes() 里且 !frozen 时才更新。
+
+触发时序：
+  1. 拖动中越过分界线 -> 旋转开始：frozen=true、state 已改成旋转形态，
+     但 curSizeRot 仍是**旧值**（因为冻结期间不更新）
+  2. 用户**在旋转还没转完时松手**。此时若最终目标是正立，则
+     needRotate = |旧值(0) - 0| = false -> 走了**不旋转**的分支
+  3. 那个还在跑的旋转动画继续跑完 -> onRotationDone 解冻，并把
+     curSizeRot 更新成**旋转形态**的角度(-90)
+  4. 位移补间（含回弹）结束时 applyPendingState 才发现
+     curSizeRot(-90) != 目标(0) -> **这时才开始转回去**
+
+用户看到的就是：先吸附就位，然后再旋转。
+
+## 修法
+
+1) needRotate 改为基于**实际显示角度**，并把"正在转"也纳入：
+     frozen || rotAnimRunning || abs(shownRotation - wantRot) > 0.01f
+   这样只要有旋转在途，就一定走统一分支（旋转+位移同时开始、旋转先完成）。
+
+2) applyPendingState 兜底逻辑也改用 shownRotation 判断，且当旋转动画仍在跑时
+   保持尺寸冻结（交给 onRotationDone 解冻），不再在位移结束后另起一次旋转。
+
+3) displayRotation() 在 frozen 时也返回 shownRotation（原来只看 rotAnimRunning），
+   并在每处 frozen = true 之后补 "if (!rotAnimRunning) shownRotation = frozenRot"，
+   保证"画出来的角度"与"冻结的尺寸朝向"始终一致，避免二者错配。
+
+25 个单测全绿。

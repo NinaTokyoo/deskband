@@ -364,6 +364,8 @@ class PetView(context: Context) : View(context) {
         if (willRotate) {
             frozenRot = prevRot
             frozen = true
+            // 冻结时若没有动画在跑，画出角度要与冻结朝向一致，避免画面与尺寸错配
+            if (!rotAnimRunning) shownRotation = frozenRot
         } else {
             frozen = false
             rotAnimRunning = false
@@ -671,6 +673,8 @@ class PetView(context: Context) : View(context) {
         if (!frozen) {
             frozenRot = prevRot
             frozen = true
+            // 冻结时若没有动画在跑，画出角度要与冻结朝向一致，避免画面与尺寸错配
+            if (!rotAnimRunning) shownRotation = frozenRot
         }
         // ⚠️ 已经在朝**同一个角度**转，就不要重启动画。
         // 拖动时状态可能反复切换，每次都重置计时起点会让 180ms 的动作走不完
@@ -701,7 +705,7 @@ class PetView(context: Context) : View(context) {
     }
     /** 旋转动画期间，用于绘制的实际角度 */
     private fun displayRotation(): Float =
-        if (rotAnimRunning) shownRotation else PetState.rotationForSnap(state)
+        if (rotAnimRunning || frozen) shownRotation else PetState.rotationForSnap(state)
 
     /**
      * 用于**计算格子与窗口尺寸**的旋转角。
@@ -1116,20 +1120,29 @@ class PetView(context: Context) : View(context) {
         // ---- 顺序：需要旋转时，**一边转一边往边上靠，且旋转先完成** ----
         // 用户要求：素材未旋转时松手，要一边旋转一边靠近边框，
         // 并在吸附到边框之前完成旋转。
-        // 做法：旋转与位移**同时**开始，但旋转时长更短
-        // （ROT_SNAP_MS < SNAP_MS），于是到边之前就已经转正。
-        val needRotate = abs(curSizeRot - wantRot) > 0.01f
+        // 做法：旋转与位移**同时**开始，旋转(ROT_MS 180)短于位移(SNAP_MS 220)，
+        // 所以到边之前就已经转正。
+        //
+        // ⚠️ 判定必须基于**实际显示的角度**(shownRotation)，不能用 curSizeRot。
+        // curSizeRot 是尺寸记账值，只在 cacheSizes() 里且 !frozen 时更新。
+        // 曾经的坑：拖动中旋转已开始(frozen=true，state 已改)但 curSizeRot 还是旧值，
+        // 若此时松手且目标是正立，needRotate 会算成 false -> 走不旋转的分支；
+        // 而那个还在跑的旋转动画随后跑完、onRotationDone 把 curSizeRot 更新成旋转形态，
+        // 于是位移补间结束时的 applyPendingState 才发现要转 -> **先吸附、后旋转**。
+        // 加上 frozen / rotAnimRunning 的判断，保证"正在转"时一定走本分支统一处理。
+        val needRotate =
+            frozen || rotAnimRunning || abs(shownRotation - wantRot) > 0.01f
         if (needRotate) {
             frozenRot = curSizeRot
             frozen = true
+            // 冻结时若没有动画在跑，画出角度要与冻结朝向一致，避免画面与尺寸错配
+            if (!rotAnimRunning) shownRotation = frozenRot
             state = want
             cacheSizes()
-            // 旋转用标准时长 ROT_MS(180)，与 0115 版本手感一致；
-            // 位移 SNAP_MS(220) 更长，所以**到边之前旋转就已经完成**。
             startRotAnim(shownRotation, wantRot)
             // 状态与尺寸已在此处理，别再让补间结束时的 applyPendingState 重做一遍
             pendingState = null
-            // 边转边靠，旋转(180ms)短于位移(220ms)，所以到边前就转正；末尾带回弹
+            // 边转边靠；末尾带回弹
             snapWithBounce(targetCenterX, targetCenterY, snapSide, snapBottom)
             placeWindow()
             invalidate()
@@ -1150,22 +1163,34 @@ class PetView(context: Context) : View(context) {
         host?.onSettled(want, c[0].roundToInt(), c[1].roundToInt())
     }
 
-    /** 补间结束后才真正切状态（换素材 + 换旋转），避免中途改尺寸造成跳变 */
+    /**
+     * 位移补间结束后切换状态（换素材）。
+     *
+     * ⚠️ 这里**只在确实需要转、且还没转到位时**才启动旋转，而且判断依据是
+     * **实际显示的角度** [shownRotation]，不是记账值 [curSizeRot]。
+     *
+     * 因为本函数在位移**走完之后**才被调用：如果此时才发现要转，
+     * 用户看到的就是"先吸附就位、然后再旋转"。
+     * 正确的顺序应该由 settleInternal 的 needRotate 分支统一处理
+     * （旋转与位移同时开始、旋转先完成），这里只是兜底。
+     */
     private fun applyPendingState() {
         val st = pendingState ?: return
         pendingState = null
-        val prevRot = curSizeRot
         val newRot = PetState.rotationForSnap(st)
-        if (abs(prevRot - newRot) > 0.01f) {
-            // 先冻结尺寸再换状态，中心点不动
-            frozenRot = prevRot
+        if (!rotAnimRunning && abs(shownRotation - newRot) > 0.01f) {
+            // 兜底：还差一个旋转，冻结尺寸后接着转（正常路径不会走到这里）
+            frozenRot = curSizeRot
             frozen = true
+            // 冻结时若没有动画在跑，画出角度要与冻结朝向一致，避免画面与尺寸错配
+            if (!rotAnimRunning) shownRotation = frozenRot
             state = st
             cacheSizes()
             startRotAnim(shownRotation, newRot)
         } else {
             state = st
-            cacheSizesKeepingCenter()
+            // 旋转动画仍在跑时尺寸保持冻结，由 onRotationDone 统一解冻
+            if (rotAnimRunning || frozen) cacheSizes() else cacheSizesKeepingCenter()
         }
         placeWindow()
         invalidate()
