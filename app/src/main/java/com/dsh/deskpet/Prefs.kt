@@ -112,6 +112,8 @@ class Prefs(context: Context) {
 
         const val MIN_SIZE = 0.06f
         const val MAX_SIZE = 0.40f
-        const val DEFAULT_SIZE = 0.15f
+
+        /** 默认大小：占屏幕可用高度的 8% */
+        const val DEFAULT_SIZE = 0.08f
     }
 }

@@ -75,7 +75,7 @@ class PetView(context: Context) : View(context) {
     var state: Int = PetState.CORNER_BR
         private set
 
-    private var sizeFrac = 0.15f
+    private var sizeFrac = Prefs.DEFAULT_SIZE
 
     /** 素材格子左上角（屏幕坐标） */
     private var anchorX = 0f
@@ -288,6 +288,18 @@ class PetView(context: Context) : View(context) {
 
     private fun centerFromTrackY(): Float =
         centerInWindowY() - boxOffY - footOffY
+
+    /**
+     * 指定**足迹宽度**时，素材中心点相对足迹左上角的偏移。
+     *
+     * 松手吸附要按"目标状态的足迹"算位置（例如从正立切到旋转，
+     * 足迹宽高会互换），这时不能再用当前缓存的 [centerFromTrackX]。
+     */
+    private fun centerFromTrackXSized(trackWidth: Int): Float =
+        (trackWidth - cellW) / 2f + artU * cellW
+
+    private fun centerFromTrackYSized(trackHeight: Int): Float =
+        (trackHeight - cellH) / 2f + artV * cellH
 
     /**
      * 尺寸变化后，**保持素材中心点的屏幕位置不变**。
@@ -925,7 +937,8 @@ class PetView(context: Context) : View(context) {
         val b = host?.bounds() ?: return
         val x = curTrackLeft()
         val y = curTrackTop()
-        val leftHalf = (x + trackW / 2f) < b.width() / 2f
+        // 中线判定用**素材中心点**：中心一越过屏幕中线就翻（带动画）
+        val leftHalf = curCenterX() < b.width() / 2f
 
         // 跨半屏 -> 触发镜像翻转动画
         startFlip(if (leftHalf) 1f else 0f)
@@ -989,7 +1002,8 @@ class PetView(context: Context) : View(context) {
 
         val x = curTrackLeft()
         val y = curTrackTop()
-        val leftHalf = (x + trackW / 2f) < b.width() / 2f
+        // 中线判定用**素材中心点**：中心一越线就翻
+        val leftHalf = curCenterX() < b.width() / 2f
         val db = PetState.bottomDist(y, trackH.toFloat(), b.height().toFloat())
         val dr = PetState.sideDist(x, trackW.toFloat(), b.width().toFloat(), leftHalf)
 
@@ -1000,15 +1014,38 @@ class PetView(context: Context) : View(context) {
             PetState.currentAW + trackW / 2f
         )
         lastZone = zone
-        val want = PetState.stateForZone(zone, leftHalf)
 
-        // 先按**当前尺寸**算贴边位置（复用已判定的 zone，保证与状态一致）
-        val target = PetState.snapPosition(
-            x, y, trackW.toFloat(), trackH.toFloat(), db, dr,
-            b.width().toFloat(), b.height().toFloat(), leftHalf, zone
-        )
+        // ---- 朝向由"最终贴到哪条边"决定，而不是由拖动时的区号决定 ----
+        // 用户要求：即使拖的时候素材没转，只要松手后贴到侧边，就要自动旋转 + 贴边。
+        val edges = if (zone == PetState.ZONE_E) {
+            if (PetState.nearerEdgeIsBottom(db, dr)) intArrayOf(1, 0) else intArrayOf(0, 1)
+        } else {
+            PetState.snapEdgesForZone(zone)
+        }
+        val snapBottom = edges[0] == 1
+        val snapSide = edges[1] == 1
+        val want = when {
+            // 角落：两条边都贴 -> 用角落素材
+            snapBottom && snapSide ->
+                if (leftHalf) PetState.CORNER_BL else PetState.CORNER_BR
+            // 贴侧边 -> 一定旋转躺倒
+            snapSide -> if (leftHalf) PetState.BORDER_L else PetState.BORDER_R
+            // 只贴底边 -> 正立
+            else -> if (leftHalf) PetState.BORDER_L_UPRIGHT else PetState.BORDER_R_UPRIGHT
+        }
+
+        // 目标位置必须用 **want 的足迹** 算，否则换成旋转形态后会不贴边
+        val wantRot = PetState.rotationForSnap(want)
+        val wantRotated = abs(abs(wantRot) - 90f) < 1f
+        val tW = if (wantRotated) cellH else cellW
+        val tH = if (wantRotated) cellW else cellH
+
+        var nx = x
+        var ny = y
+        if (snapBottom) ny = (b.height() - tH).toFloat()
+        if (snapSide) nx = if (leftHalf) 0f else (b.width() - tW).toFloat()
         val c = PetState.clampToScreen(
-            target[0], target[1], trackW.toFloat(), trackH.toFloat(),
+            nx, ny, tW.toFloat(), tH.toFloat(),
             b.width().toFloat(), b.height().toFloat()
         )
 
@@ -1022,9 +1059,9 @@ class PetView(context: Context) : View(context) {
         pendingState = want
         pendingLeft = leftHalf
 
-        // 足迹盒目标位置 -> 中心点目标位置
-        val targetCenterX = c[0] + centerFromTrackX()
-        val targetCenterY = c[1] + centerFromTrackY()
+        // 目标足迹位置 -> 目标中心点（用 want 的足迹换算）
+        val targetCenterX = c[0] + centerFromTrackXSized(tW)
+        val targetCenterY = c[1] + centerFromTrackYSized(tH)
 
         if (abs(curCenterX() - targetCenterX) < 1f && abs(curCenterY() - targetCenterY) < 1f) {
             anchorX = targetCenterX
