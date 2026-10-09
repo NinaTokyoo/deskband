@@ -80,6 +80,15 @@ object PetState {
     /** 是不是"躺在侧边"的形态（垂直居中，不贴底） */
     fun isZoneless(state: Int) = isUprightVariant(state)
 
+    /**
+     * 这个状态算不算"吸附在边上"。
+     * 用来决定从该状态起拖时要不要加阻尼 —— 贴边的宠物才需要"脱开"手感。
+     */
+    fun isAttachedState(state: Int): Boolean = when (state) {
+        BORDER_R, BORDER_L, BORDER_R_UPRIGHT, BORDER_L_UPRIGHT, CORNER_BR, CORNER_BL -> true
+        else -> false
+    }
+
     fun isLeft(state: Int): Boolean = when (state) {
         CORNER_BL, BORDER_L, BORDER_L_UPRIGHT -> true
         else -> false
@@ -145,26 +154,33 @@ object PetState {
     /**
      * 该用哪个状态（同时决定素材与旋转）。
      *
-     * 用户规则：**从其余三区进入 A 区时，直接由「正立素材」切换为对应的「右下角」素材**，
-     * 没有过渡。BE 之间保留旋转特性。
+     *   A 区 -> 角落素材，正立
+     *   B 区 -> 正立素材，**贴边时旋转 90°**（恢复左右边框旋转吸附）
+     *   C 区 -> 正立素材，正立（贴底，头朝上）
+     *   E 区 -> 正立素材；是否旋转由 [rotationForE] 看右侧有没有越界
      */
     fun stateForZone(zone: Int, leftHalf: Boolean): Int = when (zone) {
         ZONE_A -> if (leftHalf) CORNER_BL else CORNER_BR
-        ZONE_B, ZONE_C -> if (leftHalf) BORDER_L_UPRIGHT else BORDER_R_UPRIGHT
-        // E：正立素材；是否旋转由 rotationForE 单独判断（看右侧有没有越界）
+        ZONE_B -> if (leftHalf) BORDER_L else BORDER_R
+        ZONE_C -> if (leftHalf) BORDER_L_UPRIGHT else BORDER_R_UPRIGHT
         else -> if (leftHalf) BORDER_L_UPRIGHT else BORDER_R_UPRIGHT
     }
 
     /**
-     * E 区是否需要旋转。
+     * E 区是否旋转 —— 用户规则：**以图片右侧为准，右侧越界则旋转**。
      *
-     * 用户规则：**以图片右侧为准，若右侧越界则旋转**。没有过渡区域。
+     * 注意不能拿"右边离屏幕右侧的距离"判断：素材本来就只有半屏宽，
+     * 那样永远不越界、就永远不转了（踩过这个坑）。
+     * 正确的判据是：**正立摆放时素材右边缘有没有超出屏幕右边界**。
      *
-     * @param restRight 正立摆放时素材右边缘的屏幕 x 坐标
+     * @param x         宠物格子左上角的屏幕 x
+     * @param uprightW  正立时格子的宽度
      */
-    fun eRotation(leftHalf: Boolean, restRight: Float, screenW: Float): Float =
-        if (restRight <= screenW + 0.5f) 0f
-        else if (leftHalf) rotationForSnap(BORDER_L) else rotationForSnap(BORDER_R)
+    fun eRotation(leftHalf: Boolean, x: Float, uprightW: Float, screenW: Float): Float {
+        val overflows = (x + uprightW) > screenW + 0.5f
+        if (!overflows) return 0f
+        return if (leftHalf) rotationForSnap(BORDER_L) else rotationForSnap(BORDER_R)
+    }
 
     // ---------------------------------------------------------------- 距离
 

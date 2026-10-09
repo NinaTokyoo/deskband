@@ -150,10 +150,22 @@ class PetView(context: Context) : View(context) {
     private var tweenToX = 0f
     private var tweenToY = 0f
     private var tweenStart = 0L
+    private var tweenMs = SNAP_MS
+
+    // ---- 跨半屏的镜像翻转动画 ----
+    /** 0 = 未翻转，1 = 已翻转；中间值即翻转过程 */
+    private var flip = 0f
+    private var flipFrom = 0f
+    private var flipTo = 0f
+    private var flipStart = 0L
+    private var flipRunning = false
 
     private var dragging = false
     private var dragOffsetX = 0f
     private var dragOffsetY = 0f
+
+    /** 这次拖动是不是"从吸附状态脱开"，决定要不要加阻尼 */
+    private var dragFromSnap = false
     private var downRawX = 0f
     private var downRawY = 0f
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
@@ -169,7 +181,7 @@ class PetView(context: Context) : View(context) {
             val now = SystemClock.uptimeMillis()
 
             if (tweening) {
-                val t = ((now - tweenStart).toFloat() / SNAP_MS).coerceIn(0f, 1f)
+                val t = ((now - tweenStart).toFloat() / tweenMs).coerceIn(0f, 1f)
                 val e = easeOutCubic(t)
                 anchorX = tweenFromX + (tweenToX - tweenFromX) * e
                 anchorY = tweenFromY + (tweenToY - tweenFromY) * e
@@ -177,6 +189,15 @@ class PetView(context: Context) : View(context) {
                     anchorX = tweenToX
                     anchorY = tweenToY
                     tweening = false
+                }
+                need = true
+            }
+            if (flipRunning) {
+                val t = ((now - flipStart).toFloat() / FLIP_MS).coerceIn(0f, 1f)
+                flip = flipFrom + (flipTo - flipFrom) * easeOutCubic(t)
+                if (t >= 1f) {
+                    flip = flipTo
+                    flipRunning = false
                 }
                 need = true
             }
@@ -201,20 +222,38 @@ class PetView(context: Context) : View(context) {
         tweening = false
     }
 
-    private fun startTween(toX: Float, toY: Float) {
-        if (abs(anchorX - toX) < 1f && abs(anchorY - toY) < 1f) {
+    /** 平滑移动到目标位置；任何"宠物自己动"的地方都走这里 */
+    fun animateTo(toX: Float, toY: Float, durationMs: Long = SNAP_MS.toLong()) {
+        tweenFromX = anchorX
+        tweenFromY = anchorY
+        tweenToX = toX
+        tweenToY = toY
+        if (abs(anchorX - toX) < 0.5f && abs(anchorY - toY) < 0.5f) {
             anchorX = toX
             anchorY = toY
             tweening = false
             invalidate()
             return
         }
-        tweenFromX = anchorX
-        tweenFromY = anchorY
-        tweenToX = toX
-        tweenToY = toY
+        tweenMs = durationMs.toFloat()
         tweenStart = SystemClock.uptimeMillis()
         tweening = true
+        handler.removeCallbacks(ticker)
+        handler.post(ticker)
+    }
+
+    private fun startTween(toX: Float, toY: Float) = animateTo(toX, toY)
+
+    /** 跨半屏时的镜像翻转动画 */
+    private fun startFlip(target: Float) {
+        if (abs(flip - target) < 0.01f && !flipRunning) {
+            flip = target
+            return
+        }
+        flipFrom = flip
+        flipTo = target
+        flipStart = SystemClock.uptimeMillis()
+        flipRunning = true
         handler.removeCallbacks(ticker)
         handler.post(ticker)
     }
@@ -322,6 +361,12 @@ class PetView(context: Context) : View(context) {
         val hop = hopOffset()
         dy -= hop
 
+        // 反掉翻转动画的水平压缩
+        if (flip > 0.001f && flip < 0.999f) {
+            val squash = abs(1f - 2f * flip).coerceAtLeast(0.03f)
+            dx /= squash
+        }
+
         val rot = PetState.rotationForSnap(state)
         if (abs(rot) > 0.01f) {
             val rad = Math.toRadians(-rot.toDouble())
@@ -370,6 +415,8 @@ class PetView(context: Context) : View(context) {
                 dragOffsetY = 0f
                 dragging = false
                 cancelTween()
+                // 吸附状态（贴边）起步才加阻尼；空中起拖直接 1:1 跟手
+                dragFromSnap = PetState.isAttachedState(state)
                 return true
             }
 
@@ -378,8 +425,11 @@ class PetView(context: Context) : View(context) {
                 val dy = event.rawY - downRawY
                 if (!dragging && (abs(dx) > touchSlop || abs(dy) > touchSlop)) dragging = true
                 if (dragging) {
-                    dragOffsetX = dx
-                    dragOffsetY = dy
+                    // 严格跟手；只有"刚从吸附状态脱开"那一下带一点阻尼，
+                    // 免得贴边的宠物被轻轻一碰就弹走。
+                    val f = dampFactor(dx, dy)
+                    dragOffsetX = dx * f
+                    dragOffsetY = dy * f
                     updateDragState()
                     placeWindow()
                     invalidate()
@@ -405,21 +455,45 @@ class PetView(context: Context) : View(context) {
         return super.onTouchEvent(event)
     }
 
-    /** 拖动过程中刷新状态（素材与旋转随之变化，没有中间角度） */
-    private fun updateDragState() {
+    /**
+     * 拖动阻尼系数：严格跟手时返回 1。
+     *
+     * 只有当**这次拖动是从吸附状态开始的**才加阻尼 —— 已经拖在空中的宠物
+     * 再拖就是 1:1 跟手，不该有粘滞感。
+     *
+     * 阻尼期内的总让位是固定的 [DAMP_TAIL_PX]：
+     *   手指走 DAMP_HEAD_PX 时宠物才开始让位，
+     *   让位到 DAMP_TAIL_PX（总位移约 DAMP_FULL_PX）时阻尼结束，之后 1:1。
+     * 这样"脱开那一下"的手感是确定的，不随手指速度变化。
+     */
+    private fun dampFactor(dx: Float, dy: Float): Float {
+        if (!dragFromSnap) return 1f
+        val d = kotlin.math.hypot(dx, dy)
+        if (d >= DAMP_FULL_PX) return 1f
+        if (d <= DAMP_HEAD_PX) return DAMP_TAIL_PX / DAMP_HEAD_PX
+        val t = (d - DAMP_HEAD_PX) / (DAMP_FULL_PX - DAMP_HEAD_PX)
+        val eased = t * t * (3f - 2f * t)
+        val m = DAMP_TAIL_PX / DAMP_HEAD_PX
+        return m + (1f - m) * eased
+    }
+
+    /** 拖动过程中刷新状态（素材与旋转随之变化，没有中间角度） */    private fun updateDragState() {
         val b = host?.bounds() ?: return
         val x = curX()
         val y = curY()
         val leftHalf = (x + trackW / 2f) < b.width() / 2f
+
+        // 跨半屏 -> 触发镜像翻转动画
+        startFlip(if (leftHalf) 1f else 0f)
+
         val db = PetState.bottomDist(y, trackH.toFloat(), b.height().toFloat())
         val dr = PetState.sideDist(x, trackW.toFloat(), b.width().toFloat(), leftHalf)
 
         val zone = PetState.zoneOf(db, dr, leftHalf)
         var st = PetState.stateForZone(zone, leftHalf)
-        // E 区：正立摆放时右侧越界 -> 转 90°
+        // E 区：正立摆放时右边缘超出屏幕 -> 转 90°
         if (zone == PetState.ZONE_E) {
-            val restRight = x + trackW
-            val rot = PetState.eRotation(leftHalf, restRight, b.width().toFloat())
+            val rot = PetState.eRotation(leftHalf, x, cellW.toFloat(), b.width().toFloat())
             if (rot != 0f) st = if (leftHalf) PetState.BORDER_L else PetState.BORDER_R
         }
         setState(st)
@@ -437,11 +511,16 @@ class PetView(context: Context) : View(context) {
         val zone = PetState.zoneOf(db, dr, leftHalf)
         var st = PetState.stateForZone(zone, leftHalf)
         if (zone == PetState.ZONE_E) {
-            val rot = PetState.eRotation(leftHalf, x + trackW, b.width().toFloat())
+            val rot = PetState.eRotation(leftHalf, x, cellW.toFloat(), b.width().toFloat())
             if (rot != 0f) st = if (leftHalf) PetState.BORDER_L else PetState.BORDER_R
         }
         state = st
         cacheSizes()
+        // 吸附完成时翻转值要对齐到所在半屏，避免残影
+        flip = if (leftHalf) 1f else 0f
+        flipFrom = flip
+        flipTo = flip
+        flipRunning = false
 
         val target = PetState.snapPosition(
             x, y, trackW.toFloat(), trackH.toFloat(), db, dr,
@@ -479,6 +558,11 @@ class PetView(context: Context) : View(context) {
         val save = canvas.save()
         canvas.translate(0f, hop)
         if (abs(rot) > 0.01f) canvas.rotate(rot, cx, cy)
+        // 跨半屏的镜像翻转：中途压成一条线再展开，做出"翻面"观感
+        if (flip > 0.001f && flip < 0.999f) {
+            val squash = abs(1f - 2f * flip).coerceAtLeast(0.03f)
+            canvas.scale(squash, 1f, cx, cy)
+        }
 
         val bmp = bitmapFor(state) ?: run {
             canvas.restoreToCount(save)
@@ -567,8 +651,19 @@ class PetView(context: Context) : View(context) {
         private const val FRAME_MS = 16L
         private const val HIT_ALPHA_MIN = 16
         private const val SNAP_MS = 220f
+        private const val FLIP_MS = 200f
         private const val HOP_MS = 380f
         private const val HOP_FRACTION = 0.08f
+
+        /**
+         * 拖动阻尼：刚脱离吸附时先走一段"带阻力"的位移。
+         *
+         * 阻尼期总位移固定为 [DAMP_TAIL_PX]（手指走多远，宠物最终都只让出这么多），
+         * 这样"脱开手感"是确定的，不受手指速度影响。
+         */
+        const val DAMP_HEAD_PX = 26f
+        const val DAMP_TAIL_PX = 14f
+        const val DAMP_FULL_PX = 64f
 
         /** 窗口给"轻跳"和四角旋转留的余量，避免边缘被切 */
         const val HOP_PAD_X = 8

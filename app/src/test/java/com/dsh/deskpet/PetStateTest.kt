@@ -131,14 +131,33 @@ class PetStateTest {
     }
 
     @Test
-    fun E_rotates_only_when_the_right_edge_would_overflow() {
-        // 正立右边缘还在屏幕内 -> 不转
-        assertEquals(0f, PetState.eRotation(false, 1400f, SW), 0.001f)
-        assertEquals(0f, PetState.eRotation(false, SW, SW), 0.001f)
-        // 越界 -> 转
-        assertEquals(-90f, PetState.eRotation(false, 1500f, SW), 0.001f)
-        // 左半屏镜像
-        assertEquals(90f, PetState.eRotation(true, 1500f, SW), 0.001f)
+    fun B_rotates_when_snapped_to_the_side() {
+        // 恢复"左右边框旋转吸附"：B 区是旋转形态
+        assertEquals(PetState.BORDER_R, PetState.stateForZone(PetState.ZONE_B, false))
+        assertEquals(PetState.BORDER_L, PetState.stateForZone(PetState.ZONE_B, true))
+        assertEquals(-90f, PetState.rotationForSnap(PetState.BORDER_R), 0.001f)
+        assertEquals(90f, PetState.rotationForSnap(PetState.BORDER_L), 0.001f)
+        // 用的是正立素材那张图
+        assertTrue(PetState.usesBorderArt(PetState.BORDER_R))
+    }
+
+    @Test
+    fun C_is_upright_and_does_not_rotate() {
+        val c = PetState.stateForZone(PetState.ZONE_C, false)
+        assertTrue(PetState.isUprightVariant(c))
+        assertEquals(0f, PetState.rotationForSnap(c), 0.001f)
+    }
+
+    @Test
+    fun E_rotates_only_when_the_upright_box_would_overflow() {
+        val w = 400f   // 正立格子宽
+        // 右边缘还在屏幕内 -> 不转
+        assertEquals(0f, PetState.eRotation(false, 1000f, w, SW), 0.001f)
+        assertEquals(0f, PetState.eRotation(false, SW - w, w, SW), 0.001f)
+        // 右边缘越界 -> 转（右侧 -90）
+        assertEquals(-90f, PetState.eRotation(false, SW - w + 10f, w, SW), 0.001f)
+        // 左半屏镜像 -> +90
+        assertEquals(90f, PetState.eRotation(true, SW - w + 10f, w, SW), 0.001f)
     }
 
     @Test
@@ -160,6 +179,16 @@ class PetStateTest {
         // 符号是实测定的
         assertEquals(-90f, PetState.rotationForSnap(PetState.BORDER_R), 0.001f)
         assertEquals(90f, PetState.rotationForSnap(PetState.BORDER_L), 0.001f)
+    }
+
+    @Test
+    fun attached_states_are_recognised_for_drag_damping() {
+        // 吸附状态起步才加阻尼
+        assertTrue(PetState.isAttachedState(PetState.BORDER_R))
+        assertTrue(PetState.isAttachedState(PetState.BORDER_L))
+        assertTrue(PetState.isAttachedState(PetState.BORDER_R_UPRIGHT))
+        assertTrue(PetState.isAttachedState(PetState.CORNER_BR))
+        assertTrue(PetState.isAttachedState(PetState.CORNER_BL))
     }
 
     // ---------------------------------------------------------- 吸附
