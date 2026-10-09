@@ -593,13 +593,18 @@ class PetView(context: Context) : View(context) {
         val willRotate = abs(prevRot - newRot) > 0.01f
 
         if (!willRotate) {
-            // 又拖回不需要旋转的形态：取消进行中的旋转动画，直接归位
-            if (frozen || rotAnimRunning) {
-                rotAnimRunning = false
+            // 又拖回不需要旋转的形态。
+            //
+            // ⚠️ 这里**不能硬切**：正向过界是 180ms 动画，反向却瞬间落值的话，
+            // 手指在分界线附近来回时就是"动画->硬切->动画->硬切"，明显抽搐。
+            // 所以正在转的过程中转回来，就反向播动画回去。
+            state = newState
+            if (rotAnimRunning) {
+                startRotAnim(shownRotation, newRot)
+            } else {
                 frozen = false
                 shownRotation = newRot
             }
-            state = newState
             cacheSizesKeepingCenter()
             placeWindow()
             return
@@ -610,9 +615,13 @@ class PetView(context: Context) : View(context) {
             frozenRot = prevRot
             frozen = true
         }
+        // ⚠️ 已经在朝**同一个角度**转，就不要重启动画。
+        // 拖动时状态可能反复切换，每次都重置计时起点会让 180ms 的动作走不完
+        // （与镜像翻转那个"太慢"的 bug 同源）。
+        val sameTarget = rotAnimRunning && abs(rotAnimTo - newRot) < 0.01f
         state = newState
         cacheSizes()
-        startRotAnim(prevShown, newRot)
+        if (!sameTarget) startRotAnim(prevShown, newRot)
         placeWindow()
     }
 

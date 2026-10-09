@@ -1,0 +1,35 @@
+修掉旋转抽搐：去程有动画回程硬切 + 旋转动画被反复重启
+
+用户问"旋转的时候还会抽搐，是什么原因"。查 setDragState 找到两个原因：
+
+## 原因 1：非对称 —— 去程动画、回程硬切
+
+if (!willRotate) 分支原来是
+    rotAnimRunning = false
+    frozen = false
+    shownRotation = newRot      // 直接落值
+正向过界走 180ms 动画，反向回来却瞬间硬切。
+手指在分界线附近来回时就是"动画->硬切->动画->硬切"，明显抽搐。
+
+修法：正在转的过程中转回来，就**反向播动画回去**
+    if (rotAnimRunning) startRotAnim(shownRotation, newRot)
+    else { frozen = false; shownRotation = newRot }
+（startRotAnim 在 from≈to 时会 early-return 并调 onRotationDone 解冻，安全）
+
+## 原因 2：旋转动画可被反复重启
+
+willRotate 分支原来无条件 startRotAnim(prevShown, newRot)，
+状态一抖就把 180ms 的计时起点重置，动画永远走不完 -> 爬行。
+这与之前镜像翻转"太慢"是同一类 bug。
+
+修法：已经在朝同一个角度转就不重启
+    val sameTarget = rotAnimRunning && abs(rotAnimTo - newRot) < 0.01f
+    if (!sameTarget) startRotAnim(prevShown, newRot)
+
+25 个单测全绿。
+
+## 另注（尚未处理，待确认是否也是抽搐来源）
+
+贴侧边时跨中线会让状态从 BORDER_R 变 BORDER_L，旋转角 -90 -> +90，
+是 180° 的扫掠（会经过 0°）。若用户看到的抽搐是"转一大圈"，
+需要另行处理（例如跨中线时角度不插值、直接配合镜像翻转切换）。
