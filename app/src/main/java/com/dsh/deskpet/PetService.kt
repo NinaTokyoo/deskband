@@ -94,13 +94,6 @@ class PetService : Service(), PetView.Host {
                 reloadPet()
                 return START_STICKY
             }
-            ACTION_PREVIEW_ZONE -> {
-                // App 里正在调 A 区大小：同步新尺寸并闪一下指示线
-                prefs.applyZoneSize()
-                petView?.syncWindow()
-                petView?.flashGuides()
-                return START_STICKY
-            }
         }
 
         if (!Settings.canDrawOverlays(this)) {
@@ -362,22 +355,6 @@ class PetService : Service(), PetView.Host {
 
         const val ACTION_STOP = "com.dsh.deskpet.action.STOP"
         const val ACTION_RELOAD = "com.dsh.deskpet.action.RELOAD"
-        const val ACTION_PREVIEW_ZONE = "com.dsh.deskpet.action.PREVIEW_ZONE"
-
-        /** App 里调 A 区大小时调用：同步尺寸 + 闪指示线 */
-        fun previewZone(context: Context) {
-            if (!Prefs(context).running) return
-            val i = Intent(context, PetService::class.java).setAction(ACTION_PREVIEW_ZONE)
-            try {
-                if (Build.VERSION.SDK_INT >= 26) {
-                    context.startForegroundService(i)
-                } else {
-                    context.startService(i)
-                }
-            } catch (e: Exception) {
-                // 忽略
-            }
-        }
 
         fun start(context: Context) {
             val i = Intent(context, PetService::class.java)

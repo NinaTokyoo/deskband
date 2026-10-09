@@ -540,13 +540,6 @@ class PetView(context: Context) : View(context) {
                 if (t >= 1f) hopping = false
                 need = true
             }
-            if (guideVisible()) {
-                need = true
-            } else if (lastWinW == (host?.bounds()?.width() ?: -2)) {
-                // 指示线刚消失：把窗口收回宠物大小
-                restoreWindowSize()
-                need = true
-            }
             invalidate()
             if (need) scheduleFrame()
         }
@@ -764,30 +757,13 @@ class PetView(context: Context) : View(context) {
     fun currentLeft(): Int = curTrackLeft().roundToInt()
     fun currentTop(): Int = curTrackTop().roundToInt()
 
-    private fun guideVisible(): Boolean = SystemClock.uptimeMillis() < guideUntil
-
     /**
-     * 把窗口挪到与格子对齐的位置，并在需要时调整窗口尺寸。
+     * 把窗口挪到与素材中心点对齐的位置，并在需要时调整窗口尺寸。
      *
      * 窗口尺寸只在**状态/尺寸真的变了**的时候才调用 updateViewLayout 改，
      * 纯移动不会触发 resize —— 否则拖动时每帧 resize 一次，卡到不能用。
-     *
-     * 例外：显示 A 区指示线时窗口临时撑满整屏（线要横跨全屏）。
-     * 那几秒用户在 App 里调参数，短暂的整屏窗口可以接受。
      */
     private fun placeWindow() {
-        val guides = guideVisible()
-        val b = host?.bounds()
-        if (guides && b != null) {
-            val x = 0
-            val y = 0
-            val w = b.width()
-            val h = b.height()
-            if (x == lastWinX && y == lastWinY && w == lastWinW && h == lastWinH) return
-            lastWinX = x; lastWinY = y; lastWinW = w; lastWinH = h
-            host?.placeWindow(x, y, w, h)
-            return
-        }
         // 以**素材中心点**反推窗口位置：中心点定点不动，尺寸变了也不会横移
         val x = (curCenterX() - centerInWindowX()).roundToInt()
         val y = (curCenterY() - centerInWindowY()).roundToInt()
@@ -797,12 +773,6 @@ class PetView(context: Context) : View(context) {
         lastWinW = bboxW
         lastWinH = bboxH
         host?.placeWindow(x, y, bboxW, bboxH)
-    }
-
-    /** 指示线消失后要把窗口收回宠物大小 */
-    private fun restoreWindowSize() {
-        lastWinW = -1
-        placeWindow()
     }
 
     /** 把窗口尺寸同步过来（大小变了之后必须调用，否则宠物会超出窗口点不到） */
@@ -1256,9 +1226,6 @@ class PetView(context: Context) : View(context) {
         }
         canvas.drawBitmap(bmp, cellLocalX(), cellLocalY(), paint)
         canvas.restoreToCount(save)
-
-        // A 区指示线画在最上层
-        if (guideVisible()) drawGuides(canvas)
     }
 
     /** 息屏时停表省电 */
@@ -1268,45 +1235,6 @@ class PetView(context: Context) : View(context) {
         if (paused == p) return
         paused = p
         if (p) choreographer.removeFrameCallback(frameCallback) else invalidate()
-    }
-
-    // ---------------------------------------------------------------- A 区指示线
-
-    private var guideUntil = 0L
-    private val guidePaint = Paint().apply {
-        color = 0xFFE53935.toInt()   // 细红线
-        strokeWidth = 3f
-        style = Paint.Style.STROKE
-        isAntiAlias = true
-    }
-
-    /**
-     * 显示 A 区指示线：左侧那条是"离侧边 aW"，上侧那条是"离底边 aH"。
-     *
-     * 只在用户调 A 区大小时短暂显示，方便对照。
-     */
-    fun flashGuides(durationMs: Long = 2500L) {
-        guideUntil = SystemClock.uptimeMillis() + durationMs
-        invalidate()
-        choreographer.removeFrameCallback(frameCallback)
-        scheduleFrame()
-    }
-
-    private fun drawGuides(canvas: Canvas) {
-        val now = SystemClock.uptimeMillis()
-        if (now >= guideUntil) return
-        val b = host?.bounds() ?: return
-        val aw = PetState.currentAW
-        val ah = PetState.currentAH
-
-        // 竖线：右侧 A 区左边界 = 屏宽 - aw；左侧镜像 = aw
-        val rightHalf = !PetState.isLeft(state)
-        val xLine = if (rightHalf) b.width() - aw else aw
-        canvas.drawLine(xLine, 0f, xLine, b.height().toFloat(), guidePaint)
-
-        // 横线：A 区上边界 = 屏高 - ah
-        val yLine = b.height() - ah
-        canvas.drawLine(0f, yLine, b.width().toFloat(), yLine, guidePaint)
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {

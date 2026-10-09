@@ -51,8 +51,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         prefs = Prefs(this)
-        // 把保存的 A 区尺寸同步进状态机，后续分区判定都用它
-        prefs.applyZoneSize()
+        // 分区几何用 PetState 里的固定默认值（A 区尺寸调节功能已取消）
 
         txtOverlayStatus = findViewById(R.id.txtOverlayStatus)
         btnOverlay = findViewById(R.id.btnOverlay)
@@ -232,15 +231,6 @@ class MainActivity : Activity() {
         }
     }
 
-    // ---------------------------------------------------------------- A 区调节
-
-    /**
-     * A 区尺寸调节：滑块 + 数字输入框，两者双向同步。
-     *
-     * 调 A 的同时 B / C 会跟着变（B 左侧对齐 A 左侧，C 上侧对齐 A 上侧），
-     * 所以这里只需要改 A 的宽高两个数。
-     * 调整过程中会通知服务闪一下红色指示线，方便对照。
-     */
     // ---------------------------------------------------------------- 回弹调节
 
     /**

@@ -82,31 +82,6 @@ class Prefs(context: Context) {
             .apply()
     }
 
-    /** A 区横向尺寸（离吸附侧边），可调 */
-    var zoneW: Float
-        get() = sp.getFloat(KEY_ZONE_W, PetState.A_W_DEFAULT)
-            .coerceIn(PetState.A_W_MIN, PetState.A_W_MAX)
-        set(v) {
-            sp.edit().putFloat(
-                KEY_ZONE_W, v.coerceIn(PetState.A_W_MIN, PetState.A_W_MAX)
-            ).apply()
-        }
-
-    /** A 区纵向尺寸（离底边），可调 */
-    var zoneH: Float
-        get() = sp.getFloat(KEY_ZONE_H, PetState.A_H_DEFAULT)
-            .coerceIn(PetState.A_H_MIN, PetState.A_H_MAX)
-        set(v) {
-            sp.edit().putFloat(
-                KEY_ZONE_H, v.coerceIn(PetState.A_H_MIN, PetState.A_H_MAX)
-            ).apply()
-        }
-
-    /** 把当前设置同步进状态机 */
-    fun applyZoneSize() {
-        PetState.setZoneSize(zoneW, zoneH)
-    }
-
     /**
      * 回弹幅度**倍率**（用户可调，0.1~10）。
      *
@@ -147,8 +122,6 @@ class Prefs(context: Context) {
         private const val KEY_LEFT = "pos_left"
         private const val KEY_TOP = "pos_top"
         private const val KEY_HAS_POS = "has_pos"
-        private const val KEY_ZONE_W = "zone_w"
-        private const val KEY_ZONE_H = "zone_h"
         private const val KEY_BOUNCE_AMP = "bounce_amp_scale"
         private const val KEY_BOUNCE_TIME = "bounce_time_scale"
 
