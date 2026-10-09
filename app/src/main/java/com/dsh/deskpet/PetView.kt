@@ -97,6 +97,32 @@ class PetView(context: Context) : View(context) {
     private var boxOffX = 0
     private var boxOffY = 0
 
+    /** 素材格子在足迹盒内的偏移（让格子居中于足迹盒） */
+    private var cellOffX = 0
+    private var cellOffY = 0
+
+    /**
+     * **素材中心点**在位图里的相对位置（0..1）。
+     *
+     * 按 alpha 外接框算，而不是简单取一半 —— 格子是矩形，人物不一定居中，
+     * 只有按真实像素范围取中心，旋转时才是"绕人物自己转"。
+     */
+    private var artU = 0.5f
+    private var artV = 0.5f
+
+    /**
+     * 旋转动画期间是否"冻结"尺寸。
+     *
+     * 冻结时 [sizeRotation] 返回 [frozenRot]（旧朝向），
+     * 于是格子宽高与窗口尺寸在整段动画里不变，只有画布在转。
+     * 这样素材中心点的屏幕位置才不会因为尺寸互换而平移一截。
+     */
+    private var frozen = false
+    private var frozenRot = 0f
+
+    /** 当前足迹尺寸所对应的旋转角（未冻结时随状态更新） */
+    private var curSizeRot = 0f
+
     private fun cacheSizes() {
         val s = sprite ?: return
         val screenH = (host?.bounds()?.height() ?: 1080).toFloat()
@@ -106,7 +132,7 @@ class PetView(context: Context) : View(context) {
         cellW = cell[0]
         cellH = cell[1]
 
-        val rot = PetState.rotationForSnap(state)
+        val rot = sizeRotation()
         val q = ((rot % 360f) + 360f) % 360f
         val rotated = q == 90f || q == 270f
         trackW = if (rotated) cellH else cellW
@@ -117,44 +143,140 @@ class PetView(context: Context) : View(context) {
         bboxH = trackH + HOP_PAD_TOP + HOP_PAD_BOTTOM
         boxOffX = HOP_PAD_X
         boxOffY = HOP_PAD_TOP
+
+        // 格子在足迹盒里居中：旋转后格子比足迹宽，必须居中，
+        // 否则绕格子中心转出来的内容会偏出窗口被切掉。
+        cellOffX = (trackW - cellW) / 2
+        cellOffY = (trackH - cellH) / 2
+
+        artU = 0.5f
+        artV = 0.5f
+        runCatching {
+            val bmp = bitmapFor(state) ?: return@runCatching
+            val b = alphaBounds(bmp)
+            if (b != null && b[2] > b[0] && b[3] > b[1]) {
+                artU = (b[0] + b[2]) / 2f / bmp.width
+                artV = (b[1] + b[3]) / 2f / bmp.height
+            }
+        }
+
+        // 未冻结时记录"当前足迹对应的朝向"，供下一次冻结使用
+        if (!frozen) curSizeRot = PetState.rotationForSnap(state)
+    }
+
+    /**
+     * 逐像素扫出 alpha 外接框 [l, t, r, b]。
+     *
+     * Bitmap 没有现成的 alpha bounds API，所以自己扫；
+     * 带步长抽样（每 3px 取一个点）足够定中心，且只在状态切换时算一次。
+     */
+    private fun alphaBounds(bmp: Bitmap): IntArray? {
+        val w = bmp.width
+        val h = bmp.height
+        if (w <= 0 || h <= 0) return null
+        var l = w
+        var t = h
+        var r = -1
+        var b = -1
+        val step = 3
+        val row = IntArray(w)
+        var y = 0
+        while (y < h) {
+            runCatching { bmp.getPixels(row, 0, w, 0, y, w, 1) }.getOrNull() ?: break
+            var x = 0
+            while (x < w) {
+                if (((row[x] ushr 24) and 0xFF) >= HIT_ALPHA_MIN) {
+                    if (x < l) l = x
+                    if (x > r) r = x
+                    if (y < t) t = y
+                    if (y > b) b = y
+                }
+                x += step
+            }
+            y += step
+        }
+        return if (r < 0) null else intArrayOf(l, t, r, b)
+    }
+
+    /** 素材格子在窗口内的左上角（含轻跳余量） */
+    private fun cellLocalX(): Float = (boxOffX + cellOffX).toFloat()
+    private fun cellLocalY(): Float = (boxOffY + cellOffY).toFloat()
+
+    /** 素材中心点在窗口内的偏移（相对窗口左上角） */
+    private fun centerInWindowX(): Float = cellLocalX() + artU * cellW
+    private fun centerInWindowY(): Float = cellLocalY() + artV * cellH
+
+    /** 素材中心点相对"足迹盒左上角"的偏移 —— 换算贴边坐标用 */
+    private fun centerFromTrackX(): Float = centerInWindowX() - boxOffX
+    private fun centerFromTrackY(): Float = centerInWindowY() - boxOffY
+
+    /**
+     * 尺寸变化后，**保持素材中心点的屏幕位置不变**。
+     *
+     * 拖动过程中状态切换会让足迹尺寸互换（如 541x463 -> 463x541），
+     * 若不补偿，中心点会横向平移约 39px —— 那就是"抽一下"。
+     */
+    private fun cacheSizesKeepingCenter() {
+        val oldFromTrackX = centerFromTrackX()
+        val oldFromTrackY = centerFromTrackY()
+        val cx = anchorX + oldFromTrackX
+        val cy = anchorY + oldFromTrackY
+        cacheSizes()
+        anchorX = cx - centerFromTrackX()
+        anchorY = cy - centerFromTrackY()
     }
 
     fun setSizeFraction(f: Float) {
         sizeFrac = f.coerceIn(0.05f, 0.9f)
-        val oldW = trackW
-        val oldH = trackH
+        // 缩放前先记下**吸附边的屏幕位置**
+        val oldLeft = curTrackLeft()
+        val oldTop = curTrackTop()
+        val oldRight = oldLeft + trackW
+        val oldBottom = oldTop + trackH
+        val oldCenterY = curCenterY()
+
         cacheSizes()
+
         // 以**吸附边**为基准缩放：
-        //   贴底/角落 -> 底边不动（否则缩小后会浮空）
-        //   贴侧边    -> 吸附的那一侧不动（否则放大后会超出屏幕）
-        // 不这样做的话，缩放会让宠物围绕左上角变化，出现浮空或显示不全。
+        //   贴底 / 角落 -> 底边不动（否则缩小后会浮空）
+        //   贴侧边      -> 吸附的那一侧不动（否则放大后会超出屏幕）
         val b = host?.bounds()
         if (b != null) {
-            if (PetState.isLeft(state)) {
-                // 贴左边：左边固定，无需动 x
+            // 横向：贴左则左边不动，贴右则右边不动
+            anchorX = if (PetState.isLeft(state)) {
+                oldLeft + centerFromTrackX()
             } else {
-                // 贴右边：右边固定
-                anchorX += (oldW - trackW).toFloat()
+                oldRight - trackW + centerFromTrackX()
             }
-            // 纵向上：贴底/角落的底边固定；侧边形态是垂直居中的，上下都补一半
-            if (PetState.isUprightVariant(state) || state == PetState.BORDER_R ||
-                state == PetState.BORDER_L
-            ) {
-                anchorY += (oldH - trackH) / 2f
+            // 纵向：贴底 / 角落 -> 底边不动；侧边形态垂直居中 -> 中心不动
+            anchorY = if (state == PetState.BORDER_R || state == PetState.BORDER_L) {
+                oldCenterY
             } else {
-                anchorY += (oldH - trackH).toFloat()
+                oldBottom - trackH + centerFromTrackY()
             }
         }
+        dragOffsetX = 0f
+        dragOffsetY = 0f
+        cancelTween()
         syncWindow()
     }
 
     fun setState(newState: Int) {
         if (state == newState) return
-        val prevRot = PetState.rotationForSnap(state)
+        val prevRot = curSizeRot
+        val newRot = PetState.rotationForSnap(newState)
+        val willRotate = abs(prevRot - newRot) > 0.01f
+        if (willRotate) {
+            frozenRot = prevRot
+            frozen = true
+        } else {
+            frozen = false
+            rotAnimRunning = false
+        }
         state = newState
         cacheSizes()
-        val newRot = PetState.rotationForSnap(newState)
-        if (abs(prevRot - newRot) > 0.01f) startRotAnim(prevRot, newRot)
+        if (willRotate) startRotAnim(shownRotation, newRot)
+        placeWindow()
         invalidate()
     }
 
@@ -222,6 +344,9 @@ class PetView(context: Context) : View(context) {
     /** 松手后待生效的状态（补间结束才应用） */
     private var pendingState: Int? = null
 
+    /** 松手时旋转还没转完，等转完再做吸附定位 */
+    private var pendingSettle = false
+
     /** 上一次的区号，用于 B/E 分界的滞回判定 */
     private var lastZone = PetState.ZONE_E
 
@@ -265,6 +390,8 @@ class PetView(context: Context) : View(context) {
                 if (t >= 1f) {
                     shownRotation = rotAnimTo
                     rotAnimRunning = false
+                    // 转完了才解锁尺寸，并保持中心点不动
+                    onRotationDone()
                 }
                 need = true
             }
@@ -325,6 +452,8 @@ class PetView(context: Context) : View(context) {
         if (abs(from - to) < 0.01f) {
             shownRotation = to
             rotAnimRunning = false
+            // 没真正开始转，必须立刻解冻 —— 否则尺寸会被永久锁在旧朝向
+            onRotationDone()
             return
         }
         rotAnimFrom = from
@@ -338,25 +467,78 @@ class PetView(context: Context) : View(context) {
     /**
      * 拖动中切换状态：**旋转走动画**，避免在 B/E 分界线附近来回闪。
      *
-     * 位置不做补间（拖动本来就跟手），只平滑角度。
+     * ⚠️ 顺序很重要：**先冻结尺寸（记住旧朝向），再换状态**。
+     *
+     * 否则换状态那一下足迹尺寸立刻互换，素材中心点会平移一截，
+     * 看起来就是"旋转时抽一下"。冻结之后整段动画里只有画布在转，
+     * 尺寸与窗口都保持不变，中心点也就不动。
      */
     private fun setDragState(newState: Int) {
         if (state == newState) return
-        val prevRot = PetState.rotationForSnap(state)
+        val prevRot = curSizeRot
         val prevShown = shownRotation
+        val newRot = PetState.rotationForSnap(newState)
+        val willRotate = abs(prevRot - newRot) > 0.01f
+
+        if (!willRotate) {
+            // 又拖回不需要旋转的形态：取消进行中的旋转动画，直接归位
+            if (frozen || rotAnimRunning) {
+                rotAnimRunning = false
+                frozen = false
+                shownRotation = newRot
+            }
+            state = newState
+            cacheSizesKeepingCenter()
+            placeWindow()
+            return
+        }
+
+        // 需要旋转：冻结在旧朝向，整段动画期间尺寸不变
+        if (!frozen) {
+            frozenRot = prevRot
+            frozen = true
+        }
         state = newState
         cacheSizes()
-        val newRot = PetState.rotationForSnap(newState)
-        if (abs(prevRot - newRot) > 0.01f) {
-            // 从"当前显示的角度"接着转，避免动画被打断时跳一下
-            startRotAnim(prevShown, newRot)
-        }
+        startRotAnim(prevShown, newRot)
         placeWindow()
     }
 
+    /**
+     * 旋转动画结束：解除冻结并把尺寸切到新朝向。
+     *
+     * 切的时候**保持素材中心点不动**，所以即使尺寸互换，
+     * 画面也不会横移 —— 这正是用户要的"抓着中心点"手感。
+     *
+     * 若此时还在拖动，就只补偿中心；若是松手后的吸附，
+     * 则用新尺寸重算贴边位置并补间过去，最后精确贴边。
+     */
+    private fun onRotationDone() {
+        if (!frozen) return
+        frozen = false
+        if (dragging) {
+            cacheSizesKeepingCenter()
+            placeWindow()
+        } else {
+            cacheSizes()
+            settleInternal()
+        }
+        pendingSettle = false
+    }
     /** 旋转动画期间，用于绘制的实际角度 */
     private fun displayRotation(): Float =
         if (rotAnimRunning) shownRotation else PetState.rotationForSnap(state)
+
+    /**
+     * 用于**计算格子与窗口尺寸**的旋转角。
+     *
+     * 旋转动画期间要"定格"在起点角度 —— 这样格子宽高与窗口尺寸
+     * 在整段动画里保持不变，只有画布在转。
+     *
+     * 否则一旦开始转，尺寸立刻互换，**素材中心点会跟着平移一截**，
+     * 看起来就是抽一下（用户反馈的"旋转时抽搐"就是这个）。
+     */
+    private fun sizeRotation(): Float = if (frozen) frozenRot else PetState.rotationForSnap(state)
 
     /** 跨半屏时的镜像翻转动画 */
     private fun startFlip(target: Float) {
@@ -373,13 +555,22 @@ class PetView(context: Context) : View(context) {
     }
 
     // ---------------------------------------------------------------- 位置
+    //
+    // anchorX/anchorY 是**素材中心点**的屏幕坐标（不是格子左上角）。
+    // 以中心点为基准的好处：状态切换导致足迹尺寸互换时，
+    // 只要中心点不动，画面就不会横移（用户要的"抓着中心点拖"）。
 
-    private fun curX(): Float = anchorX + dragOffsetX
-    private fun curY(): Float = anchorY + dragOffsetY
+    /** 素材中心点的当前屏幕坐标（含拖动位移） */
+    private fun curCenterX(): Float = anchorX + dragOffsetX
+    private fun curCenterY(): Float = anchorY + dragOffsetY
 
-    /** 当前显示位置（屏幕坐标，格子左上角） */
-    fun currentLeft(): Int = curX().roundToInt()
-    fun currentTop(): Int = curY().roundToInt()
+    /** 足迹盒左上角的当前屏幕坐标（贴边/夹取计算用） */
+    private fun curTrackLeft(): Float = curCenterX() - centerFromTrackX()
+    private fun curTrackTop(): Float = curCenterY() - centerFromTrackY()
+
+    /** 当前显示位置（屏幕坐标，足迹盒左上角） */
+    fun currentLeft(): Int = curTrackLeft().roundToInt()
+    fun currentTop(): Int = curTrackTop().roundToInt()
 
     private fun guideVisible(): Boolean = SystemClock.uptimeMillis() < guideUntil
 
@@ -405,8 +596,9 @@ class PetView(context: Context) : View(context) {
             host?.placeWindow(x, y, w, h)
             return
         }
-        val x = (curX() - boxOffX).roundToInt()
-        val y = (curY() - boxOffY).roundToInt()
+        // 以**素材中心点**反推窗口位置：中心点定点不动，尺寸变了也不会横移
+        val x = (curCenterX() - centerInWindowX()).roundToInt()
+        val y = (curCenterY() - centerInWindowY()).roundToInt()
         if (x == lastWinX && y == lastWinY && bboxW == lastWinW && bboxH == lastWinH) return
         lastWinX = x
         lastWinY = y
@@ -436,21 +628,24 @@ class PetView(context: Context) : View(context) {
         val b = host?.bounds() ?: return
         state = newState
         cacheSizes()
-        anchorX = if (PetState.isLeft(newState)) 0f else (b.width() - trackW).toFloat()
-        anchorY = if (PetState.isZoneless(newState)) ((b.height() - trackH) / 2f)
+        // 先算足迹盒左上角，再换算成中心点（anchor 存的是中心点）
+        val trackLeft = if (PetState.isLeft(newState)) 0f else (b.width() - trackW).toFloat()
+        val trackTop = if (PetState.isZoneless(newState)) ((b.height() - trackH) / 2f)
         else (b.height() - trackH).toFloat()
+        anchorX = trackLeft + centerFromTrackX()
+        anchorY = trackTop + centerFromTrackY()
         dragOffsetX = 0f
         dragOffsetY = 0f
         cancelTween()
         syncWindow()
     }
 
-    /** 从保存的位置恢复 */
+    /** 从保存的位置恢复（left/top 是**足迹盒**左上角，与持久化格式一致） */
     fun restore(state0: Int, left: Int, top: Int) {
         state = state0
         cacheSizes()
-        anchorX = left.toFloat()
-        anchorY = top.toFloat()
+        anchorX = left + centerFromTrackX()
+        anchorY = top + centerFromTrackY()
         dragOffsetX = 0f
         dragOffsetY = 0f
         cancelTween()
@@ -467,8 +662,9 @@ class PetView(context: Context) : View(context) {
      */
     private fun hitsPet(localX: Float, localY: Float): Boolean {
         val s = sprite ?: return false
-        val cx = boxOffX + cellW / 2f
-        val cy = boxOffY + cellH / 2f
+        // 与 onDraw 一致：绕**素材中心点**旋转
+        val cx = centerInWindowX()
+        val cy = centerInWindowY()
         var dx = localX - cx
         var dy = localY - cy
 
@@ -508,8 +704,11 @@ class PetView(context: Context) : View(context) {
             dy = ry
         }
 
-        val u = dx / cellW + 0.5f
-        val v = dy / cellH + 0.5f
+        // dx/dy 现在是相对**素材中心点**的，换算回格子内坐标
+        val cu = dx + artU * cellW
+        val cv = dy + artV * cellH
+        val u = cu / cellW
+        val v = cv / cellH
         if (u < 0f || u > 1f || v < 0f || v > 1f) return false
 
         val bmp = runCatching { bitmapFor(state) }.getOrNull() ?: return true
@@ -585,8 +784,8 @@ class PetView(context: Context) : View(context) {
     /** 拖动过程中刷新状态（素材与旋转随之变化，没有中间角度） */
     private fun updateDragState() {
         val b = host?.bounds() ?: return
-        val x = curX()
-        val y = curY()
+        val x = curTrackLeft()
+        val y = curTrackTop()
         val leftHalf = (x + trackW / 2f) < b.width() / 2f
 
         // 跨半屏 -> 触发镜像翻转动画
@@ -620,9 +819,24 @@ class PetView(context: Context) : View(context) {
      * 到达终点后再换状态，位置不跳。
      */
     private fun settle() {
+        // 旋转动画还没结束（尺寸仍冻结）时，先记下；等转完再吸附
+        if (frozen && rotAnimRunning) {
+            pendingSettle = true
+            return
+        }
+        settleInternal()
+    }
+
+    /**
+     * 松手吸附的实际计算。
+     *
+     * anchorX/anchorY 是**素材中心点**，而贴边/夹取是按**足迹盒**算的，
+     * 所以这里统一先换算成足迹盒左上角，算完再换回中心点。
+     */
+    private fun settleInternal() {
         val b = host?.bounds() ?: return
-        val x = anchorX
-        val y = anchorY
+        val x = curTrackLeft()
+        val y = curTrackTop()
         val leftHalf = (x + trackW / 2f) < b.width() / 2f
         val db = PetState.bottomDist(y, trackH.toFloat(), b.height().toFloat())
         val dr = PetState.sideDist(x, trackW.toFloat(), b.width().toFloat(), leftHalf)
@@ -650,13 +864,19 @@ class PetView(context: Context) : View(context) {
         pendingState = want
         pendingLeft = leftHalf
 
+        // 足迹盒目标位置 -> 中心点目标位置
+        val targetCenterX = c[0] + centerFromTrackX()
+        val targetCenterY = c[1] + centerFromTrackY()
+
         // 位置没变就不用补间，直接切状态
-        if (abs(x - c[0]) < 1f && abs(y - c[1]) < 1f) {
-            anchorX = c[0]
-            anchorY = c[1]
+        if (abs(curCenterX() - targetCenterX) < 1f && abs(curCenterY() - targetCenterY) < 1f) {
+            // 拖动位移要固化进 anchor，否则下次拖动会从这里重新算
+            anchorX = targetCenterX - dragOffsetX
+            anchorY = targetCenterY - dragOffsetY
             applyPendingState()
         } else {
-            animateTo(c[0], c[1])
+            // 补间走"中心点"：把拖动位移折算进起点，终点不含位移
+            animateTo(targetCenterX - dragOffsetX, targetCenterY - dragOffsetY)
         }
 
         placeWindow()
@@ -667,11 +887,19 @@ class PetView(context: Context) : View(context) {
     private fun applyPendingState() {
         val st = pendingState ?: return
         pendingState = null
-        val prevRot = PetState.rotationForSnap(state)
-        state = st
-        cacheSizes()
+        val prevRot = curSizeRot
         val newRot = PetState.rotationForSnap(st)
-        if (prevRot != newRot) startRotAnim(prevRot, newRot)
+        if (abs(prevRot - newRot) > 0.01f) {
+            // 先冻结尺寸再换状态，中心点不动
+            frozenRot = prevRot
+            frozen = true
+            state = st
+            cacheSizes()
+            startRotAnim(shownRotation, newRot)
+        } else {
+            state = st
+            cacheSizesKeepingCenter()
+        }
         placeWindow()
         invalidate()
     }
@@ -693,8 +921,10 @@ class PetView(context: Context) : View(context) {
         val hop = 0f
         // 用带动画的角度，避免在 B/E 分界线附近瞬间翻转
         val rot = displayRotation()
-        val cx = boxOffX + cellW / 2f
-        val cy = boxOffY + cellH / 2f
+        // 旋转与压缩都绕**素材中心点**：这样人物是绕自己转，
+        // 而不是绕格子空白的中心转。
+        val cx = centerInWindowX()
+        val cy = centerInWindowY()
 
         val save = canvas.save()
         // 旋转绕格子中心；只改变换、不动格子尺寸 -> 比例不变
@@ -727,8 +957,8 @@ class PetView(context: Context) : View(context) {
             return
         }
         src.set(0, 0, bmp.width, bmp.height)
-        dst.set(boxOffX.toFloat(), boxOffY.toFloat(),
-            (boxOffX + cellW).toFloat(), (boxOffY + cellH).toFloat())
+        dst.set(cellLocalX(), cellLocalY(),
+            cellLocalX() + cellW, cellLocalY() + cellH)
         canvas.drawBitmap(bmp, src, dst, paint)
         canvas.restoreToCount(save)
 
