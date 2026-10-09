@@ -36,6 +36,22 @@ object PetState {
     /** 从边框拖出：触发旋转摆正的距离（素材右边离屏幕右侧） */
     const val BORDER_DETACH_PX = 80f
 
+    /**
+     * 吸附在右侧时，右边框素材要旋转的角度。
+     *
+     * 用户要求：右边框素材**逆时针旋转 90°**。
+     * 约定：本值是传给 [android.graphics.Canvas.rotate] 的角度，
+     * **正数 = 屏幕视觉上的顺时针**。
+     *
+     * 这个符号是**实测定下来的**，不要再靠推理改：
+     * 用 -90 时真机截图里脸落在格子 x=0.75（朝屏幕外侧），是错的；
+     * 改成 +90 后脸落在 x=0.25（朝屏幕内侧），符合"头指向屏幕内部"。
+     */
+    const val RIGHT_BORDER_ROTATION_DEG = 90f
+
+    /** 左侧是镜像出来的，旋转方向相反 */
+    const val LEFT_BORDER_ROTATION_DEG = -90f
+
     fun isCorner(state: Int) = state == CORNER_BR || state == CORNER_BL
 
     fun isBorder(state: Int) = state == BORDER_R || state == BORDER_L
@@ -49,15 +65,50 @@ object PetState {
     fun needsMirror(state: Int) = isLeft(state)
 
     /**
-     * 边框状态下人物是否要旋转 90°（吸附时头朝内侧）。
-     * 角落状态不旋转（头朝上）。
+     * 当前是否应该把人物转成"躺在边上"的形态。
+     *
+     * 用户规则：**只有吸附贴边时才转**；离目标边超过 80px 就恢复正立（用原素材方向）。
+     *
+     * @param distanceFromEdgePx 离目标边的距离；贴边时为 0
      */
-    fun rotationDeg(state: Int): Float = if (isBorder(state)) -90f else 0f
+    fun isAttached(distanceFromEdgePx: Float): Boolean =
+        distanceFromEdgePx <= BORDER_DETACH_PX
+
+    /**
+     * 当前该用多少度旋转。
+     * 角落状态永远 0（人物正立）；边框状态只有贴边时才转。
+     */
+    fun rotationDeg(state: Int, distanceFromEdgePx: Float = 0f): Float {
+        if (isCorner(state)) return 0f
+        if (!isAttached(distanceFromEdgePx)) return 0f
+        return if (isLeft(state)) LEFT_BORDER_ROTATION_DEG else RIGHT_BORDER_ROTATION_DEG
+    }
+
+    /** 该状态贴边时的目标旋转角（不看距离），用于单测与缓存键 */
+    fun attachedRotationDeg(state: Int): Float =
+        if (isCorner(state)) 0f
+        else if (isLeft(state)) LEFT_BORDER_ROTATION_DEG
+        else RIGHT_BORDER_ROTATION_DEG
 
     // ------------------------------------------------------------------ 拖拽过渡
 
-    /** 模糊程度 0f..1f（仅角落拖出时有意义） */
+    /**
+     * 模糊程度 0f..1f（仅角落拖出时有意义）。
+     * 用户要求"模糊再狠一点"，所以用平方曲线让前段就明显糊起来。
+     */
     fun blurFor(distanceFromBottomPx: Float): Float {
+        if (distanceFromBottomPx <= CORNER_BLUR_START_PX) return 0f
+        val t = ((distanceFromBottomPx - CORNER_BLUR_START_PX) /
+            (CORNER_TO_BORDER_PX - CORNER_BLUR_START_PX)).coerceIn(0f, 1f)
+        // t^0.6：一开始就压上明显的模糊，而不是线性慢慢加
+        return Math.pow(t.toDouble(), 0.6).toFloat().coerceIn(0f, 1f)
+    }
+
+    /**
+     * 过渡进度 0f..1f：0 = 完全是角落素材，1 = 完全是边框素材。
+     * 这是**替换进度**，保持线性；模糊强度另由 [blurFor] 控制（用户要求更狠）。
+     */
+    fun morphFor(distanceFromBottomPx: Float): Float {
         if (distanceFromBottomPx <= CORNER_BLUR_START_PX) return 0f
         val t = (distanceFromBottomPx - CORNER_BLUR_START_PX) /
             (CORNER_TO_BORDER_PX - CORNER_BLUR_START_PX)
@@ -65,15 +116,21 @@ object PetState {
     }
 
     /**
-     * 过渡进度 0f..1f：
-     * 0 = 完全是角落素材（正立），1 = 完全是边框素材（已旋转）。
-     * 用来做「角落素材 与 未旋转边框素材 的叠加」，避免替换生硬。
+     * 计算素材画到屏幕上的格子尺寸。
+     *
+     * 关键：**永远按素材自身的正立比例等比缩放**，不因为旋转而互换宽高。
+     * 用户明确要求"素材无论如何旋转比例不要变"。
+     * 旋转由绘制时绕格子中心 [android.graphics.Canvas.rotate] 完成，只改朝向不改比例。
+     *
+     * @param targetH 希望画到多高（屏幕高 × 大小比例）
      */
-    fun morphFor(distanceFromBottomPx: Float): Float {
-        if (distanceFromBottomPx <= CORNER_BLUR_START_PX) return 0f
-        val t = (distanceFromBottomPx - CORNER_BLUR_START_PX) /
-            (CORNER_TO_BORDER_PX - CORNER_BLUR_START_PX)
-        return t.coerceIn(0f, 1f)
+    fun scaledSize(natW: Int, natH: Int, targetH: Float): IntArray {
+        if (natW <= 0 || natH <= 0) return intArrayOf(1, 1)
+        val scale = targetH / natH
+        return intArrayOf(
+            Math.round(natW * scale).coerceAtLeast(1),
+            Math.round(natH * scale).coerceAtLeast(1)
+        )
     }
 
     /**

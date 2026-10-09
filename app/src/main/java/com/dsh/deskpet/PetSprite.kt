@@ -33,24 +33,25 @@ class PetSprite private constructor(
     val borderW: Int,
     val borderH: Int,
     private val cornerSrc: Bitmap,
-    private val borderSrc: Bitmap,
-    private val borderRotationDeg: Float
+    private val borderSrc: Bitmap
 ) {
 
     /** 缓存的、可直接绘制的位图（已含旋转/镜像） */
     private val cache = HashMap<Int, Bitmap>()
 
     /**
-     * 取某个状态要画的位图。
+     * 取某个状态要画的位图（**不含旋转**）。
      *
-     * @param mirrored 左侧状态需要水平镜像（右侧素材镜像而来）
+     * 旋转改到绘制时做，因为"只有贴边才转"是跟距离有关的，
+     * 不能按状态缓存成固定角度。
+     *
+     * @param mirrored 左侧状态需要水平镜像
      */
     fun bitmap(state: Int, mirrored: Boolean): Bitmap {
         val key = state * 2 + if (mirrored) 1 else 0
         cache[key]?.let { return it }
         val src = if (PetState.usesCornerArt(state)) cornerSrc else borderSrc
-        val rot = if (PetState.isBorder(state)) borderRotationDeg else 0f
-        val bmp = transform(src, rot, mirrored)
+        val bmp = mirrorOnly(src, mirrored)
         cache[key] = bmp
         return bmp
     }
@@ -109,8 +110,7 @@ class PetSprite private constructor(
                     borderW = b.optInt("w", border.width),
                     borderH = b.optInt("h", border.height),
                     cornerSrc = corner,
-                    borderSrc = border,
-                    borderRotationDeg = root.optDouble("borderRotationDeg", 90.0).toFloat()
+                    borderSrc = border
                 )
             } catch (e: Exception) {
                 null
@@ -129,24 +129,18 @@ class PetSprite private constructor(
         }
 
         /**
-         * 生成最终位图：先按 rot 旋转，再按需水平镜像。
+         * 只做水平镜像（不平移）。右侧和本地的素材都已经是镜像好的，
+         * 这里主要给"临时跨半屏"用。
          *
-         * rot 用「逆时针为正」的常规数学约定（和 PIL rotate 一致），
-         * 所以贴右边要变成「头朝屏幕内侧」时传 +90。
+         * 用显式的 scale 矩阵而不是 [Bitmap.createBitmap] 的重载：
+         * 那个重载会把图裁回原尺寸，镜像后内容会偏。
          */
-        private fun transform(src: Bitmap, rot: Float, mirror: Boolean): Bitmap {
+        private fun mirrorOnly(src: Bitmap, mirror: Boolean): Bitmap {
+            if (!mirror) return src
             val m = Matrix()
-            if (rot != 0f) m.postRotate(rot)
-            if (mirror) m.postScale(-1f, 1f)
-            val out = Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)
-            if (out != src) {
-                // 保证有 alpha 通道，叠加/模糊都靠它
-                if (out.config != Bitmap.Config.ARGB_8888) {
-                    val conv = out.copy(Bitmap.Config.ARGB_8888, false)
-                    if (conv != null) return conv
-                }
-            }
-            return out
+            m.setScale(-1f, 1f)
+            m.postTranslate(src.width.toFloat(), 0f)
+            return Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)
         }
     }
 }
