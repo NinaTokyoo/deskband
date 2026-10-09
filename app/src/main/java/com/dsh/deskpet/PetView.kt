@@ -302,19 +302,21 @@ class PetView(context: Context) : View(context) {
         (trackHeight - cellH) / 2f + artV * cellH
 
     /**
-     * 尺寸变化后，**保持素材中心点的屏幕位置不变**。
+     * 重新计算尺寸，**保持素材中心点不动**。
      *
-     * 拖动过程中状态切换会让足迹尺寸互换（如 541x463 -> 463x541），
-     * 若不补偿，中心点会横向平移约 39px —— 那就是"抽一下"。
+     * ⚠️ 这里**不需要任何补偿计算**。
+     *
+     * 因为 [anchorX]/[anchorY] 本身就是素材中心点的屏幕坐标，
+     * 而 [cacheSizes] 不会改 anchor —— 中心点天然保持不变。
+     *
+     * 曾经这里写过一段"补偿"，但它用了 anchorX + centerFromTrackX
+     * （那是旧足迹的**左边缘**，不是中心点），于是变成"钉住足迹左边缘"。
+     * 足迹宽度随朝向互换（541 <-> 463），钉住左边缘就等于让中心点横移
+     * (463-541)/2 = -39px —— 表现就是朝向一切换素材就**突然平移一小段**，
+     * 切回来又移回去。已删除该补偿。
      */
     private fun cacheSizesKeepingCenter() {
-        val oldFromTrackX = centerFromTrackX()
-        val oldFromTrackY = centerFromTrackY()
-        val cx = anchorX + oldFromTrackX
-        val cy = anchorY + oldFromTrackY
         cacheSizes()
-        anchorX = cx - centerFromTrackX()
-        anchorY = cy - centerFromTrackY()
     }
 
     fun setSizeFraction(f: Float) {
