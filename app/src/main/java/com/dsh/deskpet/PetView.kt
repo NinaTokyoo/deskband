@@ -969,12 +969,18 @@ class PetView(context: Context) : View(context) {
             curCenterX(), b.width().toFloat(), leftHalf
         )
 
-        // 带滞回的分区判定。门槛 = aW + 半宽：宠物完全贴边时中心点离边正好是
-        // 半宽，必须把半宽算进门槛，"贴边静止"才稳定落在 B 内
-        // （否则会在旋转/正立之间横跳，而过中线判定又依赖 trackW，跟着一起抖）。
+        // 带滞回的分区判定。门槛 = aW + 半宽，但半宽必须取**与朝向无关**的值。
+        //
+        // ⚠️ 不能用 trackW/2：它随朝向互换（正立 541 / 旋转 463），
+        // 于是"门槛决定朝向、朝向又决定门槛"形成自反馈：
+        //   正立 -> 门槛470 -> 中心点450<=470 -> 判B -> 旋转
+        //   旋转 -> 门槛431 -> 450>431 -> 判E -> 转回正立 -> 又判B ...
+        // 无限循环，表现就是分界线附近小幅高频抖动。
+        // 取 max(trackW, trackH)（互换后不变）即可打破这个反馈。
+        val halfRef = maxOf(trackW, trackH) / 2f
         val zone = PetState.zoneWithHysteresis(
             db, dr, leftHalf, lastZone, cd,
-            PetState.currentAW + trackW / 2f
+            PetState.currentAW + halfRef
         )
         lastZone = zone
 
@@ -1021,11 +1027,12 @@ class PetView(context: Context) : View(context) {
         val db = PetState.bottomDist(y, trackH.toFloat(), b.height().toFloat())
         val dr = PetState.sideDist(x, trackW.toFloat(), b.width().toFloat(), leftHalf)
 
-        // 与拖动时保持一致：中心点判据，门槛含半宽
+        // 与拖动时保持一致：中心点判据，门槛含半宽，且半宽取与朝向无关的值
+        // （否则门槛与朝向互相决定，会形成自反馈振荡）
         val cd = PetState.centerSideDist(curCenterX(), b.width().toFloat(), leftHalf)
         val zone = PetState.zoneWithHysteresis(
             db, dr, leftHalf, lastZone, cd,
-            PetState.currentAW + trackW / 2f
+            PetState.currentAW + maxOf(trackW, trackH) / 2f
         )
         lastZone = zone
 
