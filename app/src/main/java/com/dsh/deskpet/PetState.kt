@@ -148,22 +148,38 @@ object PetState {
      *
      * @param prev 上一次的区号，用于决定用哪个门槛
      */
+    /**
+     * 分区判定（带滞回）。
+     *
+     * ⚠️ B/E 用**中心点**判据（用户规则），但门槛必须把素材**半宽**算进去：
+     *
+     *   宠物完全贴紧侧边时，中心点离侧边的距离正好等于**半宽**。
+     *   若拿 aW(默认200) 直接当门槛，而半宽有 231~270，
+     *   那么"贴边静止"这个位置反而被判成 E —— 状态会在旋转/正立之间
+     *   反复横跳，而且 leftHalf 依赖 trackW，trackW 一跳过中线判定也跟着抖，
+     *   镜像翻转看起来就不对了。
+     *
+     * 所以传入的门槛是 `aW + 半宽`：等价于"素材**边缘**落在 aW 以内"，
+     * 既保留了中心点判据，又让贴边静止位置稳定落在 B 内。
+     *
+     * @param bandPx 中心点到侧边的门槛，调用方传 currentAW + trackW/2
+     */
     fun zoneWithHysteresis(
         db: Float, dr: Float, leftHalf: Boolean, prev: Int,
-        centerDist: Float = dr
+        centerDist: Float = dr,
+        bandPx: Float = currentAW
     ): Int {
         // A / C 的判定不涉及这个抖动，直接算
         if (db <= currentAH && dr <= currentAW) return ZONE_A
         if (db <= currentAH) return ZONE_C
 
-        // B / E 用**中心点**到侧边的距离判定（用户规则）
         val inB: Boolean
         if (prev == ZONE_B) {
             // 已经在 B：要明显离开才退出
-            inB = centerDist <= currentAW + HYSTERESIS_PX
+            inB = centerDist <= bandPx + HYSTERESIS_PX
         } else {
             // 不在 B：中心点要真正越过分界线才进入
-            inB = centerDist <= currentAW
+            inB = centerDist <= bandPx
         }
         return if (inB) ZONE_B else ZONE_E
     }

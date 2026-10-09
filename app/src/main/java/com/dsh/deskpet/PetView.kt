@@ -937,8 +937,13 @@ class PetView(context: Context) : View(context) {
             curCenterX(), b.width().toFloat(), leftHalf
         )
 
-        // 带滞回的分区判定：B/E 分界线附近不会来回闪
-        val zone = PetState.zoneWithHysteresis(db, dr, leftHalf, lastZone, cd)
+        // 带滞回的分区判定。门槛 = aW + 半宽：宠物完全贴边时中心点离边正好是
+        // 半宽，必须把半宽算进门槛，"贴边静止"才稳定落在 B 内
+        // （否则会在旋转/正立之间横跳，而过中线判定又依赖 trackW，跟着一起抖）。
+        val zone = PetState.zoneWithHysteresis(
+            db, dr, leftHalf, lastZone, cd,
+            PetState.currentAW + trackW / 2f
+        )
         lastZone = zone
 
         // B 区即"中心点已越界" -> 旋转形态；E 区保持正立
@@ -988,9 +993,12 @@ class PetView(context: Context) : View(context) {
         val db = PetState.bottomDist(y, trackH.toFloat(), b.height().toFloat())
         val dr = PetState.sideDist(x, trackW.toFloat(), b.width().toFloat(), leftHalf)
 
-        // 与拖动时保持一致，用带滞回的分区判定 + **中心点越界**判据
+        // 与拖动时保持一致：中心点判据，门槛含半宽
         val cd = PetState.centerSideDist(curCenterX(), b.width().toFloat(), leftHalf)
-        val zone = PetState.zoneWithHysteresis(db, dr, leftHalf, lastZone, cd)
+        val zone = PetState.zoneWithHysteresis(
+            db, dr, leftHalf, lastZone, cd,
+            PetState.currentAW + trackW / 2f
+        )
         lastZone = zone
         val want = PetState.stateForZone(zone, leftHalf)
 
