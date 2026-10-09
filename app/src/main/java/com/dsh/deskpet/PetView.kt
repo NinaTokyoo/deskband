@@ -59,9 +59,7 @@ class PetView(context: Context) : View(context) {
     var state: Int = PetState.CORNER_BR
         private set
 
-    /** 当前显示用状态（拖动跨中线时会临时变成另一边） */
-    private var visual = PetState.CORNER_BR
-
+    /** 拖动时用来判断翻转方向的锚点 x（屏幕坐标） */
     private var anchorX = 0f
     private var anchorY = 0f
 
@@ -160,7 +158,6 @@ class PetView(context: Context) : View(context) {
     /** 把宠物贴到指定状态的吸附位置 */
     fun applySnap(newState: Int) {
         state = newState
-        visual = newState
         val b = host?.bounds() ?: return
         val sz = currentSize()
         val w = sz[0]
@@ -189,7 +186,6 @@ class PetView(context: Context) : View(context) {
         anchorX = leftInset.toFloat().coerceIn(0f, max(0f, (b.width() - sz[0]).toFloat()))
         anchorY = topInset.toFloat().coerceIn(0f, max(0f, (b.height() - sz[1]).toFloat()))
         state = state0
-        visual = state0
         flip = if (PetState.isLeft(state0)) 1f else 0f
         flipFrom = flip
         flipTo = flip
@@ -271,17 +267,13 @@ class PetView(context: Context) : View(context) {
         return px >= x && px <= x + sz[0] && py >= y && py <= y + sz[1]
     }
 
-    /** 拖动跨过屏幕中轴线 -> 触发水平翻转 + 换另一侧素材 */
+    /** 拖动跨过屏幕中轴线 -> 触发水平翻转（素材在 onDraw 里按半屏自动切换） */
     private fun followScreenCross() {
         val b = host?.bounds() ?: return
         val sz = currentSize()
         val x = anchorX + dragOffsetX
         val centerX = x + sz[0] / 2f
-        val wantLeft = centerX < b.width() / 2f
-
-        val want = PetState.transientState(centerX, b.width().toFloat(), state)
-        if (want != visual) visual = want
-        startFlip(if (wantLeft) 1f else 0f)
+        startFlip(if (centerX < b.width() / 2f) 1f else 0f)
     }
 
     private fun startFlip(target: Float) {
@@ -294,21 +286,23 @@ class PetView(context: Context) : View(context) {
         handler.post(ticker)
     }
 
-    /** 松手：吸附到最近的合法状态 */
+    /**
+     * 松手：按所在区吸附。
+     *
+     * 判定用桌宠的**底边**和**右边**（用户明确规定），不是中心点。
+     */
     private fun settle() {
         val b = host?.bounds() ?: return
         val sz = currentSize()
-        val centerX = anchorX + dragOffsetX + sz[0] / 2f
-        val centerY = anchorY + dragOffsetY + sz[1] / 2f
+        val x = anchorX + dragOffsetX
+        val y = anchorY + dragOffsetY
 
-        val target = PetState.snapTarget(
-            centerX = centerX,
-            centerY = centerY,
-            screenW = b.width().toFloat(),
-            screenH = b.height().toFloat()
-        )
+        val db = (b.height() - (y + sz[1])).coerceAtLeast(0f)
+        val dr = (b.width() - (x + sz[0])).coerceAtLeast(0f)
+        val leftHalf = (x + sz[0] / 2f) < b.width() / 2f
+
+        val target = PetState.snapTarget(db, dr, leftHalf)
         state = target
-        visual = target
         applySnap(target)
         host?.onSettled(target, leftInset(), topInset())
     }
@@ -333,31 +327,28 @@ class PetView(context: Context) : View(context) {
         val x = anchorX + dragOffsetX
         val y = anchorY + dragOffsetY
 
-        // 离目标边的距离：角落状态量底边离屏幕底部，边框状态量离对应侧边
-        val distFromEdge = if (PetState.isCorner(state)) {
-            (b.height() - (y + h)).coerceAtLeast(0f)
-        } else if (PetState.isLeft(state)) {
-            x.coerceAtLeast(0f)
+        // 判定基准：桌宠的**底边**离屏幕底部、**右边**离屏幕右侧（左半屏镜像）
+        val db = (b.height() - (y + h)).coerceAtLeast(0f)
+        val dr = (b.width() - (x + w)).coerceAtLeast(0f)
+        val leftHalf = (x + w / 2f) < b.width() / 2f
+
+        // 拖动中用哪套素材 / 转多少度，直接由所在区决定
+        val artState = if (dragging) {
+            PetState.artStateFor(db, dr, leftHalf)
         } else {
-            (b.width() - (x + w)).coerceAtLeast(0f)
+            state
+        }
+        val rotation = if (dragging) {
+            PetState.dragRotationFor(db, dr, leftHalf)
+        } else {
+            PetState.rotationForSnap(state)
         }
 
-        // 过渡（角落素材 -> 边框素材）只发生在 120..200px 这一段
-        val inCornerTransition = distFromEdge > PetState.CORNER_BLUR_START_PX &&
-            distFromEdge < PetState.CORNER_TO_BORDER_PX
-        val morph = if (dragging && inCornerTransition) {
-            PetState.morphFor(distFromEdge)
-        } else 0f
+        // 模糊：D 区（那条 L 形带）内才有，拖动时生效
+        val blurT = if (dragging) PetState.blurFor(db, dr) else 0f
 
-        // 用户要求：**模糊只在角落脱出 / 拖入时存在**，边框拖拽不模糊
-        val blurT = if (dragging && inCornerTransition) {
-            PetState.blurFor(distFromEdge)
-        } else 0f
-
-        // 只有吸附贴边时才旋转；离边超过 80px 恢复正立（用户规则）
-        val rotation = if (PetState.isBorder(state)) {
-            PetState.rotationDeg(state, distFromEdge)
-        } else 0f
+        // 角落素材 <-> 边框素材 的切换进度
+        val morph = if (dragging) PetState.morphFor(db, dr) else 0f
 
         // 点击反馈：轻轻跳一下
         var hopY = 0f
@@ -376,11 +367,11 @@ class PetView(context: Context) : View(context) {
         }
 
         val drawY = y + hopY
-        // 镜像只由状态决定（左侧状态用镜像素材），与翻转动画无关
-        val mirrored = PetState.needsMirror(visual)
+        // 镜像只由左右半屏决定
+        val mirrored = leftHalf
 
         if (morph <= 0.001f) {
-            drawOne(canvas, s, visual, w, h, x, drawY, mirrored, blurT, rotation)
+            drawOne(canvas, s, artState, w, h, x, drawY, mirrored, blurT, rotation)
         } else {
             // 过渡：角落素材淡出 + 边框素材淡入（叠加模糊，避免生硬）
             drawBlend(canvas, s, w, h, x, drawY, mirrored, morph, blurT, rotation)

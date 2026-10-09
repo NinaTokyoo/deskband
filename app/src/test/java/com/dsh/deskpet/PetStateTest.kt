@@ -2,8 +2,10 @@ package com.dsh.deskpet
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.abs
 
 /**
  * 吸附状态机测试。
@@ -14,198 +16,150 @@ class PetStateTest {
     private val SW = 1440f
     private val SH = 3168f
 
-    // ---------------------------------------------------------- 素材朝向
+    // ---------------------------------------------------------- 分区（最新规则）
 
     @Test
-    fun `corner states always keep the head up - never rotated`() {
-        assertEquals(0f, PetState.rotationDeg(PetState.CORNER_BR, 0f), 0.001f)
-        assertEquals(0f, PetState.rotationDeg(PetState.CORNER_BL, 0f), 0.001f)
-        // 拖出很远也不转
-        assertEquals(0f, PetState.rotationDeg(PetState.CORNER_BR, 900f), 0.001f)
-        assertTrue(PetState.usesCornerArt(PetState.CORNER_BR))
-        assertFalse(PetState.usesCornerArt(PetState.BORDER_R))
+    fun `zone A is the 356 by 356 corner square`() {
+        assertEquals(PetState.ZONE_A, PetState.zoneOf(0f, 0f))
+        assertEquals(PetState.ZONE_A, PetState.zoneOf(356f, 356f))
+        assertEquals(PetState.ZONE_A, PetState.zoneOf(10f, 300f))
+        assertEquals(PetState.ZONE_A, PetState.zoneOf(300f, 10f))
+        // 只要有一边超过 356 就不是 A
+        assertNotEquals(PetState.ZONE_A, PetState.zoneOf(357f, 10f))
+        assertNotEquals(PetState.ZONE_A, PetState.zoneOf(10f, 357f))
     }
 
     @Test
-    fun `border states are only rotated while attached to the edge`() {
-        // 贴边（距离 0）-> 旋转
-        assertEquals(PetState.RIGHT_BORDER_ROTATION_DEG,
-            PetState.rotationDeg(PetState.BORDER_R, 0f), 0.001f)
-        assertEquals(PetState.LEFT_BORDER_ROTATION_DEG,
-            PetState.rotationDeg(PetState.BORDER_L, 0f), 0.001f)
-        // 刚好 80px 仍算贴边
-        assertEquals(PetState.RIGHT_BORDER_ROTATION_DEG,
-            PetState.rotationDeg(PetState.BORDER_R, 80f), 0.001f)
-        // 超过 80px -> 恢复正立（用户规则）
-        assertEquals(0f, PetState.rotationDeg(PetState.BORDER_R, 81f), 0.001f)
-        assertEquals(0f, PetState.rotationDeg(PetState.BORDER_R, 400f), 0.001f)
-        assertEquals(0f, PetState.rotationDeg(PetState.BORDER_L, 200f), 0.001f)
+    fun `zone C is the 200px bottom strip outside A`() {
+        // A 之外的底部 200px -> C
+        assertEquals(PetState.ZONE_C, PetState.zoneOf(200f, 500f))
+        assertEquals(PetState.ZONE_C, PetState.zoneOf(0f, 500f))
+        // 关键回归：A 区里 200..356 的环带**不能**被判成 C（否则 C 会变 356 宽）
+        assertEquals(PetState.ZONE_A, PetState.zoneOf(300f, 300f))
+        // 超过 200 就不再是 C
+        assertEquals(PetState.ZONE_D, PetState.zoneOf(201f, 500f))
     }
 
     @Test
-    fun `right border rotation is the empirically verified value`() {
-        // 这个符号是真机截图实测定的：-90 时脸朝屏幕外侧（错），+90 才朝内侧。
-        // 见 PetState.RIGHT_BORDER_ROTATION_DEG 的注释。
-        assertEquals(90f, PetState.RIGHT_BORDER_ROTATION_DEG, 0.001f)
-        assertEquals(-90f, PetState.LEFT_BORDER_ROTATION_DEG, 0.001f)
+    fun `zone B is the 200px right strip outside A`() {
+        assertEquals(PetState.ZONE_B, PetState.zoneOf(500f, 200f))
+        assertEquals(PetState.ZONE_B, PetState.zoneOf(500f, 0f))
+        assertEquals(PetState.ZONE_D, PetState.zoneOf(500f, 201f))
     }
 
     @Test
-    fun `isAttached boundary is exactly 80px`() {
-        assertTrue(PetState.isAttached(0f))
-        assertTrue(PetState.isAttached(80f))
-        assertFalse(PetState.isAttached(80.1f))
+    fun `A swallows the whole 200px band near the corner, so C and B never overlap`() {
+        // 几何结论：A 是 356×356，而 C/B 只有 200 宽。
+        // 角附近"底边<=200"的点，右边也必然<=356，早已落进 A。
+        // 所以 C 实际上只在 dr>356 时才可能出现，C 与 B 永远不冲突，
+        // 「重合以底边为准」这条规则不会触发 —— 代码里先判 C 只是照规则写、更稳妥。
+        assertEquals(PetState.ZONE_A, PetState.zoneOf(150f, 150f))
+        assertEquals(PetState.ZONE_A, PetState.zoneOf(150f, 200f))
+        assertEquals(PetState.ZONE_A, PetState.zoneOf(150f, 300f))
+        assertEquals(PetState.ZONE_A, PetState.zoneOf(150f, 356f))
+        // C 真正生效要 dr>356
+        assertEquals(PetState.ZONE_C, PetState.zoneOf(150f, 357f))
+        // B 同理
+        assertEquals(PetState.ZONE_A, PetState.zoneOf(300f, 150f))
+        assertEquals(PetState.ZONE_B, PetState.zoneOf(357f, 150f))
     }
 
     @Test
-    fun `only left states are mirrored`() {
-        assertTrue(PetState.needsMirror(PetState.CORNER_BL))
-        assertTrue(PetState.needsMirror(PetState.BORDER_L))
-        assertFalse(PetState.needsMirror(PetState.CORNER_BR))
-        assertFalse(PetState.needsMirror(PetState.BORDER_R))
-    }
-
-    // ---------------------------------------------------------- 模糊阈值
-
-    @Test
-    fun `no blur until 120px off the bottom`() {
-        assertEquals(0f, PetState.blurFor(0f), 0.001f)
-        assertEquals(0f, PetState.blurFor(119f), 0.001f)
-        assertEquals(0f, PetState.blurFor(120f), 0.001f)
+    fun `zone D is the L shaped band out to 444`() {
+        assertEquals(PetState.ZONE_D, PetState.zoneOf(444f, 500f))
+        assertEquals(PetState.ZONE_D, PetState.zoneOf(500f, 444f))
+        assertEquals(PetState.ZONE_D, PetState.zoneOf(400f, 400f))
+        // 超过 444 两边都不沾 -> E
+        assertEquals(PetState.ZONE_E, PetState.zoneOf(445f, 445f))
     }
 
     @Test
-    fun `blur ramps between 120 and 200 px and bites early`() {
-        assertTrue(PetState.blurFor(150f) > 0f)
-        assertTrue(PetState.blurFor(150f) < 1f)
-        // 用了 t^0.6，中点(160px)要明显超过线性的一半 —— 即"模糊更狠"
-        assertTrue(
-            "160px 处应比线性更强",
-            PetState.blurFor(160f) > 0.5f
-        )
-        assertEquals(1f, PetState.blurFor(200f), 0.001f)
-        assertEquals(1f, PetState.blurFor(500f), 0.001f)
+    fun `zone E is everything else`() {
+        assertEquals(PetState.ZONE_E, PetState.zoneOf(1000f, 1000f))
+        assertEquals(PetState.ZONE_E, PetState.zoneOf(3084f, 1440f))
     }
 
     @Test
-    fun `morph stays linear even though blur is boosted`() {
-        assertEquals(0.5f, PetState.morphFor(160f), 0.001f)
-        assertEquals(1f, PetState.morphFor(200f), 0.001f)
-        assertEquals(0f, PetState.morphFor(100f), 0.001f)
+    fun `only zone D has blur`() {
+        assertFalse(PetState.hasBlur(0f, 0f))        // A
+        assertFalse(PetState.hasBlur(100f, 500f))    // C
+        assertFalse(PetState.hasBlur(500f, 100f))    // B
+        assertTrue(PetState.hasBlur(400f, 500f))     // D
+        assertFalse(PetState.hasBlur(1000f, 1000f))  // E
     }
 
-    // ---------------------------------------------------------- 吸附判定
+    // ---------------------------------------------------------- 吸附目标
 
     @Test
-    fun `dropping bottom right snaps to the corner`() {
-        val s = PetState.snapTarget(
-            centerX = SW * 0.75f,
-            centerY = SH - 50f,
-            screenW = SW, screenH = SH
-        )
-        assertEquals(PetState.CORNER_BR, s)
-    }
-
-    @Test
-    fun `dropping bottom left snaps to the left corner`() {
-        val s = PetState.snapTarget(
-            centerX = SW * 0.25f,
-            centerY = SH - 50f,
-            screenW = SW, screenH = SH
-        )
-        assertEquals(PetState.CORNER_BL, s)
+    fun `releasing in A snaps to the corner`() {
+        assertEquals(PetState.CORNER_BR, PetState.snapTarget(10f, 10f, false))
+        assertEquals(PetState.CORNER_BL, PetState.snapTarget(10f, 10f, true))
     }
 
     @Test
-    fun `dropping high on the right snaps to the right border`() {
-        val s = PetState.snapTarget(
-            centerX = SW * 0.75f,
-            centerY = SH * 0.4f,
-            screenW = SW, screenH = SH
-        )
-        assertEquals(PetState.BORDER_R, s)
+    fun `releasing in C snaps vertically to the bottom`() {
+        assertEquals(PetState.CORNER_BR, PetState.snapTarget(100f, 600f, false))
+        assertEquals(PetState.CORNER_BL, PetState.snapTarget(100f, 600f, true))
     }
 
     @Test
-    fun `dropping high on the left snaps to the left border`() {
-        val s = PetState.snapTarget(
-            centerX = SW * 0.25f,
-            centerY = SH * 0.4f,
-            screenW = SW, screenH = SH
-        )
-        assertEquals(PetState.BORDER_L, s)
+    fun `releasing in B snaps horizontally to the side`() {
+        assertEquals(PetState.BORDER_R, PetState.snapTarget(600f, 100f, false))
+        assertEquals(PetState.BORDER_L, PetState.snapTarget(600f, 100f, true))
     }
 
     @Test
-    fun `crossing the vertical centerline switches sides`() {
-        val justRight = PetState.snapTarget(SW / 2f + 1f, SH * 0.4f, SW, SH)
-        val justLeft = PetState.snapTarget(SW / 2f - 1f, SH * 0.4f, SW, SH)
-        assertEquals(PetState.BORDER_R, justRight)
-        assertEquals(PetState.BORDER_L, justLeft)
+    fun `releasing in D snaps to whichever edge is nearer`() {
+        // 离底更近 -> 按 C 规则吸底
+        assertEquals(PetState.CORNER_BR, PetState.snapTarget(400f, 430f, false))
+        // 离右更近 -> 按 B 规则吸右边
+        assertEquals(PetState.BORDER_R, PetState.snapTarget(430f, 400f, false))
+        // 镜像
+        assertEquals(PetState.CORNER_BL, PetState.snapTarget(400f, 430f, true))
+        assertEquals(PetState.BORDER_L, PetState.snapTarget(430f, 400f, true))
     }
 
     @Test
-    fun `corner band boundary is exactly 200px from the bottom`() {
-        // 距底 200px -> 仍然算角落；201px -> 变成边框
-        assertEquals(PetState.CORNER_BR,
-            PetState.snapTarget(SW * 0.75f, SH - 200f, SW, SH))
-        assertEquals(PetState.BORDER_R,
-            PetState.snapTarget(SW * 0.75f, SH - 201f, SW, SH))
+    fun `releasing in E also snaps to the nearer edge`() {
+        assertEquals(PetState.CORNER_BR, PetState.snapTarget(500f, 900f, false))
+        assertEquals(PetState.BORDER_R, PetState.snapTarget(900f, 500f, false))
     }
 
-    // ---------------------------------------------------------- 拖动中的临时状态
+    // ---------------------------------------------------------- 旋转角（用户规定）
 
     @Test
-    fun `dragging a corner across midline shows the other corner art`() {
-        assertEquals(PetState.CORNER_BL,
-            PetState.transientState(SW * 0.2f, SW, PetState.CORNER_BR))
-        assertEquals(PetState.CORNER_BR,
-            PetState.transientState(SW * 0.8f, SW, PetState.CORNER_BR))
+    fun `C uses the raw border asset with no rotation`() {
+        // C 区吸附到底边 -> 边框原始素材，不转
+        assertEquals(0f, PetState.rotationForSnap(PetState.CORNER_BR), 0.001f)
+        // 拖到 C 区时也不该转
+        assertEquals(0f, PetState.dragRotationFor(100f, 600f, false), 0.001f)
     }
 
     @Test
-    fun `dragging a border across midline shows the other border art`() {
-        assertEquals(PetState.BORDER_L,
-            PetState.transientState(SW * 0.2f, SW, PetState.BORDER_R))
-        assertEquals(PetState.BORDER_R,
-            PetState.transientState(SW * 0.8f, SW, PetState.BORDER_L))
+    fun `B uses the border asset rotated 90 degrees`() {
+        assertEquals(-90f, PetState.rotationForSnap(PetState.BORDER_R), 0.001f)
+        assertEquals(90f, PetState.rotationForSnap(PetState.BORDER_L), 0.001f)
+        // 拖到 B 区时应转
+        assertEquals(-90f, PetState.dragRotationFor(600f, 100f, false), 0.001f)
+        assertEquals(90f, PetState.dragRotationFor(600f, 100f, true), 0.001f)
     }
 
     @Test
-    fun `corner and border classification helpers agree`() {
-        assertTrue(PetState.isCorner(PetState.CORNER_BR))
-        assertTrue(PetState.isCorner(PetState.CORNER_BL))
-        assertFalse(PetState.isCorner(PetState.BORDER_R))
-        assertTrue(PetState.isBorder(PetState.BORDER_R))
-        assertTrue(PetState.isBorder(PetState.BORDER_L))
-        assertFalse(PetState.isBorder(PetState.CORNER_BL))
+    fun `A never rotates`() {
+        assertEquals(0f, PetState.dragRotationFor(10f, 10f, false), 0.001f)
+        assertEquals(0f, PetState.dragRotationFor(300f, 300f, true), 0.001f)
     }
 
-    // ---------------------------------------------------------- 比例不变（用户硬要求）
+    // ---------------------------------------------------------- 素材选择
 
     @Test
-    fun `scaling preserves the aspect ratio of each asset`() {
-        // 真实素材尺寸
-        val corner = PetState.scaledSize(1440, 1352, 3084f * 0.15f)
-        val border = PetState.scaledSize(1024, 875, 3084f * 0.15f)
-        val rCorner = corner[0].toDouble() / corner[1]
-        val rBorder = border[0].toDouble() / border[1]
-        assertEquals(1440.0 / 1352.0, rCorner, 0.01)
-        assertEquals(1024.0 / 875.0, rBorder, 0.01)
-    }
-
-    @Test
-    fun `rotating never swaps width and height of the draw box`() {
-        // 旋转是绘制时做的，格子尺寸与状态无关 —— 所以同一素材在任何状态下
-        // 算出来的格子必须一模一样，否则就会出现"旋转把图拉长"的 bug。
-        val a = PetState.scaledSize(1024, 875, 463f)
-        val b = PetState.scaledSize(1024, 875, 463f)
-        assertEquals(a[0], b[0])
-        assertEquals(a[1], b[1])
-        // 而且宽/高比必须等于素材原始比，绝不是它的倒数
-        val ratio = a[0].toDouble() / a[1]
-        assertEquals(1024.0 / 875.0, ratio, 0.01)
-        assertTrue("不能是倒数", Math.abs(ratio - 875.0 / 1024.0) > 0.01)
+    fun `A uses corner art, everything else uses border art`() {
+        assertEquals(PetState.CORNER_BR, PetState.artStateFor(10f, 10f, false))
+        assertEquals(PetState.CORNER_BL, PetState.artStateFor(10f, 10f, true))
+        // C 区虽然吸到角落，但用的是边框素材
+        assertEquals(PetState.BORDER_R, PetState.artStateFor(100f, 600f, false))
+        assertEquals(PetState.BORDER_R, PetState.artStateFor(600f, 100f, false))
+        assertEquals(PetState.BORDER_R, PetState.artStateFor(1000f, 1000f, false))
     }
 
     // ---------------------------------------------------------- 只模糊角落过渡
@@ -213,11 +167,27 @@ class PetStateTest {
     @Test
     fun `blur only exists inside the corner transition window`() {
         // 区间内才有模糊
-        assertTrue(PetState.blurFor(121f) > 0f)
-        assertTrue(PetState.blurFor(160f) > 0f)
-        assertTrue(PetState.blurFor(199f) > 0f)
-        // 区间外为 0（UI 层用 inCornerTransition 卡住，200 以上已经全边框素材）
-        assertEquals(0f, PetState.blurFor(120f), 0.001f)
-        assertEquals(1f, PetState.blurFor(200f), 0.001f) // 端点是满值，但 UI 排除
+        assertTrue(PetState.blurFor(400f, 400f) > 0f)
+        // A 区完全不模糊
+        assertEquals(0f, PetState.blurFor(10f, 10f), 0.001f)
+        assertEquals(0f, PetState.blurFor(300f, 300f), 0.001f)
+    }
+
+    // ---------------------------------------------------------- 比例不变（用户硬要求）
+
+    @Test
+    fun `scaling preserves the aspect ratio of each asset`() {
+        val corner = PetState.scaledSize(1440, 1352, 3084f * 0.15f)
+        val border = PetState.scaledSize(1024, 875, 3084f * 0.15f)
+        assertEquals(1440.0 / 1352.0, corner[0].toDouble() / corner[1], 0.01)
+        assertEquals(1024.0 / 875.0, border[0].toDouble() / border[1], 0.01)
+    }
+
+    @Test
+    fun `rotating never swaps width and height of the draw box`() {
+        val a = PetState.scaledSize(1024, 875, 463f)
+        val ratio = a[0].toDouble() / a[1]
+        assertEquals(1024.0 / 875.0, ratio, 0.01)
+        assertTrue("不能是倒数", abs(ratio - 875.0 / 1024.0) > 0.01)
     }
 }
