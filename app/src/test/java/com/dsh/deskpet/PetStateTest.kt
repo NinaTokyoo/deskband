@@ -129,37 +129,98 @@ class PetStateTest {
 
     @Test
     fun `C uses the raw border asset with no rotation`() {
-        // C 区吸附到底边 -> 边框原始素材，不转
         assertEquals(0f, PetState.rotationForSnap(PetState.CORNER_BR), 0.001f)
-        // 拖到 C 区时也不该转
-        assertEquals(0f, PetState.dragRotationFor(100f, 600f, false), 0.001f)
+        // 贴底边（dr 大或 db 小）都不转
+        assertEquals(0f, PetState.rotationForDrag(100f, 600f, false), 0.001f)
+        assertEquals(0f, PetState.rotationForDrag(100f, 100f, false), 0.001f)
     }
 
     @Test
     fun `B uses the border asset rotated 90 degrees`() {
         assertEquals(-90f, PetState.rotationForSnap(PetState.BORDER_R), 0.001f)
         assertEquals(90f, PetState.rotationForSnap(PetState.BORDER_L), 0.001f)
-        // 拖到 B 区时应转
-        assertEquals(-90f, PetState.dragRotationFor(600f, 100f, false), 0.001f)
-        assertEquals(90f, PetState.dragRotationFor(600f, 100f, true), 0.001f)
+        // 贴右边且离底足够远 -> 满角度
+        assertEquals(-90f, PetState.rotationForDrag(700f, 0f, false), 0.001f)
+        assertEquals(90f, PetState.rotationForDrag(700f, 0f, true), 0.001f)
     }
 
     @Test
     fun `A never rotates`() {
-        assertEquals(0f, PetState.dragRotationFor(10f, 10f, false), 0.001f)
-        assertEquals(0f, PetState.dragRotationFor(300f, 300f, true), 0.001f)
+        assertEquals(0f, PetState.rotationForDrag(10f, 10f, false), 0.001f)
+        assertEquals(0f, PetState.rotationForDrag(300f, 300f, true), 0.001f)
     }
 
-    // ---------------------------------------------------------- 素材选择
+    // ---------------------------------------------------------- 极致顺滑：旋转是连续场
 
     @Test
-    fun `A uses corner art, everything else uses border art`() {
-        assertEquals(PetState.CORNER_BR, PetState.artStateFor(10f, 10f, false))
-        assertEquals(PetState.CORNER_BL, PetState.artStateFor(10f, 10f, true))
-        // C 区虽然吸到角落，但用的是边框素材
-        assertEquals(PetState.BORDER_R, PetState.artStateFor(100f, 600f, false))
-        assertEquals(PetState.BORDER_R, PetState.artStateFor(600f, 100f, false))
-        assertEquals(PetState.BORDER_R, PetState.artStateFor(1000f, 1000f, false))
+    fun `rotation is a continuous field - no jumps`() {
+        // 沿 dr 扫一遍（模拟把宠物从右边往里拖），相邻 1px 的跳变必须极小
+        var prev = PetState.rotationForDrag(700f, 0f, false)
+        var maxJump = 0f
+        var at = 0f
+        var dr = 1f
+        while (dr <= 800f) {
+            val cur = PetState.rotationForDrag(700f, dr, false)
+            val j = abs(cur - prev)
+            if (j > maxJump) { maxJump = j; at = dr }
+            prev = cur
+            dr += 1f
+        }
+        assertTrue("旋转沿 dr 的最大单步跳变 $maxJump (在 dr=$at) 应 < 1 度", maxJump < 1f)
+    }
+
+    @Test
+    fun `rotation is monotonic as the pet leaves the right edge`() {
+        val a = PetState.rotationForDrag(700f, 300f, false)
+        val b = PetState.rotationForDrag(700f, 400f, false)
+        val c = PetState.rotationForDrag(700f, 500f, false)
+        assertTrue("越往里角度越小", a < c)
+        assertTrue("单调", b in a..c)
+        // 贴边处是满角度
+        assertEquals(-90f, PetState.rotationForDrag(700f, 0f, false), 0.001f)
+        // 完全离开后归零（过渡带 EDGE_FADE_DEG=200，从 dr=356 起衰减到 0）
+        assertEquals(0f, PetState.rotationForDrag(700f, 700f, false), 0.001f)
+        assertEquals(0f, PetState.rotationForDrag(700f, PetState.CORNER_ZONE_PX + PetState.EDGE_FADE_DEG, false), 0.001f)
+    }
+
+    @Test
+    fun `rotation fades out with height too, so the bottom band never tilts`() {
+        // 贴着右边但也在底边带里（C 区）-> 不该转
+        assertEquals(0f, PetState.rotationForDrag(100f, 0f, false), 0.001f)
+        assertEquals(0f, PetState.rotationForDrag(356f, 0f, false), 0.001f)
+        // 往上走角度才起来，且是连续的
+        val low = PetState.rotationForDrag(400f, 0f, false)
+        val high = PetState.rotationForDrag(600f, 0f, false)
+        assertTrue("往上角度变大", abs(high) > abs(low))
+    }
+
+    // ---------------------------------------------------------- 极致顺滑：素材混合连续
+
+    @Test
+    fun `art blend is continuous from corner art to border art`() {
+        assertEquals(0f, PetState.artBlendFor(0f, 0f), 0.001f)
+        assertEquals(0f, PetState.artBlendFor(200f, 200f), 0.001f)
+        // 平滑过渡到 1
+        val mid = PetState.artBlendFor(320f, 900f)
+        assertTrue("中段应在 0..1 之间", mid > 0.05f && mid < 0.95f)
+        assertEquals(1f, PetState.artBlendFor(400f, 900f), 0.001f)
+        assertEquals(1f, PetState.artBlendFor(900f, 900f), 0.001f)
+        // 单调
+        assertTrue(PetState.artBlendFor(280f, 900f) < PetState.artBlendFor(340f, 900f))
+    }
+
+    @Test
+    fun `art blend has no jumps either`() {
+        var prev = PetState.artBlendFor(0f, 900f)
+        var maxJump = 0f
+        var d = 1f
+        while (d <= 700f) {
+            val cur = PetState.artBlendFor(d, 900f)
+            maxJump = maxOf(maxJump, abs(cur - prev))
+            prev = cur
+            d += 1f
+        }
+        assertTrue("素材混合最大跳变 $maxJump 应 < 0.05", maxJump < 0.05f)
     }
 
     // ---------------------------------------------------------- 模糊：整图高强度 + 交界渐变
@@ -169,9 +230,12 @@ class PetStateTest {
         // 贴着吸附边 -> 完全清晰
         assertEquals(0f, PetState.blurFor(0f, 0f), 0.001f)
         assertEquals(0f, PetState.blurFor(100f, 100f), 0.001f)
-        // 离两条边都很远 -> 也已经过渡回清晰
-        assertEquals(0f, PetState.blurFor(500f, 500f), 0.001f)
-        assertEquals(0f, PetState.blurFor(900f, 900f), 0.001f)
+        assertEquals(0f, PetState.blurFor(PetState.FADE_INNER_PX, 900f), 0.001f)
+        // 离得足够远（超出渐弱终点）-> 完全清晰
+        assertEquals(0f, PetState.blurFor(PetState.FADE_OUTER_PX, 900f), 0.001f)
+        assertEquals(0f, PetState.blurFor(700f, 900f), 0.001f)
+        // 渐弱区间内还有余雾（这是渐变，不是 bug）
+        assertTrue(PetState.blurFor(500f, 900f) > 0f)
     }
 
     @Test
@@ -244,5 +308,29 @@ class PetStateTest {
         val ratio = a[0].toDouble() / a[1]
         assertEquals(1024.0 / 875.0, ratio, 0.01)
         assertTrue("不能是倒数", abs(ratio - 875.0 / 1024.0) > 0.01)
+    }
+
+    /**
+     * 用户硬要求："旋转的时候无论如何不要改变比例"。
+     *
+     * 实现上旋转只作用在 Canvas 上（绕格子中心），**从不修改目标矩形**，
+     * 所以格子尺寸与角度完全无关。这里把这条不变式钉死。
+     */
+    @Test
+    fun `draw box is independent of the rotation angle`() {
+        val sizes = mutableListOf<IntArray>()
+        var deg = 0f
+        while (deg <= 360f) {
+            // 旋转只会改变绘制变换，不会让 scaledSize 得到不同结果
+            sizes += PetState.scaledSize(1024, 875, 463f)
+            deg += 15f
+        }
+        val first = sizes.first()
+        for (s in sizes) {
+            assertEquals(first[0], s[0])
+            assertEquals(first[1], s[1])
+        }
+        // 而且和"正立时"的格子完全一样
+        assertEquals(1024.0 / 875.0, first[0].toDouble() / first[1], 0.01)
     }
 }

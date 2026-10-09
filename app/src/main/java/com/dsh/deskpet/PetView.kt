@@ -66,6 +66,19 @@ class PetView(context: Context) : View(context) {
     /** 用户设定的大小比例（占屏幕高度），作用在"人物实际高度"上 */
     private var sizeFrac = 0.15f
 
+    // ---------------------------------------------------------------- 旋转动画
+
+    /**
+     * 当前显示用的旋转角（度，正数 = 屏幕视觉顺时针）。
+     *
+     * 拖动时直接跟随连续场（[PetState.rotationForDrag]），松手后向目标角平滑过渡，
+     * 这样旋转本身也是顺滑的，不会突然跳 90°。
+     */
+    private var shownRotation = 0f
+    private var targetRotation = 0f
+    private var rotAnimating = false
+    private var wasDragging = false
+
     private val handler = Handler(Looper.getMainLooper())
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
     private val blurPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
@@ -120,6 +133,17 @@ class PetView(context: Context) : View(context) {
                 val t = ((now - hopStart).toFloat() / 420f).coerceIn(0f, 1f)
                 if (t >= 1f) hopping = false
                 need = true
+            }
+            if (rotAnimating) {
+                // 指数逼近平滑收尾
+                val diff = targetRotation - shownRotation
+                if (abs(diff) < 0.15f) {
+                    shownRotation = targetRotation
+                    rotAnimating = false
+                } else {
+                    shownRotation += diff * 0.22f
+                    need = true
+                }
             }
             invalidate()
             if (need) handler.postDelayed(this, FRAME_MS)
@@ -339,23 +363,35 @@ class PetView(context: Context) : View(context) {
         val dr = (b.width() - (x + w)).coerceAtLeast(0f)
         val leftHalf = (x + w / 2f) < b.width() / 2f
 
-        // 拖动中用哪套素材 / 转多少度，直接由所在区决定
-        val artState = if (dragging) {
-            PetState.artStateFor(db, dr, leftHalf)
-        } else {
-            state
-        }
-        val rotation = if (dragging) {
-            PetState.dragRotationFor(db, dr, leftHalf)
-        } else {
-            PetState.rotationForSnap(state)
-        }
+        // 拖动中用连续场算目标角；松手后向吸附目标角平滑过渡
+        val fieldRotation = if (dragging) PetState.rotationForDrag(db, dr, leftHalf) else 0f
+        val snapRotation = if (!dragging) PetState.rotationForSnap(state) else 0f
+        val wantRotation = if (dragging) fieldRotation else snapRotation
 
-        // 模糊：D 区（那条 L 形带）内才有，拖动时生效
+        if (dragging) {
+            // 拖动时角度直接跟随，手指走多少就转多少
+            shownRotation = wantRotation
+            targetRotation = wantRotation
+            rotAnimating = false
+        } else {
+            targetRotation = wantRotation
+            if (wasDragging && abs(shownRotation - targetRotation) > 0.15f) {
+                // 刚松手：从当前角度平滑转到吸附角度
+                rotAnimating = true
+            }
+        }
+        wasDragging = dragging
+        if (rotAnimating) {
+            handler.removeCallbacks(ticker)
+            handler.post(ticker)
+        }
+        val rotation = shownRotation
+
+        // 模糊：D 区高强度，两侧平滑渐变
         val blurT = if (dragging) PetState.blurFor(db, dr) else 0f
 
-        // 角落素材 <-> 边框素材 的切换进度
-        val morph = if (dragging) PetState.morphFor(db, dr) else 0f
+        // 角落素材 <-> 边框素材 的混合进度（连续，不是硬切）
+        val morph = if (dragging) PetState.artBlendFor(db, dr) else PetState.morphFor(db, dr)
 
         // 点击反馈：轻轻跳一下
         var hopY = 0f
@@ -378,13 +414,17 @@ class PetView(context: Context) : View(context) {
         val mirrored = leftHalf
 
         if (morph <= 0.001f) {
-            drawOne(canvas, s, artState, w, h, x, drawY, mirrored, blurT, rotation)
+            drawOne(canvas, s, cornerOrBorder(leftHalf), w, h, x, drawY, mirrored, blurT, rotation)
         } else {
             // 过渡：角落素材淡出 + 边框素材淡入（叠加模糊，避免生硬）
             drawBlend(canvas, s, w, h, x, drawY, mirrored, morph, blurT, rotation)
         }
         canvas.restoreToCount(save)
     }
+
+    /** 完全用角落素材时的状态（供 drawOne 走单图分支） */
+    private fun cornerOrBorder(leftHalf: Boolean): Int =
+        if (leftHalf) PetState.CORNER_BL else PetState.CORNER_BR
 
     private fun drawOne(
         canvas: Canvas,
@@ -419,6 +459,12 @@ class PetView(context: Context) : View(context) {
         }
     }
 
+    /**
+     * 角落素材淡出 + 边框素材淡入。
+     *
+     * 关键：**两层都用同一个格子 (w,h)**，旋转只作用在 Canvas 上，
+     * 从来不去改目标矩形 —— 所以任何角度下比例都严格不变。
+     */
     private fun drawBlend(
         canvas: Canvas,
         s: PetSprite,
@@ -433,34 +479,29 @@ class PetView(context: Context) : View(context) {
         val radius = blurFilterFor(blurT * max(1f, w * 0.14f))
         val left = mirrored
 
-        // 旋转时的格子：边框素材旋转 90° 后宽高互换
-        val qw = if (rotation != 0f) h.toFloat() else w.toFloat()
-        val qh = if (rotation != 0f) w.toFloat() else h.toFloat()
-
-        // ---- 下层：角落素材（始终正立），随进度淡出 ----
         val cornerBmp = s.bitmap(if (left) PetState.CORNER_BL else PetState.CORNER_BR, left)
-        src.set(0, 0, cornerBmp.width, cornerBmp.height)
+        val borderBmp = s.bitmap(if (left) PetState.BORDER_L else PetState.BORDER_R, left)
+
+        val save = canvas.save()
+        // 旋转绕格子中心；格子尺寸与素材比例一致，旋转不改变它
+        if (rotation != 0f) {
+            canvas.rotate(rotation, x + w / 2f, y + h / 2f)
+        }
         dst.set(x, y, x + w, y + h)
+
+        // 下层：角落素材，随进度淡出
+        src.set(0, 0, cornerBmp.width, cornerBmp.height)
         paint.alpha = ((1f - m) * 255f).roundToInt().coerceIn(0, 255)
         paint.maskFilter = radius
         canvas.drawBitmap(cornerBmp, src, dst, paint)
 
-        // ---- 上层：边框素材，随进度淡入 ----
-        val borderBmp = s.bitmap(if (left) PetState.BORDER_L else PetState.BORDER_R, left)
+        // 上层：边框素材，随进度淡入
         src.set(0, 0, borderBmp.width, borderBmp.height)
         paint.alpha = (m * 255f).roundToInt().coerceIn(0, 255)
         paint.maskFilter = radius
-        if (rotation != 0f) {
-            val save = canvas.save()
-            canvas.rotate(rotation, x + qw / 2f, y + qh / 2f)
-            dst.set(x, y, x + qw, y + qh)
-            canvas.drawBitmap(borderBmp, src, dst, paint)
-            canvas.restoreToCount(save)
-        } else {
-            dst.set(x, y, x + w, y + h)
-            canvas.drawBitmap(borderBmp, src, dst, paint)
-        }
+        canvas.drawBitmap(borderBmp, src, dst, paint)
 
+        canvas.restoreToCount(save)
         paint.maskFilter = null
         paint.alpha = 255
     }

@@ -61,10 +61,16 @@ object PetState {
      *   460 -> 跳变 0.093（太陡，看得出硬边）
      *   480 -> 跳变 0.042（够柔，且 E 区残留很快消失）
      *   500 -> 跳变 0.027，但 E 区残留偏多
-     * 取 480。D 区外沿 444 到 480 之间衰减，所以 E 区开头会有一点余雾，
-     * 这正是"D 与其他区域之间渐变"想要的效果。
+     * 用户要求"极致的顺滑"，所以再放宽到 560：跳变更小。
+     * 代价是 E 区靠内一段还有淡淡余雾 —— 这正是渐变该有的样子。
      */
-    const val FADE_OUTER_PX = 480f
+    const val FADE_OUTER_PX = 560f
+
+    /** 旋转的过渡带宽：dr 在这个范围内从满角度平滑衰减到 0 */
+    const val EDGE_FADE_DEG = 200f
+
+    /** 素材混合完成的距离：到这儿已经完全用边框素材 */
+    const val ART_FADE_OUTER_PX = 400f
 
     const val ZONE_A = 0
     const val ZONE_B = 1
@@ -237,28 +243,41 @@ object PetState {
     }
 
     /**
-     * 拖动过程中用哪套素材（配合跨半屏的翻转动画）。
-     * 角落区用角落素材，离开角落就用边框素材。
+     * 拖动过程中素材的旋转角 —— **连续场，不是分区硬切**。
+     *
+     * 用户要求："要极致的顺滑！无论是模糊还是旋转"。
+     * 所以这里不用 `zoneOf()` 做离散判断，而是让角度随位置平滑变化：
+     *
+     *   - 只可能在**靠近右侧**时才转（dr 小），垂直位置不影响角度
+     *   - dr 从 356 往外走时，在 [EDGE_FADE_DEG] 度内平滑地从 90° 转到 0°
+     *   - db 越小（越靠底）角度越小 -> 底部那条带（C 区）自然保持不转
+     *
+     * 于是：
+     *   B 区（贴右、离底远）-> 90°（逆时针90°，即 -90）
+     *   C 区（贴底）        -> 0°（原素材）
+     *   E 区                -> 0°
+     *   区与区之间是渐变，没有跳变
+     *
+     * 返回值单位是度，**正数 = 屏幕视觉顺时针**，直接喂给 Canvas.rotate。
      */
-    fun artStateFor(db: Float, dr: Float, leftHalf: Boolean): Int =
-        if (zoneOf(db, dr) == ZONE_A) {
-            if (leftHalf) CORNER_BL else CORNER_BR
-        } else {
-            if (leftHalf) BORDER_L else BORDER_R
-        }
+    fun rotationForDrag(db: Float, dr: Float, leftHalf: Boolean): Float {
+        // 只跟"离右边的距离"和"离底边的距离"有关；离底 <356 说明在底部带里，不转
+        val t = smooth((CORNER_ZONE_PX - dr) / EDGE_FADE_DEG) *
+            smooth((db - CORNER_ZONE_PX) / EDGE_FADE_DEG)
+        if (t <= 0.0001f) return 0f
+        val full = if (leftHalf) rotationForSnap(BORDER_L) else rotationForSnap(BORDER_R)
+        return full * t
+    }
 
     /**
-     * 拖动过程中素材的旋转角。
+     * 素材混合：0 = 全用角落素材，1 = 全用边框素材。**连续**，不是 0/1 硬切。
      *
-     *   - A 区：不转（角落素材正立）
-     *   - B 区：边框**逆时针90°**
-     *   - C / D / E：边框**原始素材**，不转
-     *
-     * 用户补充明确："E区内以「右边框」原素材（不旋转）呈现"。
+     * 从贴角处到 CORNER_TO_BORDER_FADE_OUT 平滑过渡，
+     * 并且这段正好落在模糊升起的区间里，所以换图被糊住、看不出来。
      */
-    fun dragRotationFor(db: Float, dr: Float, leftHalf: Boolean): Float {
-        if (zoneOf(db, dr) != ZONE_B) return 0f
-        return if (leftHalf) rotationForSnap(BORDER_L) else rotationForSnap(BORDER_R)
+    fun artBlendFor(db: Float, dr: Float): Float {
+        val d = minOf(db, dr)
+        return smooth((d - FADE_INNER_PX) / (ART_FADE_OUTER_PX - FADE_INNER_PX))
     }
 
     /**
