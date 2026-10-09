@@ -1332,10 +1332,10 @@ class PetView(context: Context) : View(context) {
         private const val ROT_MS = 180f
 
         /** 回弹过冲幅度：小一点，只是"弹一下"的观感 */
-        const val BOUNCE_PX = 18f
+        const val BOUNCE_PX = 36f
 
         /** 回弹的回落时长（略长于冲出，收得柔一点） */
-        const val BOUNCE_BACK_MS = 180f
+        const val BOUNCE_BACK_MS = 360f
         private const val HOP_MS = 380f
         private const val HOP_FRACTION = 0.08f
 
