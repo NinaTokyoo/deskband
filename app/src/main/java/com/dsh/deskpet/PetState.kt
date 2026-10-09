@@ -136,28 +136,22 @@ object PetState {
     }
 
     /**
-     * 松手时决定吸附到哪个状态。
+     * 松手时**贴哪条边**（不看素材，素材由 [snapCategory] 按吸附后的位置决定）。
      *
-     * @param db 桌宠底边离屏幕底部
-     * @param dr 桌宠右边离屏幕右侧
-     * @param leftHalf 是否在左半屏
+     * 单独抽出来是因为"贴到哪条边"和"用哪套素材"是两件事：
+     * 关键的一条是 —— C 区贴底边后如果水平位置靠近角落，落点其实在 A 区，
+     * 那时该用角落素材。所以顺序必须是：先算落点，再判素材。
      */
-    fun snapTarget(db: Float, dr: Float, leftHalf: Boolean): Int {
+    fun snapEdges(db: Float, dr: Float): IntArray {
         return when (zoneOf(db, dr)) {
-            // A 区：吸附到角落
-            ZONE_A -> if (leftHalf) CORNER_BL else CORNER_BR
-            // C 区：垂直吸附到屏幕底部
-            ZONE_C -> if (leftHalf) CORNER_BL else CORNER_BR
-            // B 区：水平吸附到侧边
-            ZONE_B -> if (leftHalf) BORDER_L else BORDER_R
-            // D / E 区：离哪边近吸哪边
-            else -> {
-                if (nearerEdgeIsBottom(db, dr)) {
-                    if (leftHalf) CORNER_BL else CORNER_BR
-                } else {
-                    if (leftHalf) BORDER_L else BORDER_R
-                }
-            }
+            // A：贴角（底边 + 侧边）
+            ZONE_A -> intArrayOf(1, 1)
+            // C：只垂直贴底边
+            ZONE_C -> intArrayOf(1, 0)
+            // B：只水平贴侧边
+            ZONE_B -> intArrayOf(0, 1)
+            // D / E：贴更近的那一边
+            else -> if (nearerEdgeIsBottom(db, dr)) intArrayOf(1, 0) else intArrayOf(0, 1)
         }
     }
 
@@ -223,6 +217,81 @@ object PetState {
      */
     fun morphFor(db: Float, dr: Float): Float =
         if (zoneOf(db, dr) == ZONE_A) 0f else 1f
+
+    /** 离底边的距离（两侧相同） */
+    fun bottomDist(y: Float, h: Float, screenH: Float): Float =
+        (screenH - (y + h)).coerceAtLeast(0f)
+
+    /**
+     * 离"本侧吸附边"的距离 —— **左半屏量左边，右半屏量右边**。
+     *
+     * 这个镜像很关键：早先在左半屏仍然量"离右边"，于是左下角的宠物
+     * 会被算成 dr≈915，判成 C 区只做垂直吸附，永远吸不到左下角。
+     */
+    fun sideDist(x: Float, w: Float, screenW: Float, leftHalf: Boolean): Float =
+        if (leftHalf) x.coerceAtLeast(0f)
+        else (screenW - (x + w)).coerceAtLeast(0f)
+
+    /**
+     * 吸附后该用哪套素材 —— **按吸附后的位置重新判一次**。
+     *
+     * 这样才和分区表天然一致，不用维护两套互相打架的规则：
+     *   吸附到角落且落在 A 区 -> 角落素材
+     *   贴底边（落在 C 带）    -> 边框素材、不旋转
+     *   贴右边（落在 B 带）    -> 边框素材、逆时针90度
+     *
+     * @param snappedDb  吸附后底边离屏幕底部的距离（贴底时是 0）
+     * @param snappedDr  吸附后右边离屏幕右侧的距离（贴右时是 0）
+     * @param leftHalf   是否在左半屏 —— 左右由它决定，不靠距离猜
+     */
+    fun snapCategory(
+        snappedDb: Float,
+        snappedDr: Float,
+        leftHalf: Boolean
+    ): Int {
+        val sideState = if (leftHalf) BORDER_L else BORDER_R
+        val cornerState = if (leftHalf) CORNER_BL else CORNER_BR
+        return if (zoneOf(snappedDb, snappedDr) == ZONE_A) cornerState else sideState
+    }
+
+    /**
+     * 计算吸附后的格子位置。
+     *
+     * 用户规则（左半屏完全镜像）：
+     *   A   -> 贴角：底边和右边都贴
+     *   C   -> **只垂直吸附到底边**，保留松手时的水平位置 x
+     *   B   -> **只水平吸附到侧边**，保留松手时的垂直位置 y
+     *   D/E -> 离哪边近就贴哪边，同样保留另一轴
+     *
+     * @param leftHalf 是否在左半屏（决定贴左边还是右边）
+     * @return [x, y, category]，category 供上层决定素材与旋转
+     */
+    fun snapPosition(
+        x: Float, y: Float,
+        w: Float, h: Float,
+        db: Float, dr: Float,
+        screenW: Float, screenH: Float,
+        leftHalf: Boolean
+    ): FloatArray {
+        // 先决定"贴哪条边"
+        val edges = snapEdges(db, dr)
+        val snapBottom = edges[0] == 1
+        val snapSide = edges[1] == 1
+
+        var nx = x
+        var ny = y
+        if (snapBottom) ny = screenH - h          // 贴底边
+        if (snapSide) {
+            nx = if (leftHalf) 0f else screenW - w // 贴左边 / 右边
+        }
+
+        // 贴完再看落在哪个区，决定素材（距离同样按本侧量）
+        val ndb = bottomDist(ny, h, screenH)
+        val ndr = sideDist(nx, w, screenW, leftHalf)
+        val cat = snapCategory(ndb, ndr, leftHalf)
+
+        return floatArrayOf(nx, ny, cat.toFloat())
+    }
 
     /**
      * 把绘制格子夹在屏幕内，保证**至少有一部分身体可见**。

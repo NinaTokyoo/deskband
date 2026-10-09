@@ -88,41 +88,131 @@ class PetStateTest {
         assertFalse(PetState.hasBlur(1000f, 1000f))  // E
     }
 
-    // ---------------------------------------------------------- 吸附目标
+    // ---------------------------------------------------------- 吸附到边（含左侧镜像）
 
-    @Test
-    fun `releasing in A snaps to the corner`() {
-        assertEquals(PetState.CORNER_BR, PetState.snapTarget(10f, 10f, false))
-        assertEquals(PetState.CORNER_BL, PetState.snapTarget(10f, 10f, true))
+    /** 可活动区高度（已扣掉导航栏），与真机一致 */
+    private val SH_WORK = 3084f
+    private val PW = 475f
+    private val PH = 463f
+
+    /** 跑一次吸附，返回 [x, y, category]（侧边距离按本侧量） */
+    private fun snap(x: Float, y: Float, leftHalf: Boolean): FloatArray {
+        val db = PetState.bottomDist(y, PH, SH_WORK)
+        val dr = PetState.sideDist(x, PW, SW, leftHalf)
+        return PetState.snapPosition(x, y, PW, PH, db, dr, SW, SH_WORK, leftHalf)
     }
 
     @Test
-    fun `releasing in C snaps vertically to the bottom`() {
-        assertEquals(PetState.CORNER_BR, PetState.snapTarget(100f, 600f, false))
-        assertEquals(PetState.CORNER_BL, PetState.snapTarget(100f, 600f, true))
+    fun `A snaps to the corner on both axes`() {
+        val r = snap(SW - PW - 50f, SH_WORK - PH - 50f, false)
+        assertEquals(SW - PW, r[0], 0.5f)
+        assertEquals(SH_WORK - PH, r[1], 0.5f)
+        assertEquals(PetState.CORNER_BR.toFloat(), r[2], 0.01f)
     }
 
     @Test
-    fun `releasing in B snaps horizontally to the side`() {
-        assertEquals(PetState.BORDER_R, PetState.snapTarget(600f, 100f, false))
-        assertEquals(PetState.BORDER_L, PetState.snapTarget(600f, 100f, true))
+    fun `C snaps only vertically and keeps the horizontal release position`() {
+        val x0 = SW - PW - 500f          // 离右 500 > 356，所以在 A 之外
+        val r = snap(x0, SH_WORK - PH - 100f, false)
+        // 垂直贴底
+        assertEquals(SH_WORK - PH, r[1], 0.5f)
+        // 水平位置原样保留
+        assertEquals(x0, r[0], 0.5f)
     }
 
     @Test
-    fun `releasing in D snaps to whichever edge is nearer`() {
-        // 离底更近 -> 按 C 规则吸底
-        assertEquals(PetState.CORNER_BR, PetState.snapTarget(400f, 430f, false))
-        // 离右更近 -> 按 B 规则吸右边
-        assertEquals(PetState.BORDER_R, PetState.snapTarget(430f, 400f, false))
-        // 镜像
-        assertEquals(PetState.CORNER_BL, PetState.snapTarget(400f, 430f, true))
-        assertEquals(PetState.BORDER_L, PetState.snapTarget(430f, 400f, true))
+    fun `B snaps only horizontally and keeps the vertical release position`() {
+        val y0 = 1200f
+        val r = snap(SW - PW - 100f, y0, false)
+        // 水平贴右
+        assertEquals(SW - PW, r[0], 0.5f)
+        // 垂直位置原样保留
+        assertEquals(y0, r[1], 0.5f)
+        assertEquals(PetState.BORDER_R.toFloat(), r[2], 0.01f)
     }
 
     @Test
-    fun `releasing in E also snaps to the nearer edge`() {
-        assertEquals(PetState.CORNER_BR, PetState.snapTarget(500f, 900f, false))
-        assertEquals(PetState.BORDER_R, PetState.snapTarget(900f, 500f, false))
+    fun `E snaps to the nearer edge and keeps the other axis`() {
+        // 离底更近 -> 贴底，x 不变
+        val x0 = 300f
+        val rBottom = snap(x0, SH_WORK - PH - 500f, false)
+        assertEquals(SH_WORK - PH, rBottom[1], 0.5f)
+        assertEquals(x0, rBottom[0], 0.5f)
+
+        // 离右更近 -> 贴右，y 不变
+        val y0 = 800f
+        val rRight = snap(SW - PW - 500f, y0, false)
+        assertEquals(SW - PW, rRight[0], 0.5f)
+        assertEquals(y0, rRight[1], 0.5f)
+    }
+
+    @Test
+    fun `D snaps to the nearer edge too`() {
+        // D 区：两边都在 356..444 之间，取更近的
+        val rBottom = snap(SW - PW - 420f, SH_WORK - PH - 380f, false)
+        assertEquals(SH_WORK - PH, rBottom[1], 0.5f)
+        val rRight = snap(SW - PW - 380f, SH_WORK - PH - 420f, false)
+        assertEquals(SW - PW, rRight[0], 0.5f)
+    }
+
+    @Test
+    fun `left half is a perfect mirror of the right half`() {
+        val rightCorner = snap(SW - PW - 50f, SH_WORK - PH - 50f, false)
+        val leftCorner = snap(50f, SH_WORK - PH - 50f, true)
+        assertEquals(0f, leftCorner[0], 0.5f)
+        assertEquals(rightCorner[1], leftCorner[1], 0.5f)
+        assertEquals(PetState.CORNER_BL.toFloat(), leftCorner[2], 0.01f)
+
+        // 左边框：贴左边，y 保留
+        val y0 = 1500f
+        val lb = snap(100f, y0, true)
+        assertEquals(0f, lb[0], 0.5f)
+        assertEquals(y0, lb[1], 0.5f)
+        assertEquals(PetState.BORDER_L.toFloat(), lb[2], 0.01f)
+
+        // 镜像验证：右侧 x 镜像过来应等于左侧 x
+        val rc = snap(SW - PW - 60f, SH_WORK - PH - 60f, false)
+        val lc = snap(60f, SH_WORK - PH - 60f, true)
+        assertEquals(SW - (rc[0] + PW), lc[0], 0.5f)
+    }
+
+    @Test
+    fun `C released near the corner falls into A and uses corner art`() {
+        // "先算落点再判素材"的关键：C 区贴底后水平位置仍靠近角落，
+        // 落点其实在 A 区里，所以该用角落素材
+        val r = snap(SW - PW - 10f, SH_WORK - PH - 100f, false)
+        assertEquals(SH_WORK - PH, r[1], 0.5f)
+        assertEquals(PetState.CORNER_BR.toFloat(), r[2], 0.01f)
+    }
+
+    @Test
+    fun `snap category follows the snapped position not the release zone`() {
+        // 贴右边落在 A 区（离底也近）-> 角落素材
+        assertEquals(PetState.CORNER_BR, PetState.snapCategory(0f, 100f, false))
+        // 贴底边、落点远离角落（侧边距离超过 356）-> 边框素材
+        assertEquals(PetState.BORDER_R, PetState.snapCategory(0f, 900f, false))
+        // 贴角落在 A 区 -> 角落素材
+        assertEquals(PetState.CORNER_BR, PetState.snapCategory(0f, 0f, false))
+        assertEquals(PetState.CORNER_BL, PetState.snapCategory(0f, 0f, true))
+    }
+
+    @Test
+    fun `left half measures distance from the LEFT edge, not the right`() {
+        // 关键回归：左下角的宠物在左半屏，侧边距离必须量左边（≈0），
+        // 否则会被算成 dr≈915，判进 C 区只做垂直吸附，永远吸不到左下角
+        val x = 50f
+        val y = SH_WORK - PH - 50f
+        assertEquals(50f, PetState.sideDist(x, PW, SW, true), 0.5f)
+        assertEquals(SW - (x + PW), PetState.sideDist(x, PW, SW, false), 0.5f)
+        // 它应该是 A 区（左下角）
+        assertEquals(PetState.ZONE_A, PetState.zoneOf(
+            PetState.bottomDist(y, PH, SH_WORK),
+            PetState.sideDist(x, PW, SW, true)
+        ))
+        // 而且真的吸到左下角
+        val r = snap(x, y, true)
+        assertEquals(0f, r[0], 0.5f)
+        assertEquals(PetState.CORNER_BL.toFloat(), r[2], 0.01f)
     }
 
     // ---------------------------------------------------------- 旋转角（用户规定）

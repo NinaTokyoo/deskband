@@ -311,13 +311,13 @@ class PetView(context: Context) : View(context) {
     }
 
     /**
-     * 松手：按所在区决定**用哪套素材、转不转**。
+     * 松手：按所在区吸附。
      *
-     * 用户说明："松手吸附是吸附到松手位置对应的像素位置" ——
-     * 所以这里**不移动宠物**，只记下状态。位置就停在松手的地方。
-     *
-     * 但因为不再自动对齐边缘，必须自己兜住"别被拖出屏幕"，
-     * 否则宠物会有一半留在屏幕外（实测踩过：pos_left 变成 -121）。
+     * 用户规则：
+     *   - 吸附 = 真的贴到边上（A 贴角、C 只贴底、B 只贴侧边、D/E 贴更近的那边）
+     *   - 另一轴保留松手时的位置（"吸附到松手位置对应的像素位置"）
+     *   - 素材按**吸附后的位置**决定，和分区表天然一致
+     *   - 左半屏完全镜像
      */
     private fun settle() {
         val b = host?.bounds() ?: return
@@ -325,18 +325,28 @@ class PetView(context: Context) : View(context) {
         val x = anchorX + dragOffsetX
         val y = anchorY + dragOffsetY
 
-        val db = (b.height() - (y + sz[1])).coerceAtLeast(0f)
-        val dr = (b.width() - (x + sz[0])).coerceAtLeast(0f)
         val leftHalf = (x + sz[0] / 2f) < b.width() / 2f
+        val db = PetState.bottomDist(y, sz[1].toFloat(), b.height().toFloat())
+        val dr = PetState.sideDist(x, sz[0].toFloat(), b.width().toFloat(), leftHalf)
 
-        state = PetState.snapTarget(db, dr, leftHalf)
+        val snapped = PetState.snapPosition(
+            x, y, sz[0].toFloat(), sz[1].toFloat(),
+            db, dr,
+            b.width().toFloat(), b.height().toFloat(),
+            leftHalf
+        )
 
-        // 保留松手位置，但夹住不让它跑出屏幕
-        val c = clampToScreen(x, y, sz[0], sz[1])
+        val c = clampToScreen(snapped[0], snapped[1], sz[0], sz[1])
         anchorX = c[0]
         anchorY = c[1]
         dragOffsetX = 0f
         dragOffsetY = 0f
+        state = snapped[2].toInt()
+
+        // 吸附后把朝向也对齐：贴边的状态该转就转
+        targetRotation = PetState.rotationForSnap(state)
+        shownRotation = targetRotation
+        rotAnimating = false
 
         host?.onSettled(state, leftInset(), topInset())
         invalidate()
@@ -372,10 +382,10 @@ class PetView(context: Context) : View(context) {
         val x = anchorX + dragOffsetX
         val y = anchorY + dragOffsetY
 
-        // 判定基准：桌宠的**底边**离屏幕底部、**右边**离屏幕右侧（左半屏镜像）
-        val db = (b.height() - (y + h)).coerceAtLeast(0f)
-        val dr = (b.width() - (x + w)).coerceAtLeast(0f)
+        // 判定基准：底边离屏幕底部；侧边距离**按本侧量**（左半屏量左边）
         val leftHalf = (x + w / 2f) < b.width() / 2f
+        val db = PetState.bottomDist(y, h.toFloat(), b.height().toFloat())
+        val dr = PetState.sideDist(x, w.toFloat(), b.width().toFloat(), leftHalf)
 
         // 拖动中用连续场算目标角；松手后向吸附目标角平滑过渡
         val fieldRotation = if (dragging) PetState.rotationForDrag(db, dr, leftHalf) else 0f
