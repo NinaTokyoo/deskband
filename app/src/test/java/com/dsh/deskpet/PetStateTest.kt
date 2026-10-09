@@ -131,6 +131,8 @@ class PetStateTest {
         val r = snap(x0, SH_WORK - PH - 100f, false)
         assertEquals(SH_WORK - PH, r[1], 0.5f)   // 垂直贴底
         assertEquals(x0, r[0], 0.5f)             // x 原样保留
+        // C 区用「边框素材 + 正立」的变体（用户要求头部向上）
+        assertEquals(PetState.BORDER_R_UPRIGHT.toFloat(), r[2], 0.01f)
     }
 
     @Test
@@ -197,12 +199,16 @@ class PetStateTest {
     @Test
     fun C_uses_the_upright_border_asset_with_no_rotation() {
         // C 区（贴底）用边框素材、正立、头部向上
-        assertEquals(0f, PetState.rotationForSnap(PetState.CORNER_BR), 0.001f)
+        assertEquals(0f, PetState.rotationForSnap(PetState.BORDER_R_UPRIGHT), 0.001f)
+        assertEquals(0f, PetState.rotationForSnap(PetState.BORDER_L_UPRIGHT), 0.001f)
         assertEquals(0f, PetState.rotationForDrag(100f, 600f, false), 0.001f)
         assertEquals(0f, PetState.rotationForDrag(100f, 100f, false), 0.001f)
-        // 素材类别：C 区 -> 边框素材（不是角落素材）
+        // 素材类别：C 区 -> 「边框素材 + 正立」变体（不是角落素材，也不是旋转版）
         val r = snap(465f, SH_WORK - PH - 100f, false)
-        assertEquals(PetState.BORDER_R.toFloat(), r[2], 0.01f)
+        assertEquals(PetState.BORDER_R_UPRIGHT.toFloat(), r[2], 0.01f)
+        // 用的是边框那套图，不是角落图
+        assertFalse(PetState.usesCornerArt(r[2].toInt()))
+        assertTrue(PetState.usesBorderArt(r[2].toInt()))
     }
 
     @Test

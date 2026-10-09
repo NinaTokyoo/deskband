@@ -199,18 +199,17 @@ class PetService : Service(), PetView.Host {
         view.sprite = s
         view.setSizeFraction(prefs.sizeFraction)
 
-        // 整屏透明窗口。
+        // 窗口**只有宠物那么大**（不是整屏）。
         //
-        // ⚠️ 绝对不要加 FLAG_NOT_TOUCH_MODAL！
-        // 那个 flag 的语义是"本窗口之外的触摸由我自己处理，不要传给下层"，
-        // 配上整屏窗口就会把**整个屏幕的触摸全部吃掉**，用户没法操作手机。
-        // （实测踩过这个坑：开启桌宠后整个屏幕点不动。）
+        // ⚠️ 不要改成整屏窗口！曾经用整屏 + FLAG_NOT_TOUCH_MODAL，
+        // 而那个 flag 的语义是"本窗口之外的触摸由我自己处理"，
+        // 结果开启桌宠后整个屏幕都点不动。
         //
-        // 正确做法是：不加该 flag，让窗口外的触摸自然落到下层；
-        // 窗口内部的触摸由 PetView.onTouchEvent 自己判定是否点在宠物身上，
-        // 点空了返回 false，同样会继续往下传。
+        // 现在窗口贴合宠物外接矩形，窗口之外的触摸由 Android 直接派发给桌面/应用，
+        // 天然不遮挡；窗口内部再由 PetView 做逐像素 alpha 判定。
+        val zero = PetView.boundsFor(s, prefs.snapState, prefs.sizeFraction, b)
         val p = WindowManager.LayoutParams(
-            b.width(), b.height(),
+            zero[2], zero[3],
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                 or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
@@ -218,8 +217,8 @@ class PetService : Service(), PetView.Host {
             PixelFormat.TRANSLUCENT
         )
         p.gravity = Gravity.TOP or Gravity.START
-        p.x = 0
-        p.y = 0
+        p.x = zero[0]
+        p.y = zero[1]
 
         try {
             wm.addView(view, p)
@@ -233,9 +232,10 @@ class PetService : Service(), PetView.Host {
 
         // 恢复上次的吸附状态与位置
         val st = prefs.snapState
-        view.applySnap(st)
         if (prefs.hasPosition) {
             view.restore(st, prefs.posLeft, prefs.posTop)
+        } else {
+            view.applySnap(st)
         }
 
         prefs.running = true
@@ -268,9 +268,10 @@ class PetService : Service(), PetView.Host {
         v.sprite = sprite
         v.setSizeFraction(prefs.sizeFraction)
         // 大小变了要重新吸附定位
-        v.applySnap(v.state)
         if (prefs.hasPosition) {
             v.restore(v.state, prefs.posLeft, prefs.posTop)
+        } else {
+            v.applySnap(v.state)
         }
     }
 
@@ -297,14 +298,30 @@ class PetService : Service(), PetView.Host {
 
     override fun bounds(): Rect = screenBounds()
 
-    /** 整屏窗口不移动，位置由 PetView 自己画；这里只用来触发保存 */
-    override fun moveTo(x: Int, y: Int) {
-        // 窗口固定整屏，无需 updateViewLayout
+    /**
+     * 移动并调整悬浮窗 —— 窗口**紧贴宠物的外接矩形**。
+     *
+     * 这正是"不遮挡屏幕"的保证：窗口之外的触摸由系统直接派发给下层，
+     * 我们连碰都碰不到，不需要任何 flag 技巧。
+     */
+    override fun placeWindow(x: Int, y: Int, w: Int, h: Int) {
+        val v = petView ?: return
+        val p = petParams ?: return
+        if (p.x == x && p.y == y && p.width == w && p.height == h) return
+        p.x = x
+        p.y = y
+        p.width = w
+        p.height = h
+        try {
+            wm.updateViewLayout(v, p)
+        } catch (e: Exception) {
+            // 窗口可能已被系统移除
+        }
     }
 
-    override fun onSettled(state: Int, leftInset: Int, topInset: Int) {
+    override fun onSettled(state: Int, left: Int, top: Int) {
         prefs.snapState = state
-        prefs.savePosition(leftInset, topInset)
+        prefs.savePosition(left, top)
         scheduleSave()
     }
 
@@ -321,7 +338,7 @@ class PetService : Service(), PetView.Host {
     private fun savePosition() {
         val v = petView ?: return
         prefs.snapState = v.state
-        prefs.savePosition(v.leftInset(), v.topInset())
+        prefs.savePosition(v.currentLeft(), v.currentTop())
     }
 
     private fun savePositionNow() {

@@ -34,6 +34,22 @@ object PetState {
     const val BORDER_R = 2
     const val BORDER_L = 3
 
+    /**
+     * 贴底边时用的"边框素材但正立"变体。
+     *
+     * 用户明确要求：**C 区（贴底）用「右边框」的原素材、人物头部向上**。
+     * 所以它和 [BORDER_R] 的区别只在旋转 —— 素材是同一张边框图。
+     */
+    const val BORDER_R_UPRIGHT = 5
+    const val BORDER_L_UPRIGHT = 6
+
+    /** 是否用「边框」那套素材 */
+    fun usesBorderArt(state: Int) = state == BORDER_R || state == BORDER_L ||
+        state == BORDER_R_UPRIGHT || state == BORDER_L_UPRIGHT
+
+    fun isUprightVariant(state: Int) =
+        state == BORDER_R_UPRIGHT || state == BORDER_L_UPRIGHT
+
     // ---------------------------------------------------------------- 分区（最新规则）
 
     /**
@@ -113,13 +129,31 @@ object PetState {
 
     fun isBorder(state: Int) = state == BORDER_R || state == BORDER_L
 
-    fun isLeft(state: Int) = state == CORNER_BL || state == BORDER_L
+    fun isLeft(state: Int): Boolean = when (state) {
+        CORNER_BL, BORDER_L, BORDER_L_UPRIGHT -> true
+        else -> false
+    }
 
     /** 该状态用哪套素材：角落素材 or 边框素材 */
-    fun usesCornerArt(state: Int) = isCorner(state)
+    fun usesCornerArt(state: Int) = state == CORNER_BR || state == CORNER_BL
 
     /** 贴左边时素材需要水平镜像 */
     fun needsMirror(state: Int) = isLeft(state)
+
+    /**
+     * 吸附到某个状态时素材该转多少度（传给 Canvas.rotate，正数 = 屏幕视觉顺时针）。
+     *
+     *   - 角落状态：0，正立（头朝上）
+     *   - BORDER_R / BORDER_L：贴侧边，逆时针 90° 躺在边上
+     *   - UPRIGHT 变体（贴底边）：**0**，用边框原素材、头朝上
+     *
+     * 符号是实测定的，不要靠推理改。
+     */
+    fun rotationForSnap(state: Int): Float = when (state) {
+        BORDER_R -> -90f
+        BORDER_L -> 90f
+        else -> 0f
+    }
 
     /**
      * 判定桌宠落在哪个区（右半屏；左半屏完全镜像，用同样的距离）。
@@ -151,22 +185,6 @@ object PetState {
 
     /** 离底边近就吸底边，否则吸吸附侧边（D / E 区松手用） */
     fun nearerEdgeIsBottom(db: Float, dr: Float): Boolean = db <= dr
-
-    /**
-     * 吸附到某个状态时，素材该转多少度。
-     * 传给 [android.graphics.Canvas.rotate]，**正数 = 屏幕视觉顺时针**。
-     *
-     *   - 角落状态（A 区，「右下角」素材） -> 0，人物正立
-     *   - C 区垂直吸到底边 -> 用「右边框」**原始素材**，0
-     *   - B 区水平吸到右边 -> 用「右边框」**逆时针 90°** -> -90
-     *
-     * 这个符号是实测定的，不要再靠推理改。
-     */
-    fun rotationForSnap(state: Int): Float = when (state) {
-        BORDER_R -> -90f
-        BORDER_L -> 90f
-        else -> 0f
-    }
 
     /**
      * 松手时**贴哪条边**（不看素材，素材由 [snapCategory] 按吸附后的位置决定）。
@@ -270,10 +288,11 @@ object PetState {
         else (screenW - (x + w)).coerceAtLeast(0f)
 
     /**
-     * 吸附后该用哪套素材（供测试与外部查询；实际吸附走 [categoryForZone]）。
+     * 吸附后该用哪个状态（供测试与外部查询；实际吸附走 [categoryForZone]）。
      *
      *   落在 A 区 -> 角落素材（正立）
-     *   其余      -> 边框素材；其中只有 B 会旋转（见 [rotationForSnap]）
+     *   落在 C 区 -> 边框素材、正立（头朝上）
+     *   落在 B 区 -> 边框素材、旋转 90 度
      */
     fun snapCategory(
         snappedDb: Float,
@@ -312,19 +331,57 @@ object PetState {
             nx = if (leftHalf) 0f else screenW - w // 贴左边 / 右边
         }
 
-        // 素材按**松手时所在的区**决定（不是按落点）。
+        // 状态按**松手时所在的区**决定（不是按落点）。
         // 用户明确："在 C 区向下吸附的时候素材是人物头部向上的整立素材" ——
         // 即使贴底后落点恰好进了 A 区，C 区松手也仍然用边框素材正立。
-        val cat = categoryForZone(zoneOf(db, dr, leftHalf), leftHalf)
+        val cat = categoryForZone(zoneOf(db, dr, leftHalf), leftHalf, db, dr)
 
         return floatArrayOf(nx, ny, cat.toFloat())
     }
 
-    /** 区域 -> 用哪套素材（含旋转语义见 [rotationForSnap]） */
-    fun categoryForZone(zone: Int, leftHalf: Boolean): Int {
-        val sideState = if (leftHalf) BORDER_L else BORDER_R
-        val cornerState = if (leftHalf) CORNER_BL else CORNER_BR
-        return if (zone == ZONE_A) cornerState else sideState
+    /** 区域 -> 该用哪个状态（同时决定素材与旋转） */
+    fun categoryForZone(
+        zone: Int,
+        leftHalf: Boolean,
+        db: Float = 0f,
+        dr: Float = 0f
+    ): Int = when (zone) {
+        ZONE_A -> if (leftHalf) CORNER_BL else CORNER_BR
+        ZONE_B -> if (leftHalf) BORDER_L else BORDER_R
+        // C 区贴底边：边框素材但**正立**（用户要求头朝上）
+        ZONE_C -> if (leftHalf) BORDER_L_UPRIGHT else BORDER_R_UPRIGHT
+        // D / E：贴哪条边就按那条边的形态
+        else -> {
+            if (nearerEdgeIsBottom(db, dr)) {
+                if (leftHalf) BORDER_L_UPRIGHT else BORDER_R_UPRIGHT
+            } else {
+                if (leftHalf) BORDER_L else BORDER_R
+            }
+        }
+    }
+
+    /**
+     * 拖动过程中"当前该用哪个状态"。
+     *
+     * 状态 id 同时表达**素材**和**旋转**：
+     *   A 区 -> 角落素材、正立
+     *   B 区 -> 边框素材、旋转 90 度
+     *   C 区 -> 边框素材、**正立（头朝上）** —— 用 UPRIGHT 变体表达
+     *   D/E  -> 边框素材，按更近的边决定
+     */
+    fun stateForDrag(db: Float, dr: Float, leftHalf: Boolean): Int {
+        return when (zoneOf(db, dr, leftHalf)) {
+            ZONE_A -> if (leftHalf) CORNER_BL else CORNER_BR
+            ZONE_B -> if (leftHalf) BORDER_L else BORDER_R
+            ZONE_C -> if (leftHalf) BORDER_L_UPRIGHT else BORDER_R_UPRIGHT
+            else -> {
+                if (nearerEdgeIsBottom(db, dr)) {
+                    if (leftHalf) BORDER_L_UPRIGHT else BORDER_R_UPRIGHT
+                } else {
+                    if (leftHalf) BORDER_L else BORDER_R
+                }
+            }
+        }
     }
 
     /**

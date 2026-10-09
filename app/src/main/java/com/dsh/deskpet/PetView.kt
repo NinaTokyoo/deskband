@@ -10,38 +10,51 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.cos
 import kotlin.math.max
-import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /**
- * 桌宠本体：四种吸附状态 + 拖动过渡动画。
+ * 桌宠本体。
  *
- * 交互规则（用户定义，已用 PetStateTest 钉死）：
- *   - 悬浮在桌面/别的 App 上时，**只有单击和拖动**，没有长按菜单
- *   - 单击 = 开心跳一下（本版先用位移表现，素材到位后再挂 happy 动画）
- *   - 松开 = 吸附回最近的合法状态
+ * ## 窗口策略（关键）
  *
- * 朝向规则：
- *   - 非吸附（角落）：头朝上
- *   - 吸附（边框）：头朝屏幕内部
+ * 窗口**只有宠物那么大**，不是整屏。
+ * 这样"不挡屏幕"由 Android 的窗口机制天然保证 —— 窗口之外的触摸根本不会派发到这里，
+ * 会直接落到下面的桌面/应用上，不需要任何 flag 技巧。
  *
- * 过渡：
- *   - 角落拖出：底边离屏幕底部 >120px 起模糊，200px 时变成边框素材，
- *               中间是"角落素材 + 未旋转边框素材"的叠加，避免生硬
- *   - 跨过屏幕中轴线：水平翻转换边
+ * （踩过的坑：曾经用整屏窗口 + FLAG_NOT_TOUCH_MODAL，而那个 flag 的语义是
+ *  "本窗口之外的触摸由我自己处理"，结果整个屏幕都点不动。）
+ *
+ * ## 坐标系统
+ *
+ * 窗口按 [bbox] 调整大小，[bbox] 是"人物旋转后的外接矩形"。
+ * 绘制时把画布平移到窗口中心，再绕中心 [shownRotation] 度旋转，
+ * 最后把素材格子居中画出来。
+ *
+ * **旋转只改变画布变换，绝不修改素材格子的宽高 —— 所以任何角度下比例都不变。**
+ *
+ * ## 交互
+ *
+ * 悬浮时只有单击和拖动；命中判定是**逐像素 alpha**，透明处一律放过。
  */
 @SuppressLint("ViewConstructor")
 class PetView(context: Context) : View(context) {
 
     interface Host {
         fun bounds(): Rect
-        fun moveTo(x: Int, y: Int)
-        fun onSettled(state: Int, leftInset: Int, topInset: Int)
+
+        /** 把窗口移动到 [x],[y] 并按 [w],[h] 调整大小 */
+        fun placeWindow(x: Int, y: Int, w: Int, h: Int)
+
+        fun onSettled(state: Int, left: Int, top: Int)
         fun onTapped()
     }
 
@@ -52,32 +65,22 @@ class PetView(context: Context) : View(context) {
     var sprite: PetSprite? = null
         set(value) {
             field = value
+            relayout()
             invalidate()
         }
 
-    /** 当前吸附状态（PetState.CORNER_* / BORDER_*） */
+    /** 当前吸附状态（PetState.CORNER_* / BORDER_*），也在拖动中实时变化 */
     var state: Int = PetState.CORNER_BR
         private set
 
-    /** 拖动时用来判断翻转方向的锚点 x（屏幕坐标） */
+    /** 用户设定的大小比例（占屏幕高度的比例，作用在"人物实际高度"上） */
+    private var sizeFrac = 0.15f
+
+    /** 格子左上角（屏幕坐标，未含拖动偏移） */
     private var anchorX = 0f
     private var anchorY = 0f
 
-    /** 用户设定的大小比例（占屏幕高度），作用在"人物实际高度"上 */
-    private var sizeFrac = 0.15f
-
-    // ---------------------------------------------------------------- 旋转动画
-
-    /**
-     * 当前显示用的旋转角（度，正数 = 屏幕视觉顺时针）。
-     *
-     * 拖动时直接跟随连续场（[PetState.rotationForDrag]），松手后向目标角平滑过渡，
-     * 这样旋转本身也是顺滑的，不会突然跳 90°。
-     */
-    private var shownRotation = 0f
-    private var targetRotation = 0f
-    private var rotAnimating = false
-    private var wasDragging = false
+    // ---------------------------------------------------------------- 绘制状态
 
     private val handler = Handler(Looper.getMainLooper())
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
@@ -88,6 +91,23 @@ class PetView(context: Context) : View(context) {
     private var blurFilter: BlurMaskFilter? = null
     private var blurRadius = -1f
 
+    // 翻转动画（跨屏幕中线）
+    private var flip = 0f
+    private var flipFrom = 0f
+    private var flipTo = 0f
+    private var flipStart = 0L
+    private var flipRunning = false
+    private val flipDuration = 220L
+
+    // 旋转动画
+    private var shownRotation = 0f
+    private var targetRotation = 0f
+    private var rotAnimating = false
+
+    // 点击反馈
+    private var hopStart = 0L
+    private var hopping = false
+
     // ---------------------------------------------------------------- 拖动
 
     private var dragging = false
@@ -97,32 +117,20 @@ class PetView(context: Context) : View(context) {
     private var downRawY = 0f
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
 
-    // ---------------------------------------------------------------- 翻转动画
-
-    /** 0 = 未翻转, 1 = 水平镜像；中间值即翻转过程 */
-    private var flip = 0f
-    private var flipFrom = 0f
-    private var flipTo = 0f
-    private var flipStart = 0L
-    private var flipRunning = false
-
-    /** 翻转动画时长 */
-    private val flipDuration = 220L
-
-    // ---------------------------------------------------------------- 点击反馈
-
-    private var hopStart = 0L
-    private var hopping = false
+    /** 上一次提交给窗口的布局，避免反复 updateViewLayout */
+    private var lastWinX = Int.MIN_VALUE
+    private var lastWinY = Int.MIN_VALUE
+    private var lastWinW = -1
+    private var lastWinH = -1
 
     private val ticker = object : Runnable {
         override fun run() {
             var need = false
-            val now = android.os.SystemClock.uptimeMillis()
+            val now = SystemClock.uptimeMillis()
 
             if (flipRunning) {
                 val t = ((now - flipStart).toFloat() / flipDuration).coerceIn(0f, 1f)
-                val e = easeOutCubic(t)
-                flip = flipFrom + (flipTo - flipFrom) * e
+                flip = flipFrom + (flipTo - flipFrom) * easeOutCubic(t)
                 if (t >= 1f) {
                     flip = flipTo
                     flipRunning = false
@@ -135,7 +143,6 @@ class PetView(context: Context) : View(context) {
                 need = true
             }
             if (rotAnimating) {
-                // 指数逼近平滑收尾
                 val diff = targetRotation - shownRotation
                 if (abs(diff) < 0.15f) {
                     shownRotation = targetRotation
@@ -145,47 +152,105 @@ class PetView(context: Context) : View(context) {
                     need = true
                 }
             }
+            // 旋转动画会改变外接矩形，窗口要跟着调整
+            relayout()
             invalidate()
             if (need) handler.postDelayed(this, FRAME_MS)
         }
     }
 
-    // ---------------------------------------------------------------- 尺寸
+    // ---------------------------------------------------------------- 几何
 
-    /**
-     * 当前素材在屏幕上的绘制格子。
-     *
-     * **故意不按状态做宽高互换**：格子永远是素材的正立比例（等比缩放，不变形），
-     * 边框状态贴边时由 [android.graphics.Canvas.rotate] 绕格子中心旋转。
-     * 旋转只改变朝向，不改变比例 —— 这是用户明确要求的。
-     */
-    private fun currentSize(): IntArray {
+    /** 当前"人物"在屏幕上的格子尺寸（按**当前该用的素材**算） */
+    private fun cellSize(): IntArray {
         val s = sprite ?: return intArrayOf(1, 1)
         val screenH = (host?.bounds()?.height() ?: 1080).toFloat()
-        // 滑块作用在「人物实际高度」上；比例由 PetState.scaledSize 保证不变形
+        val cat = state
         return PetState.scaledSize(
-            s.naturalWidth(state),
-            s.naturalHeight(state),
+            s.naturalWidth(cat),
+            s.naturalHeight(cat),
             screenH * sizeFrac
+        )
+    }
+
+    /** 该状态最终会转多少度（用状态定，不用动画值，避免窗口抖动） */
+    private fun layoutRotation(st: Int): Float = PetState.rotationForSnap(st)
+
+    /**
+     * 人物旋转后的外接矩形尺寸。
+     * 只有旋转到非 0/90 的中间角度时才会比格子大，所以窗口要留出余量。
+     */
+    private fun bboxFor(w: Int, h: Int, rotDeg: Float): IntArray {
+        if (rotDeg % 90f == 0f) {
+            // 0/180 用 (w,h)，90/270 用 (h,w)
+            val q = ((rotDeg % 360f) + 360f) % 360f
+            return if (q == 90f || q == 270f) intArrayOf(h, w) else intArrayOf(w, h)
+        }
+        val r = Math.toRadians(rotDeg.toDouble())
+        val c = abs(cos(r)).toFloat()
+        val s = abs(sin(r)).toFloat()
+        return intArrayOf(
+            ceil(w * c + h * s).toInt().coerceAtLeast(1),
+            ceil(w * s + h * c).toInt().coerceAtLeast(1)
+        )
+    }
+
+    private fun bbox(): IntArray {
+        val cell = cellSize()
+        return bboxFor(cell[0], cell[1], shownRotation)
+    }
+
+    /**
+     * 判定"离边多远"时该用的尺寸 —— **旋转后的屏幕足迹**，不是未旋转的格子。
+     *
+     * 踩过的坑：贴侧边时用未旋转的格子宽度算 x，而人物已经转了 90°，
+     * 屏幕上的实际宽度是格子的高，结果右边留出 78px 的缝。
+     */
+    private fun trackSize(): IntArray {
+        val cell = cellSize()
+        val r = PetState.rotationForSnap(state)
+        val q = ((r % 360f) + 360f) % 360f
+        return if (q == 90f || q == 270f) intArrayOf(cell[1], cell[0]) else intArrayOf(cell[0], cell[1])
+    }
+
+    /** 把窗口挪到当前位置并按外接矩形调整大小 */
+    private fun relayout() {
+        val b = bbox()
+        val x = (anchorX + dragOffsetX).roundToInt()
+        val y = (anchorY + dragOffsetY).roundToInt()
+        if (x == lastWinX && y == lastWinY && b[0] == lastWinW && b[1] == lastWinH) return
+        lastWinX = x
+        lastWinY = y
+        lastWinW = b[0]
+        lastWinH = b[1]
+        host?.placeWindow(x, y, b[0], b[1])
+    }
+
+    /** 格子左上角在窗口内的本地坐标 */
+    private fun localCell(): FloatArray {
+        val cell = cellSize()
+        val b = bbox()
+        return floatArrayOf(
+            (b[0] - cell[0]) / 2f,
+            (b[1] - cell[1]) / 2f
         )
     }
 
     fun setSizeFraction(f: Float) {
         sizeFrac = f.coerceIn(0.05f, 0.6f)
+        relayout()
+        invalidate()
     }
-
-    /** 供服务查询：当前应该占多大 */
-    fun measurePet(): IntArray = currentSize()
 
     // ---------------------------------------------------------------- 吸附定位
 
-    /** 把宠物贴到指定状态的吸附位置 */
+    /** 贴到某个状态的吸附位置（贴边） */
     fun applySnap(newState: Int) {
         state = newState
         val b = host?.bounds() ?: return
-        val sz = currentSize()
-        val w = sz[0]
-        val h = sz[1]
+        val cell = cellSize()
+        val w = cell[0]
+        val h = cell[1]
 
         anchorX = if (PetState.isLeft(newState)) 0f else (b.width() - w).toFloat()
         anchorY = if (PetState.isCorner(newState)) {
@@ -193,40 +258,84 @@ class PetView(context: Context) : View(context) {
         } else {
             ((b.height() - h) / 2f)
         }
-        // 切状态时确保翻转值与朝向一致，避免残影
         flip = if (PetState.isLeft(newState)) 1f else 0f
         flipFrom = flip
         flipTo = flip
         flipRunning = false
-
-        host?.moveTo(anchorX.roundToInt(), anchorY.roundToInt())
+        shownRotation = PetState.rotationForSnap(newState)
+        targetRotation = shownRotation
+        rotAnimating = false
+        relayout()
         invalidate()
     }
 
     /** 从保存的位置恢复（服务启动时用） */
-    fun restore(state0: Int, leftInset: Int, topInset: Int) {
-        val b = host?.bounds() ?: return
-        val sz = currentSize()
-        anchorX = leftInset.toFloat().coerceIn(0f, max(0f, (b.width() - sz[0]).toFloat()))
-        anchorY = topInset.toFloat().coerceIn(0f, max(0f, (b.height() - sz[1]).toFloat()))
+    fun restore(state0: Int, left: Int, top: Int) {
         state = state0
         flip = if (PetState.isLeft(state0)) 1f else 0f
         flipFrom = flip
         flipTo = flip
-        host?.moveTo(anchorX.roundToInt(), anchorY.roundToInt())
+        shownRotation = PetState.rotationForSnap(state0)
+        targetRotation = shownRotation
+        anchorX = left.toFloat()
+        anchorY = top.toFloat()
+        relayout()
         invalidate()
     }
 
-    /** 当前左上角坐标（给服务保存用） */
-    fun leftInset(): Int = (anchorX + dragOffsetX).roundToInt()
-    fun topInset(): Int = (anchorY + dragOffsetY).roundToInt()
+    /** 当前位置（给服务保存用） */
+    fun currentLeft(): Int = (anchorX + dragOffsetX).roundToInt()
+    fun currentTop(): Int = (anchorY + dragOffsetY).roundToInt()
 
     // ---------------------------------------------------------------- 触摸
+
+    /**
+     * 窗口只有宠物那么大，所以能进来的触摸已经离宠物很近了。
+     * 这里再做一次**逐像素 alpha** 判定：素材透明的地方照样放过。
+     */
+    private fun hitsPet(localX: Float, localY: Float): Boolean {
+        val s = sprite ?: return false
+        val cell = cellSize()
+        val w = cell[0].toFloat()
+        val h = cell[1].toFloat()
+        val lc = localCell()
+        val cx = lc[0] + w / 2f
+        val cy = lc[1] + h / 2f
+
+        var dx = localX - cx
+        var dy = localY - cy
+
+        // 反掉翻转动画的水平压缩
+        if (flip > 0.001f && flip < 0.999f) {
+            val squash = abs(1f - 2f * flip).coerceAtLeast(0.03f)
+            dx /= squash
+        }
+        // 反掉旋转
+        if (abs(shownRotation) > 0.01f) {
+            val rad = Math.toRadians(-shownRotation.toDouble())
+            val c = cos(rad).toFloat()
+            val sn = sin(rad).toFloat()
+            val rx = dx * c - dy * sn
+            val ry = dx * sn + dy * c
+            dx = rx
+            dy = ry
+        }
+
+        val u = dx / w + 0.5f
+        val v = dy / h + 0.5f
+        if (u < 0f || u > 1f || v < 0f || v > 1f) return false
+
+        val bmp = runCatching { s.bitmap(state, PetState.needsMirror(state)) }.getOrNull()
+            ?: return true
+        val bx = (u * (bmp.width - 1)).toInt().coerceIn(0, bmp.width - 1)
+        val by = (v * (bmp.height - 1)).toInt().coerceIn(0, bmp.height - 1)
+        return runCatching { ((bmp.getPixel(bx, by) ushr 24) and 0xFF) >= HIT_ALPHA_MIN }
+            .getOrDefault(true)
+    }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                // 窗口是整屏的，只有点在宠物身上才算数，否则让触摸透下去
                 if (!hitsPet(event.x, event.y)) return false
                 downRawX = event.rawX
                 downRawY = event.rawY
@@ -239,28 +348,19 @@ class PetView(context: Context) : View(context) {
             MotionEvent.ACTION_MOVE -> {
                 val dx = event.rawX - downRawX
                 val dy = event.rawY - downRawY
-                if (!dragging && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
-                    dragging = true
-                }
+                if (!dragging && (abs(dx) > touchSlop || abs(dy) > touchSlop)) dragging = true
                 if (dragging) {
                     dragOffsetX = dx
                     dragOffsetY = dy
-                    followScreenCross()
-                    host?.moveTo(
-                        (anchorX + dragOffsetX).roundToInt(),
-                        (anchorY + dragOffsetY).roundToInt()
-                    )
+                    updateDragVisual()
+                    relayout()
                     invalidate()
                 }
                 return true
             }
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                if (dragging) {
-                    settle()
-                } else {
-                    onTapped()
-                }
+                if (dragging) settle() else onTapped()
                 dragging = false
                 dragOffsetX = 0f
                 dragOffsetY = 0f
@@ -270,119 +370,33 @@ class PetView(context: Context) : View(context) {
         return super.onTouchEvent(event)
     }
 
-    /** 息屏时停表省电 */
-    private var paused = false
-
-    fun setPaused(p: Boolean) {
-        if (paused == p) return
-        paused = p
-        if (p) {
-            handler.removeCallbacks(ticker)
-        } else {
-            invalidate()
-        }
-    }
-
-    /**
-     * 点击是否落在**宠物实际素材**上。
-     *
-     * 用户要求："只有点击桌宠实际素材时才能对其进行移动，一定不能阻挡我操作屏幕其他部分"。
-     * 所以这里做三层判定，任何一层不过就返回 false，让触摸继续传给下层：
-     *   1. 先在格子矩形外 -> 直接放过
-     *   2. 把触点逆变换回素材坐标系（反翻转 + 反旋转）
-     *   3. 取该点在位图上的 **alpha**，透明的地方（格子里的空白）也算放过
-     *
-     * 第 3 步是关键：格子是矩形，但人物只占其中一部分，
-     * 只按矩形判定的话，人物旁边一大片透明区照样会挡住触摸。
-     */
-    private fun hitsPet(px: Float, py: Float): Boolean {
-        val s = sprite ?: return false
-        val sz = currentSize()
-        val w = sz[0].toFloat()
-        val h = sz[1].toFloat()
+    /** 拖动过程中刷新状态：贴哪条边、用哪套素材、转多少度 */
+    private fun updateDragVisual() {
+        val b = host?.bounds() ?: return
+        val t = trackSize()
         val x = anchorX + dragOffsetX
         val y = anchorY + dragOffsetY
+        val leftHalf = (x + t[0] / 2f) < b.width() / 2f
+        val db = PetState.bottomDist(y, t[1].toFloat(), b.height().toFloat())
+        val dr = PetState.sideDist(x, t[0].toFloat(), b.width().toFloat(), leftHalf)
 
-        // 1. 粗筛
-        if (px < x || px > x + w || py < y || py > y + h) return false
+        // 状态跟着拖动实时更新，素材/朝向都由它决定
+        state = PetState.stateForDrag(db, dr, leftHalf)
 
-        // 2. 逆变换：先反掉翻转动画的水平压缩，再反掉旋转
-        val cx = x + w / 2f
-        val cy = y + h / 2f
-        var dx = px - cx
-        var dy = py - cy
+        // 跨中线翻转
+        startFlip(if (leftHalf) 1f else 0f)
 
-        if (flip > 0.001f && flip < 0.999f) {
-            val squash = abs(1f - 2f * flip).coerceAtLeast(0.03f)
-            dx /= squash
-        }
-        if (abs(shownRotation) > 0.01f) {
-            val rad = Math.toRadians(-shownRotation.toDouble())
-            val cos = Math.cos(rad).toFloat()
-            val sin = Math.sin(rad).toFloat()
-            val rx = dx * cos - dy * sin
-            val ry = dx * sin + dy * cos
-            dx = rx
-            dy = ry
-        }
-
-        // 归一到格子内的 0..1
-        val u = (dx / w + 0.5f)
-        val v = (dy / h + 0.5f)
-        if (u < 0f || u > 1f || v < 0f || v > 1f) return false
-
-        // 3. 取位图 alpha
-        val bmp = hitBitmap() ?: return true
-        val bx = (u * (bmp.width - 1)).toInt().coerceIn(0, bmp.width - 1)
-        val by = (v * (bmp.height - 1)).toInt().coerceIn(0, bmp.height - 1)
-        return try {
-            val a = (bmp.getPixel(bx, by) ushr 24) and 0xFF
-            a >= HIT_ALPHA_MIN
-        } catch (e: Exception) {
-            true
-        }
-    }
-
-    /** 当前用于命中判定的位图（按状态与左右镜像取） */
-    private fun hitBitmap(): Bitmap? {
-        val s = sprite ?: return null
-        val b = host?.bounds() ?: return null
-        val sz = currentSize()
-        val leftHalf = (anchorX + dragOffsetX + sz[0] / 2f) < b.width() / 2f
-        val db = PetState.bottomDist(anchorY + dragOffsetY, sz[1].toFloat(), b.height().toFloat())
-        val dr = PetState.sideDist(anchorX + dragOffsetX, sz[0].toFloat(), b.width().toFloat(), leftHalf)
-
-        val useCorner = if (dragging) {
-            PetState.zoneOf(db, dr, leftHalf) == PetState.ZONE_A
-        } else {
-            PetState.usesCornerArt(state)
-        }
-        val st = if (useCorner) {
-            if (leftHalf) PetState.CORNER_BL else PetState.CORNER_BR
-        } else {
-            if (leftHalf) PetState.BORDER_L else PetState.BORDER_R
-        }
-        return try {
-            s.bitmap(st, leftHalf)
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    /** 拖动跨过屏幕中轴线 -> 触发水平翻转（素材在 onDraw 里按半屏自动切换） */
-    private fun followScreenCross() {
-        val b = host?.bounds() ?: return
-        val sz = currentSize()
-        val x = anchorX + dragOffsetX
-        val centerX = x + sz[0] / 2f
-        startFlip(if (centerX < b.width() / 2f) 1f else 0f)
+        // 旋转直接跟随连续场（手指走多少就转多少）
+        shownRotation = PetState.rotationForDrag(db, dr, leftHalf)
+        targetRotation = shownRotation
+        rotAnimating = false
     }
 
     private fun startFlip(target: Float) {
         if (abs(flip - target) < 0.01f && !flipRunning) return
         flipFrom = flip
         flipTo = target
-        flipStart = android.os.SystemClock.uptimeMillis()
+        flipStart = SystemClock.uptimeMillis()
         flipRunning = true
         handler.removeCallbacks(ticker)
         handler.post(ticker)
@@ -391,58 +405,59 @@ class PetView(context: Context) : View(context) {
     /**
      * 松手：按所在区吸附。
      *
-     * 用户规则：
-     *   - 吸附 = 真的贴到边上（A 贴角、C 只贴底、B 只贴侧边、D/E 贴更近的那边）
-     *   - 另一轴保留松手时的位置（"吸附到松手位置对应的像素位置"）
-     *   - 素材按**吸附后的位置**决定，和分区表天然一致
-     *   - 左半屏完全镜像
+     * 吸附 = 真的贴到边上，另一轴保留松手位置（左半屏镜像）。
+     * **先用吸附后的状态算出格子尺寸，再用它算贴边位置** ——
+     * 否则角落素材和边框素材宽度不同，贴边会留缝。
      */
     private fun settle() {
         val b = host?.bounds() ?: return
-        val sz = currentSize()
+        val preTrack = trackSize()
         val x = anchorX + dragOffsetX
         val y = anchorY + dragOffsetY
+        val leftHalf = (x + preTrack[0] / 2f) < b.width() / 2f
+        val db = PetState.bottomDist(y, preTrack[1].toFloat(), b.height().toFloat())
+        val dr = PetState.sideDist(x, preTrack[0].toFloat(), b.width().toFloat(), leftHalf)
 
-        val leftHalf = (x + sz[0] / 2f) < b.width() / 2f
-        val db = PetState.bottomDist(y, sz[1].toFloat(), b.height().toFloat())
-        val dr = PetState.sideDist(x, sz[0].toFloat(), b.width().toFloat(), leftHalf)
+        state = PetState.stateForDrag(db, dr, leftHalf)
 
-        val snapped = PetState.snapPosition(
-            x, y, sz[0].toFloat(), sz[1].toFloat(),
-            db, dr,
-            b.width().toFloat(), b.height().toFloat(),
-            leftHalf
-        )
+        // 用**吸附后**的屏幕足迹算贴边位置。
+        // 人物在侧边是转 90° 的，屏幕上的宽高与格子互换，
+        // 必须用足迹，否则会留缝（实测踩过 78px 的缝）。
+        val track = trackSize()
+        val tw = track[0].toFloat()
+        val th = track[1].toFloat()
 
-        val c = clampToScreen(snapped[0], snapped[1], sz[0], sz[1])
+        val edges = PetState.snapEdges(db, dr, leftHalf)
+        var nx = x
+        var ny = y
+        if (edges[0] == 1) ny = b.height() - th
+        if (edges[1] == 1) nx = if (leftHalf) 0f else b.width() - tw
+
+        val c = PetState.clampToScreen(nx, ny, tw, th, b.width().toFloat(), b.height().toFloat())
         anchorX = c[0]
         anchorY = c[1]
         dragOffsetX = 0f
         dragOffsetY = 0f
-        state = snapped[2].toInt()
 
-        // 吸附后把朝向也对齐：贴边的状态该转就转
+        // 贴完朝向也归位
         targetRotation = PetState.rotationForSnap(state)
-        shownRotation = targetRotation
-        rotAnimating = false
+        if (abs(shownRotation - targetRotation) < 0.15f) {
+            shownRotation = targetRotation
+            rotAnimating = false
+        } else {
+            rotAnimating = true
+            handler.removeCallbacks(ticker)
+            handler.post(ticker)
+        }
 
-        host?.onSettled(state, leftInset(), topInset())
+        relayout()
         invalidate()
-    }
-
-    /** 至少留一半身体在屏幕内，避免被拖丢 */
-    private fun clampToScreen(x: Float, y: Float, w: Int, h: Int): FloatArray {
-        val b = host?.bounds() ?: return floatArrayOf(x, y)
-        return PetState.clampToScreen(
-            x, y, w.toFloat(), h.toFloat(),
-            b.width().toFloat(), b.height().toFloat(),
-            MIN_VISIBLE_FRACTION
-        )
+        host?.onSettled(state, currentLeft(), currentTop())
     }
 
     private fun onTapped() {
         hopping = true
-        hopStart = android.os.SystemClock.uptimeMillis()
+        hopStart = SystemClock.uptimeMillis()
         handler.removeCallbacks(ticker)
         handler.post(ticker)
         host?.onTapped()
@@ -453,181 +468,70 @@ class PetView(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         val s = sprite ?: return
         val b = host?.bounds() ?: return
-        val sz = currentSize()
-        val w = sz[0]
-        val h = sz[1]
+        val cell = cellSize()
+        val w = cell[0].toFloat()
+        val h = cell[1].toFloat()
+        val lc = localCell()
+        val cx = lc[0] + w / 2f
+        val cy = lc[1] + h / 2f
 
-        val x = anchorX + dragOffsetX
-        val y = anchorY + dragOffsetY
-
-        // 判定基准：底边离屏幕底部；侧边距离**按本侧量**（左半屏量左边）
-        val leftHalf = (x + w / 2f) < b.width() / 2f
-        val db = PetState.bottomDist(y, h.toFloat(), b.height().toFloat())
-        val dr = PetState.sideDist(x, w.toFloat(), b.width().toFloat(), leftHalf)
-
-        // 拖动中用连续场算目标角；松手后向吸附目标角平滑过渡
-        val fieldRotation = if (dragging) PetState.rotationForDrag(db, dr, leftHalf) else 0f
-        val snapRotation = if (!dragging) PetState.rotationForSnap(state) else 0f
-        val wantRotation = if (dragging) fieldRotation else snapRotation
-
-        if (dragging) {
-            // 拖动时角度直接跟随，手指走多少就转多少
-            shownRotation = wantRotation
-            targetRotation = wantRotation
-            rotAnimating = false
-        } else {
-            targetRotation = wantRotation
-            if (wasDragging && abs(shownRotation - targetRotation) > 0.15f) {
-                // 刚松手：从当前角度平滑转到吸附角度
-                rotAnimating = true
-            }
-        }
-        wasDragging = dragging
-        if (rotAnimating) {
-            handler.removeCallbacks(ticker)
-            handler.post(ticker)
-        }
-        val rotation = shownRotation
-
-        // 模糊：D 区高强度，两侧平滑渐变
+        // 离本侧吸附边 / 底边的距离，决定模糊强度（用旋转后的屏幕足迹量）
+        val leftHalf = PetState.isLeft(state)
+        val screenX = anchorX + dragOffsetX
+        val screenY = anchorY + dragOffsetY
+        val track = trackSize()
+        val db = PetState.bottomDist(screenY, track[1].toFloat(), b.height().toFloat())
+        val dr = PetState.sideDist(screenX, track[0].toFloat(), b.width().toFloat(), leftHalf)
         val blurT = if (dragging) PetState.blurFor(db, dr, leftHalf) else 0f
 
-        // 角落素材 <-> 边框素材 的混合进度（连续，不是硬切）
-        val morph = if (dragging) {
-            PetState.artBlendFor(db, dr, leftHalf)
-        } else {
-            PetState.morphFor(db, dr, leftHalf)
-        }
-
-        // 点击反馈：轻轻跳一下
+        // 点击反馈
         var hopY = 0f
         if (hopping) {
-            val t = ((android.os.SystemClock.uptimeMillis() - hopStart).toFloat() / 420f)
-                .coerceIn(0f, 1f)
-            hopY = -h * 0.06f * kotlin.math.sin(t * Math.PI).toFloat()
+            val t = ((SystemClock.uptimeMillis() - hopStart).toFloat() / 420f).coerceIn(0f, 1f)
+            hopY = -h * 0.06f * sin(t * Math.PI).toFloat()
         }
 
         val save = canvas.save()
-        // 跨屏幕中线时的水平翻转动画：中途压成一条线再展开，做出"翻面"观感
+        canvas.translate(0f, hopY)
+        // 绕格子中心旋转（只改变换，不动格子尺寸 -> 比例不变）
+        if (abs(shownRotation) > 0.01f) canvas.rotate(shownRotation, cx, cy)
+        // 跨中线的水平翻转：中途压扁再展开
         if (flip > 0.001f && flip < 0.999f) {
-            val cx = x + w / 2f
             val squash = abs(1f - 2f * flip).coerceAtLeast(0.03f)
-            canvas.scale(squash, 1f, cx, y + h / 2f)
+            canvas.scale(squash, 1f, cx, cy)
         }
 
-        val drawY = y + hopY
-        // 镜像只由左右半屏决定
-        val mirrored = leftHalf
-
-        if (morph <= 0.001f) {
-            drawOne(canvas, s, cornerOrBorder(leftHalf), w, h, x, drawY, mirrored, blurT, rotation)
-        } else {
-            // 过渡：角落素材淡出 + 边框素材淡入（叠加模糊，避免生硬）
-            drawBlend(canvas, s, w, h, x, drawY, mirrored, morph, blurT, rotation)
-        }
-        canvas.restoreToCount(save)
-    }
-
-    /** 完全用角落素材时的状态（供 drawOne 走单图分支） */
-    private fun cornerOrBorder(leftHalf: Boolean): Int =
-        if (leftHalf) PetState.CORNER_BL else PetState.CORNER_BR
-
-    private fun drawOne(
-        canvas: Canvas,
-        s: PetSprite,
-        st: Int,
-        w: Int, h: Int,
-        x: Float, y: Float,
-        mirrored: Boolean,
-        blurT: Float,
-        rotation: Float
-    ) {
-        val bmp: Bitmap = s.bitmap(st, mirrored)
+        val bmp = s.bitmap(state, PetState.needsMirror(state))
         src.set(0, 0, bmp.width, bmp.height)
+        dst.set(lc[0], lc[1], lc[0] + w, lc[1] + h)
 
-        val paintToUse = if (blurT > 0.001f) {
+        val pt = if (blurT > 0.001f) {
             blurPaint.alpha = 255
             blurPaint.maskFilter = blurFilterFor(blurT * max(1f, w * 0.14f))
             blurPaint
         } else {
             paint
         }
-        if (rotation != 0f) {
-            // 绕格子中心旋转；贴边时格子正好是 90° 后的形状
-            val save = canvas.save()
-            canvas.rotate(rotation, x + w / 2f, y + h / 2f)
-            dst.set(x, y, x + w, y + h)
-            canvas.drawBitmap(bmp, src, dst, paintToUse)
-            canvas.restoreToCount(save)
-        } else {
-            dst.set(x, y, x + w, y + h)
-            canvas.drawBitmap(bmp, src, dst, paintToUse)
-        }
-    }
-
-    /**
-     * 角落素材淡出 + 边框素材淡入。
-     *
-     * 关键：**两层都用同一个格子 (w,h)**，旋转只作用在 Canvas 上，
-     * 从来不去改目标矩形 —— 所以任何角度下比例都严格不变。
-     */
-    private fun drawBlend(
-        canvas: Canvas,
-        s: PetSprite,
-        w: Int, h: Int,
-        x: Float, y: Float,
-        mirrored: Boolean,
-        morph: Float,
-        blurT: Float,
-        rotation: Float
-    ) {
-        val m = morph.coerceIn(0f, 1f)
-        val radius = blurFilterFor(blurT * max(1f, w * 0.14f))
-        val left = mirrored
-
-        val cornerBmp = s.bitmap(if (left) PetState.CORNER_BL else PetState.CORNER_BR, left)
-        val borderBmp = s.bitmap(if (left) PetState.BORDER_L else PetState.BORDER_R, left)
-
-        val save = canvas.save()
-        // 旋转绕格子中心；格子尺寸与素材比例一致，旋转不改变它
-        if (rotation != 0f) {
-            canvas.rotate(rotation, x + w / 2f, y + h / 2f)
-        }
-        dst.set(x, y, x + w, y + h)
-
-        // 下层：角落素材，随进度淡出
-        src.set(0, 0, cornerBmp.width, cornerBmp.height)
-        paint.alpha = ((1f - m) * 255f).roundToInt().coerceIn(0, 255)
-        paint.maskFilter = radius
-        canvas.drawBitmap(cornerBmp, src, dst, paint)
-
-        // 上层：边框素材，随进度淡入
-        src.set(0, 0, borderBmp.width, borderBmp.height)
-        paint.alpha = (m * 255f).roundToInt().coerceIn(0, 255)
-        paint.maskFilter = radius
-        canvas.drawBitmap(borderBmp, src, dst, paint)
-
+        canvas.drawBitmap(bmp, src, dst, pt)
         canvas.restoreToCount(save)
-        paint.maskFilter = null
-        paint.alpha = 255
     }
 
     private fun blurFilterFor(radius: Float): BlurMaskFilter? {
         if (radius <= 0.5f) return null
         if (blurRadius >= 0f && abs(blurRadius - radius) < 0.5f) return blurFilter
         blurRadius = radius
-        blurFilter = try {
-            BlurMaskFilter(radius, BlurMaskFilter.Blur.NORMAL)
-        } catch (e: Exception) {
-            null
-        }
+        blurFilter = runCatching { BlurMaskFilter(radius, BlurMaskFilter.Blur.NORMAL) }.getOrNull()
         return blurFilter
     }
 
-    // ---------------------------------------------------------------- 生命周期
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val b = bbox()
+        setMeasuredDimension(b[0], b[1])
+    }
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
+        relayout()
     }
 
     override fun onDetachedFromWindow() {
@@ -635,26 +539,70 @@ class PetView(context: Context) : View(context) {
         super.onDetachedFromWindow()
     }
 
-    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val b = host?.bounds()
-        setMeasuredDimension(
-            b?.width() ?: suggestedMinimumWidth,
-            b?.height() ?: suggestedMinimumHeight
-        )
-    }
-
     private fun easeOutCubic(t: Float): Float {
         val u = 1f - t
         return 1f - u * u * u
     }
 
-    private companion object {
-        const val FRAME_MS = 16L
+    /** 息屏时停表省电 */
+    private var paused = false
 
-        /** 拖动时至少要有这么大比例的身体留在屏幕内 */
-        const val MIN_VISIBLE_FRACTION = 0.5f
+    fun setPaused(p: Boolean) {
+        if (paused == p) return
+        paused = p
+        if (p) handler.removeCallbacks(ticker) else invalidate()
+    }
 
-        /** 命中判定所需的 alpha 下限；低于它就当点在空白处，触摸继续往下传 */
-        const val HIT_ALPHA_MIN = 16
+    /** 本类的静态几何工具（服务在 addView 之前也要用，所以放在 public 伴生对象里） */
+    companion object Geometry {
+        private const val FRAME_MS = 16L
+        private const val HIT_ALPHA_MIN = 16
+        /**
+         * 静态几何计算：给定素材、状态、大小比例，算出初始窗口应当放在哪、多大。
+         * 服务在 addView 之前需要这个尺寸（那时 view 还没 attach）。
+         *
+         * @return [x, y, w, h]
+         */
+        fun boundsFor(
+            s: PetSprite,
+            state: Int,
+            sizeFrac: Float,
+            screen: Rect
+        ): IntArray {
+            val screenH = screen.height().toFloat()
+            val cell = PetState.scaledSize(
+                s.naturalWidth(state), s.naturalHeight(state), screenH * sizeFrac
+            )
+            val rot = PetState.rotationForSnap(state)
+            val box = bboxOf(cell[0], cell[1], rot)
+            // 屏幕足迹：转 90/270 时宽高互换
+            val q = ((rot % 360f) + 360f) % 360f
+            val trackW = if (q == 90f || q == 270f) cell[1] else cell[0]
+            val trackH = if (q == 90f || q == 270f) cell[0] else cell[1]
+
+            val x = if (PetState.isLeft(state)) 0 else screen.width() - trackW
+            val y = if (PetState.isCorner(state) || PetState.isUprightVariant(state)) {
+                screen.height() - trackH
+            } else {
+                (screen.height() - trackH) / 2
+            }
+            // 窗口左上角 = 足迹左上角（格子在外接矩形里居中，偏移对称）
+            val offX = (box[0] - cell[0]) / 2
+            val offY = (box[1] - cell[1]) / 2
+            return intArrayOf(x - offX, y - offY, box[0], box[1])
+        }
+
+        fun bboxOf(w: Int, h: Int, rotDeg: Float): IntArray {
+            val q = ((rotDeg % 360f) + 360f) % 360f
+            if (q == 0f || q == 180f) return intArrayOf(w, h)
+            if (q == 90f || q == 270f) return intArrayOf(h, w)
+            val r = Math.toRadians(rotDeg.toDouble())
+            val c = abs(cos(r)).toFloat()
+            val sn = abs(sin(r)).toFloat()
+            return intArrayOf(
+                ceil(w * c + h * sn).toInt().coerceAtLeast(1),
+                ceil(w * sn + h * c).toInt().coerceAtLeast(1)
+            )
+        }
     }
 }
