@@ -229,6 +229,13 @@
                     android:gravity="center"
                     android:hint="@string/bounce_ms_input" />
             </LinearLayout>
+
+            <!-- 保存并立刻应用到正在运行的桌宠 -->
+            <Button
+                android:id="@+id/btnSaveBounce"
+                style="@style/PrimaryButton"
+                android:layout_marginTop="16dp"
+                android:text="@string/bounce_save" />
         </LinearLayout>
 
         <!-- 小提示 -->

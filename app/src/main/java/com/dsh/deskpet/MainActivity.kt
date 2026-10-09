@@ -43,6 +43,7 @@ class MainActivity : Activity() {
     private lateinit var txtBounceMs: TextView
     private lateinit var editBounceAmp: EditText
     private lateinit var editBounceMs: EditText
+    private lateinit var btnSaveBounce: Button
 
     private var skins: List<String> = emptyList()
     private var bindingSkin = false
@@ -68,6 +69,7 @@ class MainActivity : Activity() {
         txtBounceMs = findViewById(R.id.txtBounceMs)
         editBounceAmp = findViewById(R.id.editBounceAmp)
         editBounceMs = findViewById(R.id.editBounceMs)
+        btnSaveBounce = findViewById(R.id.btnSaveBounce)
 
         applyEdgeToEdge()
         setupBounceControls()
@@ -278,6 +280,21 @@ class MainActivity : Activity() {
         editBounceAmp.setOnFocusChangeListener { _, has -> if (!has) applyAmp() }
         editBounceMs.setOnEditorActionListener { _, _, _ -> applyMs(); true }
         editBounceMs.setOnFocusChangeListener { _, has -> if (!has) applyMs() }
+
+        // 保存并应用：把输入框当前值落盘。
+        //
+        // 不需要通知服务 —— PetView.snapWithBounce 是**每次吸附时现读**
+        // Prefs 的，所以下一次松手就会用上新值。
+        // （故意不调 PetService.notifyChanged：那会触发 ACTION_RELOAD，
+        //   让桌宠重新吸附定位、白跳一下。）
+        // 这个按钮真正的价值是：确保输入框里刚敲进去的值一定被提交
+        // （有时键盘还没收起、焦点没变化，失焦回调还没跑）。
+        btnSaveBounce.setOnClickListener {
+            parseScale(editBounceAmp.text.toString())?.let { prefs.bounceAmpScale = it }
+            parseScale(editBounceMs.text.toString())?.let { prefs.bounceTimeScale = it }
+            bindBounceControls()
+            Toast.makeText(this, R.string.bounce_saved, Toast.LENGTH_SHORT).show()
+        }
 
         bindBounceControls()
     }

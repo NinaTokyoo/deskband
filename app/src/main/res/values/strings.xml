@@ -48,11 +48,13 @@
     <string name="bounce_ms_value">×%1$s　（%2$d ms）</string>
     <string name="bounce_amp_input">倍率</string>
     <string name="bounce_ms_input">倍率</string>
+    <string name="bounce_save">保存并应用</string>
+    <string name="bounce_saved">回弹设置已保存</string>
 
     <!-- A 区尺寸调节 -->
     <string name="section_zone">A 区大小</string>
 
-    <string name="tip">小提示：\n· 点一下 → 它会开心地跳一下\n· 按住拖动 → 松手后吸附到最近的角或边框\n· 拖出角落 → 超过 120px 开始模糊，到 200px 变成边框形态\n· 拖过屏幕中线 → 它会翻个身，换到另一边\n· 桌面上的它不能改设置，只能点、只能拖</string>
+    <string name="tip">小提示：\n· 点一下 → 它会先压扁再弹起（方向跟着头的朝向）\n· 按住拖动 → 严格跟手，松手吸附到最近的角或边框\n· 贴侧边 → 自动旋转躺倒，头朝屏幕内侧\n· 拖过屏幕中线 → 立刻镜像翻个身\n· 桌面上的它不能改设置，只能点、只能拖</string>
 
     <!-- 通知 -->
     <string name="notif_channel">桌宠</string>
