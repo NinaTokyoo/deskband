@@ -1,0 +1,38 @@
+新增松手回弹的调节 UI（倍率 0.1~10，滑块 + 数字输入）
+
+用户要求："以现在的幅度和回弹时间为标准，增加调节功能，支持滑块和数字调节"，
+随后明确"范围是 0.1 到 10" —— 即调的是**倍率**，1.0 = 标准值。
+
+## 参数
+
+  BOUNCE_PX_BASE = 36px   标准过冲幅度（倍率 1.0 对应它）
+  BOUNCE_MS_BASE = 360ms  标准回落时长
+  SCALE_MIN/MAX = 0.1 / 10
+
+Prefs 新增 bounceAmpScale / bounceTimeScale（各存一个倍率），
+并提供派生值 bouncePx / bounceBackMs 供 PetView 使用。
+PetView.snapWithBounce 在**每次吸附时现读**，所以改完立刻生效，
+既不用重启桌宠，也不会挪动它的位置。
+
+## UI
+
+布局里原来那张 A 区卡片已按用户要求废弃（visibility=gone），
+本次直接把它换成"⑤ 松手回弹"卡片：
+  幅度倍率  滑块 + 数字输入
+  时长倍率  滑块 + 数字输入
+数字输入用 numberDecimal（支持 2.5 这类小数），maxLength=5。
+
+滑块用**对数刻度**：0.1~10 线性的话 0.1~1 只占 9% 行程难以调节；
+取对数后 1.0 正好落在滑条中间，两侧手感一致。
+摘要文字同时显示倍率与折算后的绝对值，例如 "×2　（72 px）"。
+
+MainActivity 里原 setupZoneControls 及其辅助函数整段替换为
+setupBounceControls / scaleOf / progressOfScale / parseScale / fmtScale /
+bindBounceControls；删掉已无人引用的 zone_* 字符串。
+
+## 顺带
+
+修掉 cacheSizesKeepingCenter 遗留注释、pivot 死字段（上一轮），
+本轮的布局编辑曾漏删旧卡片的开标签导致 XML 不平衡，已修复并重新校验嵌套。
+
+25 个单测全绿。

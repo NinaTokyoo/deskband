@@ -107,6 +107,35 @@ class Prefs(context: Context) {
         PetState.setZoneSize(zoneW, zoneH)
     }
 
+    /**
+     * 回弹幅度**倍率**（用户可调，0.1~10）。
+     *
+     * 1.0 = 标准值 [BOUNCE_PX_BASE]（36px）。
+     * 用户要求"以现在的幅度为标准来调"，所以界面调的是倍率而不是绝对像素。
+     */
+    var bounceAmpScale: Float
+        get() = sp.getFloat(KEY_BOUNCE_AMP, 1f).coerceIn(SCALE_MIN, SCALE_MAX)
+        set(v) {
+            sp.edit().putFloat(
+                KEY_BOUNCE_AMP, v.coerceIn(SCALE_MIN, SCALE_MAX)
+            ).apply()
+        }
+
+    /** 回弹回落时长**倍率**（1.0 = [BOUNCE_MS_BASE] = 360ms） */
+    var bounceTimeScale: Float
+        get() = sp.getFloat(KEY_BOUNCE_TIME, 1f).coerceIn(SCALE_MIN, SCALE_MAX)
+        set(v) {
+            sp.edit().putFloat(
+                KEY_BOUNCE_TIME, v.coerceIn(SCALE_MIN, SCALE_MAX)
+            ).apply()
+        }
+
+    /** 实际过冲幅度（px） */
+    val bouncePx: Float get() = BOUNCE_PX_BASE * bounceAmpScale
+
+    /** 实际回落时长（ms） */
+    val bounceBackMs: Long get() = (BOUNCE_MS_BASE * bounceTimeScale).toLong()
+
     companion object {
         private const val NAME = "deskpet"
         private const val KEY_RUNNING = "running"
@@ -120,6 +149,19 @@ class Prefs(context: Context) {
         private const val KEY_HAS_POS = "has_pos"
         private const val KEY_ZONE_W = "zone_w"
         private const val KEY_ZONE_H = "zone_h"
+        private const val KEY_BOUNCE_AMP = "bounce_amp_scale"
+        private const val KEY_BOUNCE_TIME = "bounce_time_scale"
+
+        // ---- 松手回弹：标准值与可调倍率范围 ----
+        /** 标准过冲幅度（px），倍率 1.0 对应它 */
+        const val BOUNCE_PX_BASE = 36f
+
+        /** 标准回落时长（ms），倍率 1.0 对应它 */
+        const val BOUNCE_MS_BASE = 360f
+
+        /** 倍率范围：0.1 ~ 10 */
+        const val SCALE_MIN = 0.1f
+        const val SCALE_MAX = 10f
 
         /** 默认角色：素材目录名 */
         val DEFAULT_SKIN = PetSprite.FALLBACK

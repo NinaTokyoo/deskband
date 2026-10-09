@@ -18,6 +18,7 @@ import android.widget.SeekBar
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
+import kotlin.math.log10
 import kotlin.math.roundToInt
 
 /** 控制台：授权、开关桌宠、调大小、换角色。 */
@@ -35,15 +36,13 @@ class MainActivity : Activity() {
     private lateinit var spinnerSkin: Spinner
     private lateinit var chkAuto: CheckBox
 
-    // A 区尺寸调节
-    private lateinit var seekZoneW: SeekBar
-    private lateinit var seekZoneH: SeekBar
-    private lateinit var txtZoneW: TextView
-    private lateinit var txtZoneH: TextView
-    private lateinit var editZoneW: EditText
-    private lateinit var editZoneH: EditText
-
-    private var bindingZone = false
+    // 松手回弹调节
+    private lateinit var seekBounceAmp: SeekBar
+    private lateinit var seekBounceMs: SeekBar
+    private lateinit var txtBounceAmp: TextView
+    private lateinit var txtBounceMs: TextView
+    private lateinit var editBounceAmp: EditText
+    private lateinit var editBounceMs: EditText
 
     private var skins: List<String> = emptyList()
     private var bindingSkin = false
@@ -64,16 +63,15 @@ class MainActivity : Activity() {
         txtSize = findViewById(R.id.txtSize)
         spinnerSkin = findViewById(R.id.spinnerSkin)
         chkAuto = findViewById(R.id.chkAuto)
-        seekZoneW = findViewById(R.id.seekZoneW)
-        seekZoneH = findViewById(R.id.seekZoneH)
-        txtZoneW = findViewById(R.id.txtZoneW)
-        txtZoneH = findViewById(R.id.txtZoneH)
-        editZoneW = findViewById(R.id.editZoneW)
-        editZoneH = findViewById(R.id.editZoneH)
+        seekBounceAmp = findViewById(R.id.seekBounceAmp)
+        seekBounceMs = findViewById(R.id.seekBounceMs)
+        txtBounceAmp = findViewById(R.id.txtBounceAmp)
+        txtBounceMs = findViewById(R.id.txtBounceMs)
+        editBounceAmp = findViewById(R.id.editBounceAmp)
+        editBounceMs = findViewById(R.id.editBounceMs)
 
         applyEdgeToEdge()
-        // A 区尺寸调节功能已按用户要求取消（布局里那张卡片是 gone，这里也不接管）
-        // setupZoneControls()
+        setupBounceControls()
 
         btnOverlay.setOnClickListener { openOverlaySettings() }
         btnNotify.setOnClickListener { requestNotificationPermission() }
@@ -243,89 +241,101 @@ class MainActivity : Activity() {
      * 所以这里只需要改 A 的宽高两个数。
      * 调整过程中会通知服务闪一下红色指示线，方便对照。
      */
-    private fun setupZoneControls() {
-        seekZoneW.max = 1000
-        seekZoneH.max = 1000
+    // ---------------------------------------------------------------- 回弹调节
 
-        val wListener = object : SeekBar.OnSeekBarChangeListener {
+    /**
+     * 松手回弹调节：滑块 + 数字输入，两者双向同步。
+     *
+     * 界面调的是**倍率**（0.1 ~ 10，1.0 = 标准值 36px / 360ms）——
+     * 用户要求"以现在的幅度和回弹时间为标准"来调，所以调倍率而非绝对值。
+     *
+     * 两个值都在**每次吸附时现读**（见 PetView.snapWithBounce），
+     * 改完立刻生效，不需要重启桌宠、也不会挪动它的位置。
+     */
+    private fun setupBounceControls() {
+        seekBounceAmp.max = 1000
+        seekBounceMs.max = 1000
+
+        seekBounceAmp.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
-                val v = zoneWidthOf(progress)
-                prefs.zoneW = v
-                onZoneChanged()
+                prefs.bounceAmpScale = scaleOf(progress)
+                bindBounceControls()
             }
             override fun onStartTrackingTouch(sb: SeekBar?) = Unit
             override fun onStopTrackingTouch(sb: SeekBar?) = Unit
-        }
-        val hListener = object : SeekBar.OnSeekBarChangeListener {
+        })
+        seekBounceMs.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
-                val v = zoneHeightOf(progress)
-                prefs.zoneH = v
-                onZoneChanged()
+                prefs.bounceTimeScale = scaleOf(progress)
+                bindBounceControls()
             }
             override fun onStartTrackingTouch(sb: SeekBar?) = Unit
             override fun onStopTrackingTouch(sb: SeekBar?) = Unit
-        }
-        seekZoneW.setOnSeekBarChangeListener(wListener)
-        seekZoneH.setOnSeekBarChangeListener(hListener)
+        })
 
-        // 数字输入：失焦或回车时生效
-        val applyEdit = {
-            val w = editZoneW.text.toString().toFloatOrNull()
-            val h = editZoneH.text.toString().toFloatOrNull()
-            if (w != null) prefs.zoneW = w
-            if (h != null) prefs.zoneH = h
-            onZoneChanged()
+        // 数字输入：回车或失焦时生效（支持小数，如 2.5）
+        val applyAmp = {
+            parseScale(editBounceAmp.text.toString())?.let { prefs.bounceAmpScale = it }
+            bindBounceControls()
         }
-        editZoneW.setOnEditorActionListener { _, _, _ -> applyEdit(); true }
-        editZoneW.setOnFocusChangeListener { _, has ->
-            if (!has) applyEdit()
+        val applyMs = {
+            parseScale(editBounceMs.text.toString())?.let { prefs.bounceTimeScale = it }
+            bindBounceControls()
         }
-        editZoneH.setOnEditorActionListener { _, _, _ -> applyEdit(); true }
-        editZoneH.setOnFocusChangeListener { _, has ->
-            if (!has) applyEdit()
-        }
+        editBounceAmp.setOnEditorActionListener { _, _, _ -> applyAmp(); true }
+        editBounceAmp.setOnFocusChangeListener { _, has -> if (!has) applyAmp() }
+        editBounceMs.setOnEditorActionListener { _, _, _ -> applyMs(); true }
+        editBounceMs.setOnFocusChangeListener { _, has -> if (!has) applyMs() }
 
-        bindZoneControls()
+        bindBounceControls()
     }
 
-    private fun zoneWidthOf(progress: Int): Float =
-        PetState.A_W_MIN +
-            (PetState.A_W_MAX - PetState.A_W_MIN) * (progress / 1000f)
+    /**
+     * 滑块进度(0..1000) <-> 倍率(0.1..10)。
+     *
+     * 用**对数刻度**：线性的话 0.1~1 只占 9% 的行程，很难调；
+     * 取对数后 1.0 正好落在滑条中间，两侧手感一致。
+     */
+    private fun scaleOf(progress: Int): Float {
+        val lo = log10(Prefs.SCALE_MIN.toDouble())
+        val hi = log10(Prefs.SCALE_MAX.toDouble())
+        val t = progress.coerceIn(0, 1000) / 1000.0
+        return Math.pow(10.0, lo + (hi - lo) * t).toFloat()
+    }
 
-    private fun zoneHeightOf(progress: Int): Float =
-        PetState.A_H_MIN +
-            (PetState.A_H_MAX - PetState.A_H_MIN) * (progress / 1000f)
+    private fun progressOfScale(v: Float): Int {
+        val lo = log10(Prefs.SCALE_MIN.toDouble())
+        val hi = log10(Prefs.SCALE_MAX.toDouble())
+        val x = log10(v.coerceIn(Prefs.SCALE_MIN, Prefs.SCALE_MAX).toDouble())
+        return (((x - lo) / (hi - lo)) * 1000.0).roundToInt().coerceIn(0, 1000)
+    }
 
-    private fun progressOfW(v: Float): Int =
-        (((v - PetState.A_W_MIN) / (PetState.A_W_MAX - PetState.A_W_MIN)) * 1000f)
-            .roundToInt().coerceIn(0, 1000)
+    private fun parseScale(s: String): Float? =
+        s.trim().removePrefix("×").removePrefix("x").toFloatOrNull()
+            ?.coerceIn(Prefs.SCALE_MIN, Prefs.SCALE_MAX)
 
-    private fun progressOfH(v: Float): Int =
-        (((v - PetState.A_H_MIN) / (PetState.A_H_MAX - PetState.A_H_MIN)) * 1000f)
-            .roundToInt().coerceIn(0, 1000)
+    /** 倍率显示成 1 位小数（整数则不显示 .0） */
+    private fun fmtScale(v: Float): String {
+        val r = (v * 10f).roundToInt() / 10f
+        return if (r == r.toInt().toFloat()) r.toInt().toString() else r.toString()
+    }
 
     /** 把当前值刷到滑块 / 文本框 / 摘要文字 */
-    private fun bindZoneControls() {
-        bindingZone = true
-        val w = prefs.zoneW
-        val h = prefs.zoneH
-        seekZoneW.progress = progressOfW(w)
-        seekZoneH.progress = progressOfH(h)
-        editZoneW.setText(w.roundToInt().toString())
-        editZoneH.setText(h.roundToInt().toString())
-        txtZoneW.text = getString(R.string.zone_w_value, w.roundToInt())
-        txtZoneH.text = getString(R.string.zone_h_value, h.roundToInt())
-        bindingZone = false
-    }
-
-    private fun onZoneChanged() {
-        if (bindingZone) return
-        prefs.applyZoneSize()
-        bindZoneControls()
-        // 通知服务：同步尺寸 + 闪指示线
-        PetService.previewZone(this)
+    private fun bindBounceControls() {
+        val amp = prefs.bounceAmpScale
+        val tms = prefs.bounceTimeScale
+        seekBounceAmp.progress = progressOfScale(amp)
+        seekBounceMs.progress = progressOfScale(tms)
+        editBounceAmp.setText(fmtScale(amp))
+        editBounceMs.setText(fmtScale(tms))
+        txtBounceAmp.text = getString(
+            R.string.bounce_amp_value, fmtScale(amp), prefs.bouncePx.roundToInt()
+        )
+        txtBounceMs.text = getString(
+            R.string.bounce_ms_value, fmtScale(tms), prefs.bounceBackMs
+        )
     }
 
     // ---------------------------------------------------------------- 大小映射

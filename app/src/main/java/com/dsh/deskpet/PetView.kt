@@ -60,6 +60,9 @@ class PetView(context: Context) : View(context) {
 
     var host: Host? = null
 
+    /** 回弹幅度/时长等参数从这里现读（用户可调） */
+    private val prefs by lazy { Prefs(context) }
+
     // ---------------------------------------------------------------- 状态
 
     var sprite: PetSprite? = null
@@ -503,7 +506,7 @@ class PetView(context: Context) : View(context) {
                     if (bouncePending) {
                         // 第一段（冲到过冲点）结束 -> 平滑回到贴边位置
                         bouncePending = false
-                        animateTo(bounceToX, bounceToY, BOUNCE_BACK_MS.toLong())
+                        animateTo(bounceToX, bounceToY, prefs.bounceBackMs.toLong())
                     } else {
                         // 补间走完才换状态，避免中途改尺寸导致的跳变
                         applyPendingState()
@@ -585,12 +588,15 @@ class PetView(context: Context) : View(context) {
         targetCenterX: Float, targetCenterY: Float,
         snapSide: Boolean, snapBottom: Boolean
     ) {
+        // 回弹参数由用户在 App 里调（滑块 + 数字输入），每次吸附时现读
+        val amp = prefs.bouncePx
+        val backMs = prefs.bounceBackMs
         val dx = targetCenterX - curCenterX()
         val dy = targetCenterY - curCenterY()
         var ox = 0f
         var oy = 0f
-        if (snapSide && abs(dx) > 1f) ox = if (dx > 0f) BOUNCE_PX else -BOUNCE_PX
-        if (snapBottom && abs(dy) > 1f) oy = if (dy > 0f) BOUNCE_PX else -BOUNCE_PX
+        if (snapSide && abs(dx) > 1f && amp > 0.5f) ox = if (dx > 0f) amp else -amp
+        if (snapBottom && abs(dy) > 1f && amp > 0.5f) oy = if (dy > 0f) amp else -amp
 
         if (ox == 0f && oy == 0f) {
             // 已经在贴边位置，没什么可弹的
@@ -1331,11 +1337,7 @@ class PetView(context: Context) : View(context) {
         private const val FLIP_MS = 260f
         private const val ROT_MS = 180f
 
-        /** 回弹过冲幅度：小一点，只是"弹一下"的观感 */
-        const val BOUNCE_PX = 36f
-
-        /** 回弹的回落时长（略长于冲出，收得柔一点） */
-        const val BOUNCE_BACK_MS = 360f
+        /** 回弹过冲幅度与回落时长的默认值在 Prefs 里（用户可调），这里不再重复定义 */
         private const val HOP_MS = 380f
         private const val HOP_FRACTION = 0.08f
 

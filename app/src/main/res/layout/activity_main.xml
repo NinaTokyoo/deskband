@@ -134,36 +134,33 @@
                 android:textSize="15sp" />
         </LinearLayout>
 
-        <!-- A 区尺寸调节：功能已按用户要求取消，保留代码但不再显示 -->
-        <LinearLayout
-            android:id="@+id/cardZone"
-            style="@style/Card"
-            android:visibility="gone">
+        <!-- 松手回弹调节 -->
+        <LinearLayout style="@style/Card">
 
             <TextView
                 style="@style/CardTitle"
-                android:text="@string/section_zone" />
+                android:text="@string/section_bounce" />
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="@string/zone_hint"
+                android:text="@string/bounce_hint"
                 android:textColor="@color/text_secondary"
                 android:textSize="13sp"
                 android:lineSpacingExtra="3dp" />
 
-            <!-- 横向 -->
+            <!-- 幅度 -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
-                android:text="@string/label_zone_w"
+                android:text="@string/label_bounce_amp"
                 android:textColor="@color/text_secondary"
                 android:textSize="14sp" />
 
             <SeekBar
-                android:id="@+id/seekZoneW"
+                android:id="@+id/seekBounceAmp"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp" />
@@ -175,7 +172,7 @@
                 android:gravity="center_vertical">
 
                 <TextView
-                    android:id="@+id/txtZoneW"
+                    android:id="@+id/txtBounceAmp"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
@@ -183,27 +180,27 @@
                     android:textSize="13sp" />
 
                 <EditText
-                    android:id="@+id/editZoneW"
+                    android:id="@+id/editBounceAmp"
                     android:layout_width="92dp"
                     android:layout_height="wrap_content"
-                    android:inputType="number"
-                    android:maxLength="4"
+                    android:inputType="numberDecimal"
+                    android:maxLength="5"
                     android:textSize="14sp"
                     android:gravity="center"
-                    android:hint="@string/zone_w_input" />
+                    android:hint="@string/bounce_amp_input" />
             </LinearLayout>
 
-            <!-- 纵向 -->
+            <!-- 回落时长 -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
-                android:text="@string/label_zone_h"
+                android:text="@string/label_bounce_ms"
                 android:textColor="@color/text_secondary"
                 android:textSize="14sp" />
 
             <SeekBar
-                android:id="@+id/seekZoneH"
+                android:id="@+id/seekBounceMs"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp" />
@@ -215,7 +212,7 @@
                 android:gravity="center_vertical">
 
                 <TextView
-                    android:id="@+id/txtZoneH"
+                    android:id="@+id/txtBounceMs"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
@@ -223,14 +220,14 @@
                     android:textSize="13sp" />
 
                 <EditText
-                    android:id="@+id/editZoneH"
+                    android:id="@+id/editBounceMs"
                     android:layout_width="92dp"
                     android:layout_height="wrap_content"
-                    android:inputType="number"
-                    android:maxLength="4"
+                    android:inputType="numberDecimal"
+                    android:maxLength="5"
                     android:textSize="14sp"
                     android:gravity="center"
-                    android:hint="@string/zone_h_input" />
+                    android:hint="@string/bounce_ms_input" />
             </LinearLayout>
         </LinearLayout>
 
