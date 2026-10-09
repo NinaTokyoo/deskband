@@ -26,9 +26,18 @@ class Prefs(context: Context) {
         get() = sp.getString(KEY_SKIN, DEFAULT_SKIN) ?: DEFAULT_SKIN
         set(v) { sp.edit().putString(KEY_SKIN, v).apply() }
 
-    /** 宠物高度占可活动区域高度的比例 */
+    /**
+     * 宠物高度占可活动区域高度的比例。
+     *
+     * 用户**没手动调过**时，一律返回 [DEFAULT_SIZE]，而不是读回旧值 ——
+     * 否则改默认值对老装机无效（SharedPreferences 里还留着上次的 0.15）。
+     */
     var sizeFraction: Float
-        get() = sp.getFloat(KEY_SIZE, DEFAULT_SIZE).coerceIn(MIN_SIZE, MAX_SIZE)
+        get() = if (sp.getBoolean(KEY_SIZE_TUNED, false)) {
+            sp.getFloat(KEY_SIZE, DEFAULT_SIZE).coerceIn(MIN_SIZE, MAX_SIZE)
+        } else {
+            DEFAULT_SIZE
+        }
         set(v) { sp.edit().putFloat(KEY_SIZE, v.coerceIn(MIN_SIZE, MAX_SIZE)).apply() }
 
     /** 用户是否手动调过大小 */
@@ -41,7 +50,12 @@ class Prefs(context: Context) {
         get() = sp.getInt(KEY_SNAP, PetState.CORNER_BR)
         set(v) { sp.edit().putInt(KEY_SNAP, v).apply() }
 
-    /** 宠物左上角相对屏幕的像素位置 */
+    /**
+     * 宠物**足迹盒**（旋转后的外接矩形）左上角相对屏幕的像素位置。
+     *
+     * 注意不是素材格子的左上角 —— 旋转形态下足迹盒与素材格子宽高互换。
+     * PetView.restore() 就是按这个语义还原位置的。
+     */
     var posLeft: Int
         get() = sp.getInt(KEY_LEFT, 0)
         set(v) { sp.edit().putInt(KEY_LEFT, v).apply() }

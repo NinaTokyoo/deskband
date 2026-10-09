@@ -149,9 +149,6 @@ class PetView(context: Context) : View(context) {
     private var curSizeRot = 0f
 
     /** 绕手指点旋转：拖动期间用它当支点（窗口内坐标） */
-    private var pivotValid = false
-    private var pivotLocalX = 0f
-    private var pivotLocalY = 0f
 
     private fun cacheSizes() {
         val s = sprite ?: return
@@ -260,15 +257,6 @@ class PetView(context: Context) : View(context) {
     private fun centerInWindowY(): Float = cellLocalY() + artV * cellH
 
     /**
-     * 旋转与压缩的**支点**（窗口内坐标）。
-     *
-     * 用户在拖动时希望**绕手指实际作用点**旋转，所以拖动期间用
-     * [pivotLocalX]/[pivotLocalY]（按下点固定在窗口里的位置）；
-     * 松手后没有手指了，回退到素材中心点。
-     *
-     * ⚠️ 支点在整段旋转动画期间必须保持不变，否则一动就抽搐。
-     */
-    /**
      * 旋转与压缩的**支点**（窗口内坐标）= 素材中心点。
      *
      * ⚠️ 为什么不用"手指实际作用点"当支点：
@@ -320,7 +308,8 @@ class PetView(context: Context) : View(context) {
     }
 
     fun setSizeFraction(f: Float) {
-        sizeFrac = f.coerceIn(0.05f, 0.9f)
+        // 与 Prefs 用同一套边界，别在这里写另一组数（否则两处不一致）
+        sizeFrac = f.coerceIn(Prefs.MIN_SIZE, Prefs.MAX_SIZE)
         // 缩放前先记下**吸附边的屏幕位置**
         val oldLeft = curTrackLeft()
         val oldTop = curTrackTop()
@@ -347,6 +336,16 @@ class PetView(context: Context) : View(context) {
             } else {
                 oldBottom - trackH + centerFromTrackY()
             }
+
+            // 放大后可能把宠物顶到屏幕外（侧边形态是垂直居中的），
+            // 这里夹一次，保证至少一半可见、不会"丢"在屏幕外。
+            val cl = PetState.clampToScreen(
+                anchorX - centerFromTrackX(), anchorY - centerFromTrackY(),
+                trackW.toFloat(), trackH.toFloat(),
+                b.width().toFloat(), b.height().toFloat()
+            )
+            anchorX = cl[0] + centerFromTrackX()
+            anchorY = cl[1] + centerFromTrackY()
         }
         dragOffsetX = 0f
         dragOffsetY = 0f
@@ -432,6 +431,21 @@ class PetView(context: Context) : View(context) {
     private var tweenStart = 0L
     private var tweenMs = SNAP_MS
 
+    // ---- 松手吸附的小回弹 ----
+    /**
+     * 过冲目标。回弹规则（用户确认）：
+     *
+     *   松手时素材**没超出**屏幕 -> 吸附会把它**往外**拉 -> 先向屏幕外弹一下
+     *   松手时素材**已超出**屏幕 -> 吸附会把它**往里**拉 -> 先向屏幕内弹一下
+     *
+     * 注意这两条其实是同一件事：**过冲方向 = 吸附的移动方向**。
+     * 因为"已超出"恰好等价于"吸附会往回拉"，所以直接用
+     * sign(目标 - 当前位置) 当方向即可，不用单独判"是否超出"。
+     */
+    private var bouncePending = false
+    private var bounceToX = 0f
+    private var bounceToY = 0f
+
     // ---- 跨半屏的镜像翻转动画 ----
     /** 0 = 未翻转，1 = 已翻转；中间值即翻转过程 */
     private var flip = 0f
@@ -486,8 +500,14 @@ class PetView(context: Context) : View(context) {
                     anchorX = tweenToX
                     anchorY = tweenToY
                     tweening = false
-                    // 补间走完才换状态，避免中途改尺寸导致的跳变
-                    applyPendingState()
+                    if (bouncePending) {
+                        // 第一段（冲到过冲点）结束 -> 平滑回到贴边位置
+                        bouncePending = false
+                        animateTo(bounceToX, bounceToY, BOUNCE_BACK_MS.toLong())
+                    } else {
+                        // 补间走完才换状态，避免中途改尺寸导致的跳变
+                        applyPendingState()
+                    }
                 }
                 need = true
             }
@@ -554,6 +574,42 @@ class PetView(context: Context) : View(context) {
     }
 
     private fun startTween(toX: Float, toY: Float) = animateTo(toX, toY)
+
+    /**
+     * 松手吸附（带回弹）：先冲到"过冲点"，再回落到贴边位置。
+     *
+     * 过冲方向 = 吸附的移动方向（见 [bouncePending] 的说明），
+     * 幅度固定 [BOUNCE_PX]。若某个轴本来就在贴边位置（移动量≈0），该轴不弹。
+     */
+    private fun snapWithBounce(
+        targetCenterX: Float, targetCenterY: Float,
+        snapSide: Boolean, snapBottom: Boolean
+    ) {
+        val dx = targetCenterX - curCenterX()
+        val dy = targetCenterY - curCenterY()
+        var ox = 0f
+        var oy = 0f
+        if (snapSide && abs(dx) > 1f) ox = if (dx > 0f) BOUNCE_PX else -BOUNCE_PX
+        if (snapBottom && abs(dy) > 1f) oy = if (dy > 0f) BOUNCE_PX else -BOUNCE_PX
+
+        if (ox == 0f && oy == 0f) {
+            // 已经在贴边位置，没什么可弹的
+            bouncePending = false
+            if (abs(dx) < 1f && abs(dy) < 1f) {
+                anchorX = targetCenterX
+                anchorY = targetCenterY
+                applyPendingState()
+            } else {
+                animateTo(targetCenterX, targetCenterY)
+            }
+            return
+        }
+
+        bounceToX = targetCenterX
+        bounceToY = targetCenterY
+        bouncePending = true
+        animateTo(targetCenterX + ox, targetCenterY + oy)
+    }
 
     /**
      * 旋转动画：在 0 与 ∓90 之间平滑过渡。
@@ -902,9 +958,6 @@ class PetView(context: Context) : View(context) {
                 dragging = false
                 cancelTween()
                 // 记下手指作用点在窗口内的位置 —— 旋转就绕它转
-                pivotLocalX = event.x
-                pivotLocalY = event.y
-                pivotValid = true
                 return true
             }
 
@@ -940,10 +993,8 @@ class PetView(context: Context) : View(context) {
                     anchorY = curCenterY()
                     dragOffsetX = 0f
                     dragOffsetY = 0f
-                    pivotValid = false
                     settle()
                 } else {
-                    pivotValid = false
                     onTapped()
                 }
                 dragging = false
@@ -1102,7 +1153,8 @@ class PetView(context: Context) : View(context) {
             startRotAnim(shownRotation, wantRot)
             // 状态与尺寸已在此处理，别再让补间结束时的 applyPendingState 重做一遍
             pendingState = null
-            animateTo(targetCenterX, targetCenterY, SNAP_MS.toLong())
+            // 边转边靠，旋转(180ms)短于位移(220ms)，所以到边前就转正；末尾带回弹
+            snapWithBounce(targetCenterX, targetCenterY, snapSide, snapBottom)
             placeWindow()
             invalidate()
             host?.onSettled(want, c[0].roundToInt(), c[1].roundToInt())
@@ -1112,9 +1164,10 @@ class PetView(context: Context) : View(context) {
         if (abs(curCenterX() - targetCenterX) < 1f && abs(curCenterY() - targetCenterY) < 1f) {
             anchorX = targetCenterX
             anchorY = targetCenterY
+            bouncePending = false
             applyPendingState()
         } else {
-            animateTo(targetCenterX, targetCenterY)
+            snapWithBounce(targetCenterX, targetCenterY, snapSide, snapBottom)
         }
 
         placeWindow()
@@ -1275,8 +1328,14 @@ class PetView(context: Context) : View(context) {
         private const val FRAME_MS = 16L
         private const val HIT_ALPHA_MIN = 16
         private const val SNAP_MS = 220f
-        private const val FLIP_MS = 200f
+        private const val FLIP_MS = 260f
         private const val ROT_MS = 180f
+
+        /** 回弹过冲幅度：小一点，只是"弹一下"的观感 */
+        const val BOUNCE_PX = 18f
+
+        /** 回弹的回落时长（略长于冲出，收得柔一点） */
+        const val BOUNCE_BACK_MS = 180f
         private const val HOP_MS = 380f
         private const val HOP_FRACTION = 0.08f
 
