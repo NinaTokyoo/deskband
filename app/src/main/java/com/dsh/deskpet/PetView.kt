@@ -121,9 +121,31 @@ class PetView(context: Context) : View(context) {
 
     fun setSizeFraction(f: Float) {
         sizeFrac = f.coerceIn(0.05f, 0.9f)
+        val oldW = trackW
+        val oldH = trackH
         cacheSizes()
-        // 尺寸变了，窗口必须跟着变，否则宠物会超出窗口导致点不到（踩过这个坑）
-        invalidate()
+        // 以**吸附边**为基准缩放：
+        //   贴底/角落 -> 底边不动（否则缩小后会浮空）
+        //   贴侧边    -> 吸附的那一侧不动（否则放大后会超出屏幕）
+        // 不这样做的话，缩放会让宠物围绕左上角变化，出现浮空或显示不全。
+        val b = host?.bounds()
+        if (b != null) {
+            if (PetState.isLeft(state)) {
+                // 贴左边：左边固定，无需动 x
+            } else {
+                // 贴右边：右边固定
+                anchorX += (oldW - trackW).toFloat()
+            }
+            // 纵向上：贴底/角落的底边固定；侧边形态是垂直居中的，上下都补一半
+            if (PetState.isUprightVariant(state) || state == PetState.BORDER_R ||
+                state == PetState.BORDER_L
+            ) {
+                anchorY += (oldH - trackH) / 2f
+            } else {
+                anchorY += (oldH - trackH).toFloat()
+            }
+        }
+        syncWindow()
     }
 
     fun setState(newState: Int) {
@@ -209,9 +231,6 @@ class PetView(context: Context) : View(context) {
     private var dragging = false
     private var dragOffsetX = 0f
     private var dragOffsetY = 0f
-
-    /** 这次拖动是不是"从吸附状态脱开"，决定要不要加阻尼 */
-    private var dragFromSnap = false
     private var downRawX = 0f
     private var downRawY = 0f
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
@@ -525,8 +544,6 @@ class PetView(context: Context) : View(context) {
                 dragOffsetY = 0f
                 dragging = false
                 cancelTween()
-                // 吸附状态（贴边）起步才加阻尼；空中起拖直接 1:1 跟手
-                dragFromSnap = PetState.isAttachedState(state)
                 return true
             }
 
@@ -535,11 +552,11 @@ class PetView(context: Context) : View(context) {
                 val dy = event.rawY - downRawY
                 if (!dragging && (abs(dx) > touchSlop || abs(dy) > touchSlop)) dragging = true
                 if (dragging) {
-                    // 严格跟手；只有"刚从吸附状态脱开"那一下带一点阻尼，
-                    // 免得贴边的宠物被轻轻一碰就弹走。
-                    val f = dampFactor(dx, dy)
-                    dragOffsetX = dx * f
-                    dragOffsetY = dy * f
+                    // 严格跟手：直接用"手指相对按下点的屏幕位移"，1:1 无阻尼。
+                    // 不读窗口增量 —— 旋转 / 改尺寸会触发窗口 resize，
+                    // 那一刻增量会错位。
+                    dragOffsetX = dx
+                    dragOffsetY = dy
                     updateDragState()
                     placeWindow()
                     invalidate()
@@ -565,29 +582,8 @@ class PetView(context: Context) : View(context) {
         return super.onTouchEvent(event)
     }
 
-    /**
-     * 拖动阻尼系数：严格跟手时返回 1。
-     *
-     * 只有当**这次拖动是从吸附状态开始的**才加阻尼 —— 已经拖在空中的宠物
-     * 再拖就是 1:1 跟手，不该有粘滞感。
-     *
-     * 阻尼期内的总让位是固定的 [DAMP_TAIL_PX]：
-     *   手指走 DAMP_HEAD_PX 时宠物才开始让位，
-     *   让位到 DAMP_TAIL_PX（总位移约 DAMP_FULL_PX）时阻尼结束，之后 1:1。
-     * 这样"脱开那一下"的手感是确定的，不随手指速度变化。
-     */
-    private fun dampFactor(dx: Float, dy: Float): Float {
-        if (!dragFromSnap) return 1f
-        val d = kotlin.math.hypot(dx, dy)
-        if (d >= DAMP_FULL_PX) return 1f
-        if (d <= DAMP_HEAD_PX) return DAMP_TAIL_PX / DAMP_HEAD_PX
-        val t = (d - DAMP_HEAD_PX) / (DAMP_FULL_PX - DAMP_HEAD_PX)
-        val eased = t * t * (3f - 2f * t)
-        val m = DAMP_TAIL_PX / DAMP_HEAD_PX
-        return m + (1f - m) * eased
-    }
-
-    /** 拖动过程中刷新状态（素材与旋转随之变化，没有中间角度） */    private fun updateDragState() {
+    /** 拖动过程中刷新状态（素材与旋转随之变化，没有中间角度） */
+    private fun updateDragState() {
         val b = host?.bounds() ?: return
         val x = curX()
         val y = curY()
@@ -820,16 +816,6 @@ class PetView(context: Context) : View(context) {
 
         /** 点击时最大压缩比例（0.22 = 压掉 22% 的厚度） */
         private const val SQ_MAX = 0.22f
-
-        /**
-         * 拖动阻尼：刚脱离吸附时先走一段"带阻力"的位移。
-         *
-         * 阻尼期总位移固定为 [DAMP_TAIL_PX]（手指走多远，宠物最终都只让出这么多），
-         * 这样"脱开手感"是确定的，不受手指速度影响。
-         */
-        const val DAMP_HEAD_PX = 26f
-        const val DAMP_TAIL_PX = 14f
-        const val DAMP_FULL_PX = 64f
 
         /** 窗口给"轻跳"和四角旋转留的余量，避免边缘被切 */
         const val HOP_PAD_X = 8

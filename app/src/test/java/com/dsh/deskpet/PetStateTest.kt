@@ -136,8 +136,8 @@ class PetStateTest {
         assertEquals(PetState.BORDER_R, PetState.stateForZone(PetState.ZONE_B, false))
         assertEquals(PetState.BORDER_L, PetState.stateForZone(PetState.ZONE_B, true))
         // 用户规定：贴右边框时人物头朝左 -> +90；贴左边框头朝右 -> -90
-        assertEquals(90f, PetState.rotationForSnap(PetState.BORDER_R), 0.001f)
-        assertEquals(-90f, PetState.rotationForSnap(PetState.BORDER_L), 0.001f)
+        assertEquals(-90f, PetState.rotationForSnap(PetState.BORDER_R), 0.001f)
+        assertEquals(90f, PetState.rotationForSnap(PetState.BORDER_L), 0.001f)
         // 用的是正立素材那张图
         assertTrue(PetState.usesBorderArt(PetState.BORDER_R))
     }
@@ -156,9 +156,9 @@ class PetStateTest {
         assertEquals(0f, PetState.eRotation(false, 1000f, w, SW), 0.001f)
         assertEquals(0f, PetState.eRotation(false, SW - w, w, SW), 0.001f)
         // 右边缘越界 -> 转（右侧 +90，头朝左）
-        assertEquals(90f, PetState.eRotation(false, SW - w + 10f, w, SW), 0.001f)
+        assertEquals(-90f, PetState.eRotation(false, SW - w + 10f, w, SW), 0.001f)
         // 左半屏 -> -90
-        assertEquals(-90f, PetState.eRotation(true, SW - w + 10f, w, SW), 0.001f)
+        assertEquals(90f, PetState.eRotation(true, SW - w + 10f, w, SW), 0.001f)
     }
 
     @Test
@@ -206,8 +206,8 @@ class PetStateTest {
     @Test
     fun right_rotation_points_the_head_left() {
         // 用户规定：吸附右边框 -> 头朝左；左边框 -> 头朝右
-        assertEquals(90f, PetState.rotationForSnap(PetState.BORDER_R), 0.001f)
-        assertEquals(-90f, PetState.rotationForSnap(PetState.BORDER_L), 0.001f)
+        assertEquals(-90f, PetState.rotationForSnap(PetState.BORDER_R), 0.001f)
+        assertEquals(90f, PetState.rotationForSnap(PetState.BORDER_L), 0.001f)
     }
 
     @Test
