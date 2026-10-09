@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.view.View
 import android.view.WindowInsets
+import android.view.inputmethod.InputMethodManager
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
@@ -276,9 +277,9 @@ class MainActivity : Activity() {
             parseScale(editBounceMs.text.toString())?.let { prefs.bounceTimeScale = it }
             bindBounceControls()
         }
-        editBounceAmp.setOnEditorActionListener { _, _, _ -> applyAmp(); true }
+        editBounceAmp.setOnEditorActionListener { _, _, _ -> applyAmp(); clearInputFocus(); true }
         editBounceAmp.setOnFocusChangeListener { _, has -> if (!has) applyAmp() }
-        editBounceMs.setOnEditorActionListener { _, _, _ -> applyMs(); true }
+        editBounceMs.setOnEditorActionListener { _, _, _ -> applyMs(); clearInputFocus(); true }
         editBounceMs.setOnFocusChangeListener { _, has -> if (!has) applyMs() }
 
         // 保存并应用：把输入框当前值落盘。
@@ -293,6 +294,8 @@ class MainActivity : Activity() {
             parseScale(editBounceAmp.text.toString())?.let { prefs.bounceAmpScale = it }
             parseScale(editBounceMs.text.toString())?.let { prefs.bounceTimeScale = it }
             bindBounceControls()
+            // 保存后收掉焦点与键盘，否则输入框会一直亮着下划线、光标闪个不停
+            clearInputFocus()
             Toast.makeText(this, R.string.bounce_saved, Toast.LENGTH_SHORT).show()
         }
 
@@ -343,6 +346,19 @@ class MainActivity : Activity() {
         txtBounceMs.text = getString(
             R.string.bounce_ms_value, fmtScale(tms), prefs.bounceBackMs
         )
+    }
+
+    /**
+     * 收掉输入焦点：清焦点 + 隐藏软键盘。
+     *
+     * 不清的话，点完"保存并应用"输入框仍处于聚焦态 ——
+     * 表现为蓝色下划线和一直闪的光标（用户反馈的正是这个）。
+     */
+    private fun clearInputFocus() {
+        editBounceAmp.clearFocus()
+        editBounceMs.clearFocus()
+        val imm = getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager
+        imm?.hideSoftInputFromWindow(currentFocus?.windowToken, 0)
     }
 
     // ---------------------------------------------------------------- 大小映射
