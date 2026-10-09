@@ -283,12 +283,90 @@ class PetView(context: Context) : View(context) {
         }
     }
 
-    /** 点击是否落在宠物身上（窗口是整屏的，必须自己判定） */
+    /**
+     * 点击是否落在**宠物实际素材**上。
+     *
+     * 用户要求："只有点击桌宠实际素材时才能对其进行移动，一定不能阻挡我操作屏幕其他部分"。
+     * 所以这里做三层判定，任何一层不过就返回 false，让触摸继续传给下层：
+     *   1. 先在格子矩形外 -> 直接放过
+     *   2. 把触点逆变换回素材坐标系（反翻转 + 反旋转）
+     *   3. 取该点在位图上的 **alpha**，透明的地方（格子里的空白）也算放过
+     *
+     * 第 3 步是关键：格子是矩形，但人物只占其中一部分，
+     * 只按矩形判定的话，人物旁边一大片透明区照样会挡住触摸。
+     */
     private fun hitsPet(px: Float, py: Float): Boolean {
+        val s = sprite ?: return false
         val sz = currentSize()
+        val w = sz[0].toFloat()
+        val h = sz[1].toFloat()
         val x = anchorX + dragOffsetX
         val y = anchorY + dragOffsetY
-        return px >= x && px <= x + sz[0] && py >= y && py <= y + sz[1]
+
+        // 1. 粗筛
+        if (px < x || px > x + w || py < y || py > y + h) return false
+
+        // 2. 逆变换：先反掉翻转动画的水平压缩，再反掉旋转
+        val cx = x + w / 2f
+        val cy = y + h / 2f
+        var dx = px - cx
+        var dy = py - cy
+
+        if (flip > 0.001f && flip < 0.999f) {
+            val squash = abs(1f - 2f * flip).coerceAtLeast(0.03f)
+            dx /= squash
+        }
+        if (abs(shownRotation) > 0.01f) {
+            val rad = Math.toRadians(-shownRotation.toDouble())
+            val cos = Math.cos(rad).toFloat()
+            val sin = Math.sin(rad).toFloat()
+            val rx = dx * cos - dy * sin
+            val ry = dx * sin + dy * cos
+            dx = rx
+            dy = ry
+        }
+
+        // 归一到格子内的 0..1
+        val u = (dx / w + 0.5f)
+        val v = (dy / h + 0.5f)
+        if (u < 0f || u > 1f || v < 0f || v > 1f) return false
+
+        // 3. 取位图 alpha
+        val bmp = hitBitmap() ?: return true
+        val bx = (u * (bmp.width - 1)).toInt().coerceIn(0, bmp.width - 1)
+        val by = (v * (bmp.height - 1)).toInt().coerceIn(0, bmp.height - 1)
+        return try {
+            val a = (bmp.getPixel(bx, by) ushr 24) and 0xFF
+            a >= HIT_ALPHA_MIN
+        } catch (e: Exception) {
+            true
+        }
+    }
+
+    /** 当前用于命中判定的位图（按状态与左右镜像取） */
+    private fun hitBitmap(): Bitmap? {
+        val s = sprite ?: return null
+        val b = host?.bounds() ?: return null
+        val sz = currentSize()
+        val leftHalf = (anchorX + dragOffsetX + sz[0] / 2f) < b.width() / 2f
+        val db = PetState.bottomDist(anchorY + dragOffsetY, sz[1].toFloat(), b.height().toFloat())
+        val dr = PetState.sideDist(anchorX + dragOffsetX, sz[0].toFloat(), b.width().toFloat(), leftHalf)
+
+        val useCorner = if (dragging) {
+            PetState.zoneOf(db, dr, leftHalf) == PetState.ZONE_A
+        } else {
+            PetState.usesCornerArt(state)
+        }
+        val st = if (useCorner) {
+            if (leftHalf) PetState.CORNER_BL else PetState.CORNER_BR
+        } else {
+            if (leftHalf) PetState.BORDER_L else PetState.BORDER_R
+        }
+        return try {
+            s.bitmap(st, leftHalf)
+        } catch (e: Exception) {
+            null
+        }
     }
 
     /** 拖动跨过屏幕中轴线 -> 触发水平翻转（素材在 onDraw 里按半屏自动切换） */
@@ -412,10 +490,14 @@ class PetView(context: Context) : View(context) {
         val rotation = shownRotation
 
         // 模糊：D 区高强度，两侧平滑渐变
-        val blurT = if (dragging) PetState.blurFor(db, dr) else 0f
+        val blurT = if (dragging) PetState.blurFor(db, dr, leftHalf) else 0f
 
         // 角落素材 <-> 边框素材 的混合进度（连续，不是硬切）
-        val morph = if (dragging) PetState.artBlendFor(db, dr) else PetState.morphFor(db, dr)
+        val morph = if (dragging) {
+            PetState.artBlendFor(db, dr, leftHalf)
+        } else {
+            PetState.morphFor(db, dr, leftHalf)
+        }
 
         // 点击反馈：轻轻跳一下
         var hopY = 0f
@@ -571,5 +653,8 @@ class PetView(context: Context) : View(context) {
 
         /** 拖动时至少要有这么大比例的身体留在屏幕内 */
         const val MIN_VISIBLE_FRACTION = 0.5f
+
+        /** 命中判定所需的 alpha 下限；低于它就当点在空白处，触摸继续往下传 */
+        const val HIT_ALPHA_MIN = 16
     }
 }

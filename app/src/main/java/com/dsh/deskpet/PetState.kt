@@ -37,19 +37,50 @@ object PetState {
     // ---------------------------------------------------------------- 分区（最新规则）
 
     /**
-     * A 区：右下角 356×356 的方块 —— 用「右下角」素材吸附到角落。
+     * A 区在**横向**（离吸附侧边的距离）上的尺寸。
+     * 右侧 356，左侧 **200**（用户要求把左侧 A 从 356 收到 200）。
      */
-    const val CORNER_ZONE_PX = 356f
+    const val CORNER_ZONE_X_RIGHT = 356f
+    const val CORNER_ZONE_X_LEFT = 200f
 
     /**
-     * D 区外沿 444px。D 是 A/B/C 之外的那条 L 形带：
-     *   356 < db <= 444  或  356 < dr <= 444
-     * D 区内有模糊。
+     * A 区在**纵向**（离底边的距离）上的尺寸。
+     * D 区跟着 A 一起缩：D 内沿 = A 的纵向尺寸。
+     *   右侧：A=356，D 到 444
+     *   左侧：A_y=200 -> D 外沿同步缩到 288（= 444 - (356-200)）
+     *
+     * 结果就是左侧 A 变成 200×200 的小角，而 C 带（离底<=200）
+     * 在横向上不再被 A 截断 —— 也就是用户说的"C 区同步向右延长"。
      */
-    const val BLUR_ZONE_PX = 444f
+    const val CORNER_ZONE_Y_RIGHT = 356f
+    const val CORNER_ZONE_Y_LEFT = 200f
+
+    /** D 区外沿：右侧 444；左侧同步缩到 288 */
+    const val BLUR_ZONE_PX_RIGHT = 444f
+    const val BLUR_ZONE_PX_LEFT = 288f
 
     /** B / C 区的边宽 200px */
     const val EDGE_ZONE_PX = 200f
+
+    /** 兼容旧引用：右侧的 A / D 尺寸 */
+    const val CORNER_ZONE_PX = CORNER_ZONE_X_RIGHT
+    const val BLUR_ZONE_PX = BLUR_ZONE_PX_RIGHT
+
+    /**
+     * 一个半屏的分区几何参数。
+     *
+     * @param cornerX  A 区横向尺寸（离吸附侧边）
+     * @param cornerY  A 区纵向尺寸（离底边），同时也是 D 的内沿
+     * @param blurOut  D 区外沿
+     */
+    data class ZoneGeom(val cornerX: Float, val cornerY: Float, val blurOut: Float)
+
+    fun geomFor(leftHalf: Boolean): ZoneGeom =
+        if (leftHalf) {
+            ZoneGeom(CORNER_ZONE_X_LEFT, CORNER_ZONE_Y_LEFT, BLUR_ZONE_PX_LEFT)
+        } else {
+            ZoneGeom(CORNER_ZONE_X_RIGHT, CORNER_ZONE_Y_RIGHT, BLUR_ZONE_PX_RIGHT)
+        }
 
     /** 模糊渐强的起点 */
     const val FADE_INNER_PX = 240f
@@ -105,18 +136,20 @@ object PetState {
      * ⚠️ 200 那条边必须**排除 A**：因为 200 < 356，若先判 200，
      * A 区里 200..356 的环带会被误判进 C，C 就变成 356 宽了。
      */
-    fun zoneOf(db: Float, dr: Float): Int {
-        if (db <= CORNER_ZONE_PX && dr <= CORNER_ZONE_PX) return ZONE_A
+    fun zoneOf(db: Float, dr: Float, leftHalf: Boolean): Int {
+        val g = geomFor(leftHalf)
+        if (db <= g.cornerY && dr <= g.cornerX) return ZONE_A
         if (db <= EDGE_ZONE_PX) return ZONE_C
         if (dr <= EDGE_ZONE_PX) return ZONE_B
-        if (db <= BLUR_ZONE_PX || dr <= BLUR_ZONE_PX) return ZONE_D
+        if (db <= g.blurOut || dr <= g.blurOut) return ZONE_D
         return ZONE_E
     }
 
     /** D 区（那条 L 形带）内才有模糊 */
-    fun hasBlur(db: Float, dr: Float): Boolean = zoneOf(db, dr) == ZONE_D
+    fun hasBlur(db: Float, dr: Float, leftHalf: Boolean): Boolean =
+        zoneOf(db, dr, leftHalf) == ZONE_D
 
-    /** 离底边近就吸底边，否则吸右边（D / E 区松手用） */
+    /** 离底边近就吸底边，否则吸吸附侧边（D / E 区松手用） */
     fun nearerEdgeIsBottom(db: Float, dr: Float): Boolean = db <= dr
 
     /**
@@ -142,8 +175,8 @@ object PetState {
      * 关键的一条是 —— C 区贴底边后如果水平位置靠近角落，落点其实在 A 区，
      * 那时该用角落素材。所以顺序必须是：先算落点，再判素材。
      */
-    fun snapEdges(db: Float, dr: Float): IntArray {
-        return when (zoneOf(db, dr)) {
+    fun snapEdges(db: Float, dr: Float, leftHalf: Boolean): IntArray {
+        return when (zoneOf(db, dr, leftHalf)) {
             // A：贴角（底边 + 侧边）
             ZONE_A -> intArrayOf(1, 1)
             // C：只垂直贴底边
@@ -175,21 +208,24 @@ object PetState {
      *
      * 最小值组合天然连续：356 处两个分量都等于 1，444 处也都等于 1，没有跳变。
      */
-    fun blurFor(db: Float, dr: Float): Float {
+    fun blurFor(db: Float, dr: Float, leftHalf: Boolean): Float {
+        val g = geomFor(leftHalf)
         val d = minOf(db, dr)
 
         // D 区本体：恒定满强度
-        if (d > CORNER_ZONE_PX && d <= BLUR_ZONE_PX) return 1f
+        if (d > g.cornerY && d <= g.blurOut) return 1f
 
-        // 从贴边处平滑升到 D 内沿
-        if (d <= CORNER_ZONE_PX) {
-            if (d <= FADE_INNER_PX) return 0f
-            return smooth((d - FADE_INNER_PX) / (CORNER_ZONE_PX - FADE_INNER_PX))
+        // 从贴边处平滑升到 D 内沿。内沿用的是纵向尺寸（= A 的纵向高度）。
+        if (d <= g.cornerY) {
+            val inner = minOf(FADE_INNER_PX, g.cornerY - 1f)
+            if (d <= inner) return 0f
+            return smooth((d - inner) / (g.cornerY - inner))
         }
 
         // 从 D 外沿平滑衰减回清晰
-        if (d >= FADE_OUTER_PX) return 0f
-        return smooth(1f - (d - BLUR_ZONE_PX) / (FADE_OUTER_PX - BLUR_ZONE_PX))
+        val outer = maxOf(FADE_OUTER_PX, g.blurOut + 1f)
+        if (d >= outer) return 0f
+        return smooth(1f - (d - g.blurOut) / (outer - g.blurOut))
     }
 
     /** 平滑插值（smoothstep），两端不会出现折线感 */
@@ -199,7 +235,8 @@ object PetState {
     }
 
     /** 是否落在 D 区（L 形带） */
-    fun isInD(db: Float, dr: Float): Boolean = zoneOf(db, dr) == ZONE_D
+    fun isInD(db: Float, dr: Float, leftHalf: Boolean): Boolean =
+        zoneOf(db, dr, leftHalf) == ZONE_D
 
     /**
      * 吸附时**保留松手位置**。
@@ -212,11 +249,11 @@ object PetState {
     /**
      * 素材替换进度 0f..1f：0 = 用角落素材，1 = 用边框素材。
      *
-     *   A 区 -> 右下角素材（0）
-     *   其余 -> 右边框素材（1）；其中只有 B 区会旋转
+     *   A 区 -> 角落素材（0）
+     *   其余 -> 边框素材（1）；其中只有 B 区会旋转
      */
-    fun morphFor(db: Float, dr: Float): Float =
-        if (zoneOf(db, dr) == ZONE_A) 0f else 1f
+    fun morphFor(db: Float, dr: Float, leftHalf: Boolean): Float =
+        if (zoneOf(db, dr, leftHalf) == ZONE_A) 0f else 1f
 
     /** 离底边的距离（两侧相同） */
     fun bottomDist(y: Float, h: Float, screenH: Float): Float =
@@ -233,26 +270,16 @@ object PetState {
         else (screenW - (x + w)).coerceAtLeast(0f)
 
     /**
-     * 吸附后该用哪套素材 —— **按吸附后的位置重新判一次**。
+     * 吸附后该用哪套素材（供测试与外部查询；实际吸附走 [categoryForZone]）。
      *
-     * 这样才和分区表天然一致，不用维护两套互相打架的规则：
-     *   吸附到角落且落在 A 区 -> 角落素材
-     *   贴底边（落在 C 带）    -> 边框素材、不旋转
-     *   贴右边（落在 B 带）    -> 边框素材、逆时针90度
-     *
-     * @param snappedDb  吸附后底边离屏幕底部的距离（贴底时是 0）
-     * @param snappedDr  吸附后右边离屏幕右侧的距离（贴右时是 0）
-     * @param leftHalf   是否在左半屏 —— 左右由它决定，不靠距离猜
+     *   落在 A 区 -> 角落素材（正立）
+     *   其余      -> 边框素材；其中只有 B 会旋转（见 [rotationForSnap]）
      */
     fun snapCategory(
         snappedDb: Float,
         snappedDr: Float,
         leftHalf: Boolean
-    ): Int {
-        val sideState = if (leftHalf) BORDER_L else BORDER_R
-        val cornerState = if (leftHalf) CORNER_BL else CORNER_BR
-        return if (zoneOf(snappedDb, snappedDr) == ZONE_A) cornerState else sideState
-    }
+    ): Int = categoryForZone(zoneOf(snappedDb, snappedDr, leftHalf), leftHalf)
 
     /**
      * 计算吸附后的格子位置。
@@ -274,7 +301,7 @@ object PetState {
         leftHalf: Boolean
     ): FloatArray {
         // 先决定"贴哪条边"
-        val edges = snapEdges(db, dr)
+        val edges = snapEdges(db, dr, leftHalf)
         val snapBottom = edges[0] == 1
         val snapSide = edges[1] == 1
 
@@ -285,12 +312,19 @@ object PetState {
             nx = if (leftHalf) 0f else screenW - w // 贴左边 / 右边
         }
 
-        // 贴完再看落在哪个区，决定素材（距离同样按本侧量）
-        val ndb = bottomDist(ny, h, screenH)
-        val ndr = sideDist(nx, w, screenW, leftHalf)
-        val cat = snapCategory(ndb, ndr, leftHalf)
+        // 素材按**松手时所在的区**决定（不是按落点）。
+        // 用户明确："在 C 区向下吸附的时候素材是人物头部向上的整立素材" ——
+        // 即使贴底后落点恰好进了 A 区，C 区松手也仍然用边框素材正立。
+        val cat = categoryForZone(zoneOf(db, dr, leftHalf), leftHalf)
 
         return floatArrayOf(nx, ny, cat.toFloat())
+    }
+
+    /** 区域 -> 用哪套素材（含旋转语义见 [rotationForSnap]） */
+    fun categoryForZone(zone: Int, leftHalf: Boolean): Int {
+        val sideState = if (leftHalf) BORDER_L else BORDER_R
+        val cornerState = if (leftHalf) CORNER_BL else CORNER_BR
+        return if (zone == ZONE_A) cornerState else sideState
     }
 
     /**
@@ -354,9 +388,10 @@ object PetState {
      * 返回值单位是度，**正数 = 屏幕视觉顺时针**，直接喂给 Canvas.rotate。
      */
     fun rotationForDrag(db: Float, dr: Float, leftHalf: Boolean): Float {
-        // 只跟"离右边的距离"和"离底边的距离"有关；离底 <356 说明在底部带里，不转
-        val t = smooth((CORNER_ZONE_PX - dr) / EDGE_FADE_DEG) *
-            smooth((db - CORNER_ZONE_PX) / EDGE_FADE_DEG)
+        // 用本侧几何：左侧 A 横向是 200，D 内沿也同步缩小
+        val g = geomFor(leftHalf)
+        val t = smooth((g.cornerX - dr) / EDGE_FADE_DEG) *
+            smooth((db - g.cornerY) / EDGE_FADE_DEG)
         if (t <= 0.0001f) return 0f
         val full = if (leftHalf) rotationForSnap(BORDER_L) else rotationForSnap(BORDER_R)
         return full * t
@@ -365,12 +400,14 @@ object PetState {
     /**
      * 素材混合：0 = 全用角落素材，1 = 全用边框素材。**连续**，不是 0/1 硬切。
      *
-     * 从贴角处到 CORNER_TO_BORDER_FADE_OUT 平滑过渡，
+     * 从贴角处平滑过渡到 ART_FADE_OUTER_PX，
      * 并且这段正好落在模糊升起的区间里，所以换图被糊住、看不出来。
      */
-    fun artBlendFor(db: Float, dr: Float): Float {
+    fun artBlendFor(db: Float, dr: Float, leftHalf: Boolean): Float {
+        val g = geomFor(leftHalf)
         val d = minOf(db, dr)
-        return smooth((d - FADE_INNER_PX) / (ART_FADE_OUTER_PX - FADE_INNER_PX))
+        val inner = minOf(FADE_INNER_PX, g.cornerY - 1f)
+        return smooth((d - inner) / (ART_FADE_OUTER_PX - inner))
     }
 
     /**

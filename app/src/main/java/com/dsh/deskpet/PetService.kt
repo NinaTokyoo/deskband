@@ -199,12 +199,20 @@ class PetService : Service(), PetView.Host {
         view.sprite = s
         view.setSizeFraction(prefs.sizeFraction)
 
-        // 整屏透明窗口
+        // 整屏透明窗口。
+        //
+        // ⚠️ 绝对不要加 FLAG_NOT_TOUCH_MODAL！
+        // 那个 flag 的语义是"本窗口之外的触摸由我自己处理，不要传给下层"，
+        // 配上整屏窗口就会把**整个屏幕的触摸全部吃掉**，用户没法操作手机。
+        // （实测踩过这个坑：开启桌宠后整个屏幕点不动。）
+        //
+        // 正确做法是：不加该 flag，让窗口外的触摸自然落到下层；
+        // 窗口内部的触摸由 PetView.onTouchEvent 自己判定是否点在宠物身上，
+        // 点空了返回 false，同样会继续往下传。
         val p = WindowManager.LayoutParams(
             b.width(), b.height(),
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
                 or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
                 or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
