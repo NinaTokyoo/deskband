@@ -939,8 +939,8 @@ class PetView(context: Context) : View(context) {
         val b = host?.bounds() ?: return
         val x = curTrackLeft()
         val y = curTrackTop()
-        // 中线判定用**素材中心点**：中心一越过屏幕中线就翻（带动画）
-        val leftHalf = curCenterX() < b.width() / 2f
+        // 中线判定用**足迹中心**（0115 版行为）
+        val leftHalf = (x + trackW / 2f) < b.width() / 2f
 
         // 跨半屏 -> 触发镜像翻转动画
         startFlip(if (leftHalf) 1f else 0f)
@@ -999,8 +999,8 @@ class PetView(context: Context) : View(context) {
 
         val x = curTrackLeft()
         val y = curTrackTop()
-        // 中线判定用**素材中心点**：中心一越线就翻
-        val leftHalf = curCenterX() < b.width() / 2f
+        // 中线判定用**足迹中心**（0115 版行为）
+        val leftHalf = (x + trackW / 2f) < b.width() / 2f
         val db = PetState.bottomDist(y, trackH.toFloat(), b.height().toFloat())
         val dr = PetState.sideDist(x, trackW.toFloat(), b.width().toFloat(), leftHalf)
 
