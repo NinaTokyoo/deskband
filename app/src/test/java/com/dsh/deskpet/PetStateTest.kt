@@ -162,15 +162,70 @@ class PetStateTest {
         assertEquals(PetState.BORDER_R, PetState.artStateFor(1000f, 1000f, false))
     }
 
-    // ---------------------------------------------------------- 只模糊角落过渡
+    // ---------------------------------------------------------- 模糊：整图高强度 + 交界渐变
 
     @Test
-    fun `blur only exists inside the corner transition window`() {
-        // 区间内才有模糊
-        assertTrue(PetState.blurFor(400f, 400f) > 0f)
-        // A 区完全不模糊
-        assertEquals(0f, PetState.blurFor(10f, 10f), 0.001f)
-        assertEquals(0f, PetState.blurFor(300f, 300f), 0.001f)
+    fun `blur is zero when hugging an edge and zero far away`() {
+        // 贴着吸附边 -> 完全清晰
+        assertEquals(0f, PetState.blurFor(0f, 0f), 0.001f)
+        assertEquals(0f, PetState.blurFor(100f, 100f), 0.001f)
+        // 离两条边都很远 -> 也已经过渡回清晰
+        assertEquals(0f, PetState.blurFor(500f, 500f), 0.001f)
+        assertEquals(0f, PetState.blurFor(900f, 900f), 0.001f)
+    }
+
+    @Test
+    fun `blur stays high across the whole D band`() {
+        // D 区 356..444，整段都必须是高强度（不能在里面就开始衰减）
+        assertTrue("400/400 应高强度", PetState.blurFor(400f, 400f) > 0.9f)
+        assertTrue("356 内沿已高", PetState.blurFor(356f, 356f) > 0.9f)
+        assertTrue("444 外沿仍高", PetState.blurFor(444f, 444f) > 0.85f)
+    }
+
+    @Test
+    fun `blur uses the NEARER edge, not the farther one`() {
+        // 关键回归：贴着右边（dr 很小）但离底很远，仍是 D 状态，强度必须高
+        assertTrue("贴右边离底远也要糊", PetState.blurFor(500f, 400f) > 0.9f)
+        assertTrue("对称", PetState.blurFor(400f, 500f) > 0.9f)
+        // 早先用 max(db,dr) 时这里会得 0.5，是错的
+    }
+
+    @Test
+    fun `blur ramps up before D so there is no hard edge`() {
+        val a = PetState.blurFor(260f, 900f)
+        val b = PetState.blurFor(300f, 900f)
+        val c = PetState.blurFor(340f, 900f)
+        assertTrue("在渐变段内", a > 0f && a < 1f)
+        assertTrue("越接近 D 越糊", b > a)
+        assertTrue("继续变糊", c > b)
+        // D 内沿已经很接近满强度
+        assertTrue("356 处应接近满值", PetState.blurFor(356f, 900f) > 0.9f)
+    }
+
+    @Test
+    fun `blur ramps back down after D`() {
+        val a = PetState.blurFor(444f, 900f)
+        val b = PetState.blurFor(452f, 900f)
+        assertTrue("离得越远越清晰", b < a)
+        assertEquals(0f, PetState.blurFor(PetState.FADE_OUTER_PX, 900f), 0.001f)
+        assertEquals(0f, PetState.blurFor(600f, 900f), 0.001f)
+    }
+
+    @Test
+    fun `blur is continuous - no jumps anywhere`() {
+        // 扫一遍 0..700，相邻 1px 的差值必须很小（不会有生硬分界）
+        var prev = PetState.blurFor(0f, 900f)
+        var maxJump = 0f
+        var at = 0f
+        var d = 1f
+        while (d <= 700f) {
+            val cur = PetState.blurFor(d, 900f)
+            val j = abs(cur - prev)
+            if (j > maxJump) { maxJump = j; at = d }
+            prev = cur
+            d += 1f
+        }
+        assertTrue("最大单步跳变 $maxJump (在 $at) 应 < 0.06", maxJump < 0.06f)
     }
 
     // ---------------------------------------------------------- 比例不变（用户硬要求）

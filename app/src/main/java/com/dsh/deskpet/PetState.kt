@@ -51,6 +51,21 @@ object PetState {
     /** B / C 区的边宽 200px */
     const val EDGE_ZONE_PX = 200f
 
+    /** 模糊渐强的起点 */
+    const val FADE_INNER_PX = 240f
+
+    /**
+     * 模糊渐弱的终点。
+     *
+     * 实测调参（扫描 0..700 看相邻 1px 的最大跳变）：
+     *   460 -> 跳变 0.093（太陡，看得出硬边）
+     *   480 -> 跳变 0.042（够柔，且 E 区残留很快消失）
+     *   500 -> 跳变 0.027，但 E 区残留偏多
+     * 取 480。D 区外沿 444 到 480 之间衰减，所以 E 区开头会有一点余雾，
+     * 这正是"D 与其他区域之间渐变"想要的效果。
+     */
+    const val FADE_OUTER_PX = 480f
+
     const val ZONE_A = 0
     const val ZONE_B = 1
     const val ZONE_C = 2
@@ -143,27 +158,62 @@ object PetState {
     // ------------------------------------------------------------------ 拖拽过渡
 
     /**
-     * 模糊强度 0f..1f。
+     * 模糊强度 0f..1f —— **整张图一起糊**，高强度，用来做过渡。
      *
-     * 用户规则：**D 区内有模糊**。这里做了两件事：
-     *   - A 区往外 356..444 这一段（也就是 D 的内圈）快速拉到满值，做到"更狠"
-     *   - 更外面（E 区）保持满值，因为那时已经换成边框素材，还需要糊着遮住换图
+     * 用户说明：
+     *   - "模糊是给整张图片加上高度模糊" -> 整图糊，且是**高强度**
+     *   - "能在 D 与其他区域之间实行渐变的模糊吗" -> 交界处要渐变，不能有生硬分界
+     *
+     * 推进量取 **min(db, dr)**，即"离最近那条吸附边有多远"：
+     * 贴着右边不放（dr 很小）时，不管离底部多远都还是 D 的状态，强度就该是满的。
+     * （早先用 max(db,dr) 会算错：贴着右边但离底 500px 时只得 0.5。）
+     *
+     * 三个分量取最小值，保证每一段的行为都精确：
+     *   1. 从 FADE_INNER 起平滑升到满 —— 贴边处清晰，靠近 D 时渐渐起雾
+     *   2. D 区（356..444）内恒为 1 —— 满足"高强度"
+     *   3. 从 D 外沿起平滑衰减回 0 —— 离开 D 后恢复清晰
+     *
+     * 最小值组合天然连续：356 处两个分量都等于 1，444 处也都等于 1，没有跳变。
      */
     fun blurFor(db: Float, dr: Float): Float {
-        if (zoneOf(db, dr) == ZONE_A) return 0f
-        val d = Math.max(db, dr)
-        val t = ((d - CORNER_ZONE_PX) / (BLUR_ZONE_PX - CORNER_ZONE_PX)).coerceIn(0f, 1f)
-        return Math.pow(t.toDouble(), 0.6).toFloat().coerceIn(0f, 1f)
+        val d = minOf(db, dr)
+
+        // D 区本体：恒定满强度
+        if (d > CORNER_ZONE_PX && d <= BLUR_ZONE_PX) return 1f
+
+        // 从贴边处平滑升到 D 内沿
+        if (d <= CORNER_ZONE_PX) {
+            if (d <= FADE_INNER_PX) return 0f
+            return smooth((d - FADE_INNER_PX) / (CORNER_ZONE_PX - FADE_INNER_PX))
+        }
+
+        // 从 D 外沿平滑衰减回清晰
+        if (d >= FADE_OUTER_PX) return 0f
+        return smooth(1f - (d - BLUR_ZONE_PX) / (FADE_OUTER_PX - BLUR_ZONE_PX))
     }
+
+    /** 平滑插值（smoothstep），两端不会出现折线感 */
+    private fun smooth(t: Float): Float {
+        val x = t.coerceIn(0f, 1f)
+        return x * x * (3f - 2f * x)
+    }
+
+    /** 是否落在 D 区（L 形带） */
+    fun isInD(db: Float, dr: Float): Boolean = zoneOf(db, dr) == ZONE_D
+
+    /**
+     * 吸附时**保留松手位置**。
+     *
+     * 用户说明："松手吸附是吸附到松手位置对应的像素位置"。
+     * 所以吸附只决定**用哪套素材、转不转**，不再把宠物挪到屏幕边缘。
+     */
+    fun snapKeepsPosition(): Boolean = true
 
     /**
      * 素材替换进度 0f..1f：0 = 用角落素材，1 = 用边框素材。
      *
-     * 规则映射：
      *   A 区 -> 右下角素材（0）
-     *   C 区 -> 右边框**原始素材**（1，但不旋转）
-     *   B 区 -> 右边框**逆时针90°**（1，旋转）
-     *   D/E  -> 已经离开角落，用边框素材（1）
+     *   其余 -> 右边框素材（1）；其中只有 B 区会旋转
      */
     fun morphFor(db: Float, dr: Float): Float =
         if (zoneOf(db, dr) == ZONE_A) 0f else 1f
@@ -200,20 +250,14 @@ object PetState {
     /**
      * 拖动过程中素材的旋转角。
      *
-     * 规则：
      *   - A 区：不转（角落素材正立）
-     *   - C 区 / 会吸到底边：用边框**原始素材**，不转
-     *   - B 区 / 会吸到右边：边框**逆时针90°**
+     *   - B 区：边框**逆时针90°**
+     *   - C / D / E：边框**原始素材**，不转
+     *
+     * 用户补充明确："E区内以「右边框」原素材（不旋转）呈现"。
      */
     fun dragRotationFor(db: Float, dr: Float, leftHalf: Boolean): Float {
-        val zone = zoneOf(db, dr)
-        if (zone == ZONE_A) return 0f
-        val snapToBottom = when (zone) {
-            ZONE_C -> true
-            ZONE_B -> false
-            else -> nearerEdgeIsBottom(db, dr)
-        }
-        if (snapToBottom) return 0f
+        if (zoneOf(db, dr) != ZONE_B) return 0f
         return if (leftHalf) rotationForSnap(BORDER_L) else rotationForSnap(BORDER_R)
     }
 

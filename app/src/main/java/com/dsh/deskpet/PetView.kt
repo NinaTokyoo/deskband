@@ -287,9 +287,10 @@ class PetView(context: Context) : View(context) {
     }
 
     /**
-     * 松手：按所在区吸附。
+     * 松手：按所在区决定**用哪套素材、转不转**。
      *
-     * 判定用桌宠的**底边**和**右边**（用户明确规定），不是中心点。
+     * 用户说明："松手吸附是吸附到松手位置对应的像素位置" ——
+     * 所以这里**不移动宠物**，只记下状态。位置就停在松手的地方。
      */
     private fun settle() {
         val b = host?.bounds() ?: return
@@ -301,10 +302,16 @@ class PetView(context: Context) : View(context) {
         val dr = (b.width() - (x + sz[0])).coerceAtLeast(0f)
         val leftHalf = (x + sz[0] / 2f) < b.width() / 2f
 
-        val target = PetState.snapTarget(db, dr, leftHalf)
-        state = target
-        applySnap(target)
-        host?.onSettled(target, leftInset(), topInset())
+        state = PetState.snapTarget(db, dr, leftHalf)
+
+        // 保留松手位置：把拖动偏移固化成锚点，不做任何吸附对齐
+        anchorX = x
+        anchorY = y
+        dragOffsetX = 0f
+        dragOffsetY = 0f
+
+        host?.onSettled(state, leftInset(), topInset())
+        invalidate()
     }
 
     private fun onTapped() {
@@ -399,7 +406,6 @@ class PetView(context: Context) : View(context) {
         } else {
             paint
         }
-
         if (rotation != 0f) {
             // 绕格子中心旋转；贴边时格子正好是 90° 后的形状
             val save = canvas.save()
