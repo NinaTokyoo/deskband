@@ -135,8 +135,9 @@ class PetStateTest {
         // 恢复"左右边框旋转吸附"：B 区是旋转形态
         assertEquals(PetState.BORDER_R, PetState.stateForZone(PetState.ZONE_B, false))
         assertEquals(PetState.BORDER_L, PetState.stateForZone(PetState.ZONE_B, true))
-        assertEquals(-90f, PetState.rotationForSnap(PetState.BORDER_R), 0.001f)
-        assertEquals(90f, PetState.rotationForSnap(PetState.BORDER_L), 0.001f)
+        // 用户规定：贴右边框时人物头朝左 -> +90；贴左边框头朝右 -> -90
+        assertEquals(90f, PetState.rotationForSnap(PetState.BORDER_R), 0.001f)
+        assertEquals(-90f, PetState.rotationForSnap(PetState.BORDER_L), 0.001f)
         // 用的是正立素材那张图
         assertTrue(PetState.usesBorderArt(PetState.BORDER_R))
     }
@@ -154,10 +155,38 @@ class PetStateTest {
         // 右边缘还在屏幕内 -> 不转
         assertEquals(0f, PetState.eRotation(false, 1000f, w, SW), 0.001f)
         assertEquals(0f, PetState.eRotation(false, SW - w, w, SW), 0.001f)
-        // 右边缘越界 -> 转（右侧 -90）
-        assertEquals(-90f, PetState.eRotation(false, SW - w + 10f, w, SW), 0.001f)
-        // 左半屏镜像 -> +90
-        assertEquals(90f, PetState.eRotation(true, SW - w + 10f, w, SW), 0.001f)
+        // 右边缘越界 -> 转（右侧 +90，头朝左）
+        assertEquals(90f, PetState.eRotation(false, SW - w + 10f, w, SW), 0.001f)
+        // 左半屏 -> -90
+        assertEquals(-90f, PetState.eRotation(true, SW - w + 10f, w, SW), 0.001f)
+    }
+
+    @Test
+    fun hysteresis_stops_the_B_E_boundary_from_flickering() {
+        PetState.setZoneSize(200f, 365f)
+        // 稍微超出 aW 但还在滞回带内：
+        // 之前是 B -> 保持 B（不闪）；之前是 E -> 保持 E
+        val justOut = 200f + PetState.HYSTERESIS_PX / 2f
+        assertEquals(
+            PetState.ZONE_B,
+            PetState.zoneWithHysteresis(1000f, justOut, false, PetState.ZONE_B)
+        )
+        assertEquals(
+            PetState.ZONE_E,
+            PetState.zoneWithHysteresis(1000f, justOut, false, PetState.ZONE_E)
+        )
+        // 明显离开 -> 一定退出 B
+        assertEquals(
+            PetState.ZONE_E,
+            PetState.zoneWithHysteresis(
+                1000f, 200f + PetState.HYSTERESIS_PX + 5f, false, PetState.ZONE_B
+            )
+        )
+        // 真正贴边 -> 进入 B
+        assertEquals(
+            PetState.ZONE_B,
+            PetState.zoneWithHysteresis(1000f, 150f, false, PetState.ZONE_E)
+        )
     }
 
     @Test
@@ -175,10 +204,10 @@ class PetStateTest {
     }
 
     @Test
-    fun right_rotates_clockwise_and_left_is_its_mirror() {
-        // 符号是实测定的
-        assertEquals(-90f, PetState.rotationForSnap(PetState.BORDER_R), 0.001f)
-        assertEquals(90f, PetState.rotationForSnap(PetState.BORDER_L), 0.001f)
+    fun right_rotation_points_the_head_left() {
+        // 用户规定：吸附右边框 -> 头朝左；左边框 -> 头朝右
+        assertEquals(90f, PetState.rotationForSnap(PetState.BORDER_R), 0.001f)
+        assertEquals(-90f, PetState.rotationForSnap(PetState.BORDER_L), 0.001f)
     }
 
     @Test

@@ -68,6 +68,12 @@ object PetState {
     val BLUR_ZONE_PX: Float get() = currentAH
     val EDGE_ZONE_PX: Float get() = currentAW
 
+    /**
+     * 滞回带宽度（px）：B/E 分界线上留出的"保持原状"死区，
+     * 用来吸收手指抖动，避免状态在边界反复横跳。
+     */
+    const val HYSTERESIS_PX = 14f
+
     // ---------------------------------------------------------------- 状态判定
 
     fun isCorner(state: Int) = state == CORNER_BR || state == CORNER_BL
@@ -105,18 +111,19 @@ object PetState {
     /**
      * 状态对应的旋转角（传给 Canvas.rotate，正数 = 屏幕视觉顺时针）。
      *
-     * 只有两种稳定取值：0 或 ∓90。
+     * 用户规定：
+     *   **吸附右边框时旋转正立素材让人物头朝左；吸附左边框时头朝右。**
      *
-     * ⚠️ 符号是**推导 + 实测定下来的**，不要靠直觉改：
-     * 「正立素材」是**右侧**素材，左侧只是把它**水平镜像**（不做上下翻转）。
-     * 镜像之后再按原样的 +90 转，人物会上下颠倒；只有取反号才能让
-     * 左右两侧都"头朝屏幕内侧"。
-     *   右侧贴边 -> -90
-     *   左侧贴边（画的是镜像图）-> +90
+     * 正立素材是"头朝上"的，顺时针转 90° 正好让头顶指向左边，所以：
+     *   右侧贴边 -> +90（头朝左）
+     *   左侧贴边 -> -90（头朝右）
+     *
+     * 另外左侧画的是**镜像**过的图，镜像会把角度的手性反过来，
+     * 所以 -90 在镜像图上渲染出来依然是"头朝屏幕内侧"，这是对的。
      */
     fun rotationForSnap(state: Int): Float = when (state) {
-        BORDER_R -> -90f
-        BORDER_L -> 90f
+        BORDER_R -> 90f
+        BORDER_L -> -90f
         else -> 0f
     }
 
@@ -133,6 +140,35 @@ object PetState {
         if (db <= currentAH) return ZONE_C
         if (dr <= currentAW) return ZONE_B
         return ZONE_E
+    }
+
+    /**
+     * 带**滞回**的分区判定，专治 B/E 分界线附近来回闪。
+     *
+     * 问题：单纯比较 dr 与 aW，宠物停在分界线上时手指的微小抖动
+     * 就会让 dr 在 aW 两侧反复越界，状态于是来回切。
+     *
+     * 做法：进入 B 用较严的门槛（必须真正贴边），退出 B 用较松的门槛
+     * （要明显离开才退出），两个门槛之间是"保持原状"的死区。
+     *
+     * @param prev 上一次的区号，用于决定用哪个门槛
+     */
+    fun zoneWithHysteresis(
+        db: Float, dr: Float, leftHalf: Boolean, prev: Int
+    ): Int {
+        // A / C 的判定不涉及这个抖动，直接算
+        if (db <= currentAH && dr <= currentAW) return ZONE_A
+        if (db <= currentAH) return ZONE_C
+
+        val inB: Boolean
+        if (prev == ZONE_B) {
+            // 已经在 B：要明显离开才退出
+            inB = dr <= currentAW + HYSTERESIS_PX
+        } else {
+            // 不在 B：要真正贴边才进入
+            inB = dr <= currentAW
+        }
+        return if (inB) ZONE_B else ZONE_E
     }
 
     /** 已取消模糊功能，永远返回 false（接口保留） */

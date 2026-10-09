@@ -146,6 +146,32 @@ class PetView(context: Context) : View(context) {
     private var hopping = false
     private var hopStart = 0L
 
+    /**
+     * 点击反馈：**先压扁再弹起**，而且压缩方向始终与人物头朝向一致。
+     *
+     *   贴底边 / 角落（头朝上）-> 先上下压扁，再向上弹起
+     *   贴右边框（头朝左）     -> 先左右压扁，再向左弹起
+     *   贴左边框（头朝右）     -> 先左右压扁，再向右弹起
+     *
+     * 实现：在"素材自己的坐标系"里做 —— 先转到人物朝向，再沿头轴压缩，
+     * 这样不管转到多少度，压的方向都跟着头走。
+     */
+    private fun hopPhase(): Float {
+        if (!hopping) return -1f
+        return ((SystemClock.uptimeMillis() - hopStart).toFloat() / HOP_MS).coerceIn(0f, 1f)
+    }
+
+    /** 压缩量：前 30% 压到最扁，之后回弹 */
+    private fun squashAt(t: Float): Float =
+        if (t < 0.3f) SQ_MAX * (t / 0.3f) else SQ_MAX * (1f - (t - 0.3f) / 0.7f)
+
+    /** 弹起位移：压扁结束后才起跳，正弦半波 */
+    private fun jumpAt(t: Float): Float {
+        if (t < 0.3f) return 0f
+        val u = (t - 0.3f) / 0.7f
+        return cellH * HOP_FRACTION * sin(u * Math.PI).toFloat()
+    }
+
     /** 吸附时的位移补间：避免"瞬移" */
     private var tweening = false
     private var tweenFromX = 0f
@@ -173,6 +199,9 @@ class PetView(context: Context) : View(context) {
 
     /** 松手后待生效的状态（补间结束才应用） */
     private var pendingState: Int? = null
+
+    /** 上一次的区号，用于 B/E 分界的滞回判定 */
+    private var lastZone = PetState.ZONE_E
 
     @Suppress("unused")
     private var pendingLeft = false
@@ -424,8 +453,23 @@ class PetView(context: Context) : View(context) {
         var dx = localX - cx
         var dy = localY - cy
 
-        val hop = hopOffset()
-        dy -= hop
+        // 反掉点击动画的压扁与弹起（与 onDraw 里的变换严格对应）
+        val t = hopPhase()
+        if (t >= 0f) {
+            val sq = squashAt(t)
+            val headAlongY = abs(displayRotation()) < 45f
+            val sx = if (headAlongY) 1f + sq else 1f - sq
+            val sy = if (headAlongY) 1f - sq else 1f + sq
+            dy /= sy
+            dx /= sx
+            val push = jumpAt(t)
+            val rot = displayRotation()
+            if (headAlongY) {
+                dy += push
+            } else {
+                dx += push * (if (rot > 0f) 1f else -1f)
+            }
+        }
 
         // 反掉翻转动画的水平压缩
         if (flip > 0.001f && flip < 0.999f) {
@@ -465,9 +509,8 @@ class PetView(context: Context) : View(context) {
     }
 
     private fun hopOffset(): Float {
-        if (!hopping) return 0f
-        val t = ((SystemClock.uptimeMillis() - hopStart).toFloat() / HOP_MS).coerceIn(0f, 1f)
-        return -cellH * HOP_FRACTION * sin(t * Math.PI).toFloat()
+        val t = hopPhase()
+        return if (t < 0f) 0f else -jumpAt(t)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -556,7 +599,10 @@ class PetView(context: Context) : View(context) {
         val db = PetState.bottomDist(y, trackH.toFloat(), b.height().toFloat())
         val dr = PetState.sideDist(x, trackW.toFloat(), b.width().toFloat(), leftHalf)
 
-        val zone = PetState.zoneOf(db, dr, leftHalf)
+        // 带滞回的分区判定：B/E 分界线附近不会来回闪
+        val zone = PetState.zoneWithHysteresis(db, dr, leftHalf, lastZone)
+        lastZone = zone
+
         var st = PetState.stateForZone(zone, leftHalf)
         // E 区：正立摆放时右边缘超出屏幕 -> 转 90°
         if (zone == PetState.ZONE_E) {
@@ -648,15 +694,32 @@ class PetView(context: Context) : View(context) {
         val s = sprite ?: return
         placeWindow()
 
-        val hop = hopOffset()
+        val hop = 0f
         // 用带动画的角度，避免在 B/E 分界线附近瞬间翻转
         val rot = displayRotation()
         val cx = boxOffX + cellW / 2f
         val cy = boxOffY + cellH / 2f
 
         val save = canvas.save()
-        canvas.translate(0f, hop)
+        // 旋转绕格子中心；只改变换、不动格子尺寸 -> 比例不变
         if (abs(rot) > 0.01f) canvas.rotate(rot, cx, cy)
+
+        // 点击反馈：在人物自己的坐标系里压扁（压的方向跟着头朝向）
+        val t = hopPhase()
+        if (t >= 0f) {
+            val sq = squashAt(t)      // 0 = 不压, SQ_MAX = 压得最扁
+            // 沿"头轴"压扁。贴底/角落时头轴是 y，贴侧边（转 90°）时头轴是 x。
+            val headAlongY = abs(rot) < 45f
+            val sx = if (headAlongY) 1f + sq else 1f - sq
+            val sy = if (headAlongY) 1f - sq else 1f + sq
+            canvas.scale(sx, sy, cx, cy)
+            // 压扁之后向头的方向弹起：头朝上就往上，头朝左就往左
+            val push = jumpAt(t)
+            val dx = if (headAlongY) 0f else -push * (if (rot > 0f) 1f else -1f)
+            val dy = if (headAlongY) -push else 0f
+            canvas.translate(dx, dy)
+        }
+
         // 跨半屏的镜像翻转：中途压成一条线再展开，做出"翻面"观感
         if (flip > 0.001f && flip < 0.999f) {
             val squash = abs(1f - 2f * flip).coerceAtLeast(0.03f)
@@ -754,6 +817,9 @@ class PetView(context: Context) : View(context) {
         private const val ROT_MS = 180f
         private const val HOP_MS = 380f
         private const val HOP_FRACTION = 0.08f
+
+        /** 点击时最大压缩比例（0.22 = 压掉 22% 的厚度） */
+        private const val SQ_MAX = 0.22f
 
         /**
          * 拖动阻尼：刚脱离吸附时先走一段"带阻力"的位移。
