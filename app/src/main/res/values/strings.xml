@@ -31,13 +31,23 @@
     <string name="chk_autostart">开机自动叫它出来</string>
 
     <!-- 吸附状态 -->
-    <string name="section_snap">④ 吸附位置</string>
+    <string name="section_snap">④ 吸附分区</string>
     <string name="snap_auto">自动（拖到哪里就吸哪里）</string>
     <string name="snap_br">右下角</string>
     <string name="snap_bl">左下角</string>
     <string name="snap_r">右边框</string>
     <string name="snap_l">左边框</string>
     <string name="snap_hint">悬浮时只有单击和拖动，其他设置都在这里改。</string>
+
+    <!-- A 区尺寸调节 -->
+    <string name="section_zone">⑤ A 区大小</string>
+    <string name="zone_hint">调 A 区时 B 区、C 区会一起跟着变（B 左侧对齐 A 左侧，C 上侧对齐 A 上侧）。调整过程中桌面上会闪红色细线做参照。</string>
+    <string name="label_zone_w">横向（离侧边）</string>
+    <string name="label_zone_h">纵向（离底边）</string>
+    <string name="zone_w_value">当前：%1$d px</string>
+    <string name="zone_h_value">当前：%1$d px</string>
+    <string name="zone_w_input">横向数值</string>
+    <string name="zone_h_input">纵向数值</string>
 
     <string name="tip">小提示：\n· 点一下 → 它会开心地跳一下\n· 按住拖动 → 松手后吸附到最近的角或边框\n· 拖出角落 → 超过 120px 开始模糊，到 200px 变成边框形态\n· 拖过屏幕中线 → 它会翻个身，换到另一边\n· 桌面上的它不能改设置，只能点、只能拖</string>
 

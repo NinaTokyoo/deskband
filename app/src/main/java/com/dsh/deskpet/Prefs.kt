@@ -68,6 +68,31 @@ class Prefs(context: Context) {
             .apply()
     }
 
+    /** A 区横向尺寸（离吸附侧边），可调 */
+    var zoneW: Float
+        get() = sp.getFloat(KEY_ZONE_W, PetState.A_W_DEFAULT)
+            .coerceIn(PetState.A_W_MIN, PetState.A_W_MAX)
+        set(v) {
+            sp.edit().putFloat(
+                KEY_ZONE_W, v.coerceIn(PetState.A_W_MIN, PetState.A_W_MAX)
+            ).apply()
+        }
+
+    /** A 区纵向尺寸（离底边），可调 */
+    var zoneH: Float
+        get() = sp.getFloat(KEY_ZONE_H, PetState.A_H_DEFAULT)
+            .coerceIn(PetState.A_H_MIN, PetState.A_H_MAX)
+        set(v) {
+            sp.edit().putFloat(
+                KEY_ZONE_H, v.coerceIn(PetState.A_H_MIN, PetState.A_H_MAX)
+            ).apply()
+        }
+
+    /** 把当前设置同步进状态机 */
+    fun applyZoneSize() {
+        PetState.setZoneSize(zoneW, zoneH)
+    }
+
     companion object {
         private const val NAME = "deskpet"
         private const val KEY_RUNNING = "running"
@@ -79,6 +104,8 @@ class Prefs(context: Context) {
         private const val KEY_LEFT = "pos_left"
         private const val KEY_TOP = "pos_top"
         private const val KEY_HAS_POS = "has_pos"
+        private const val KEY_ZONE_W = "zone_w"
+        private const val KEY_ZONE_H = "zone_h"
 
         /** 默认角色：素材目录名 */
         val DEFAULT_SKIN = PetSprite.FALLBACK

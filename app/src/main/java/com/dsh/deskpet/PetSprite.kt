@@ -3,72 +3,62 @@ package com.dsh.deskpet
 import android.content.res.AssetManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
 import android.graphics.Matrix
-import android.graphics.Paint
 import org.json.JSONObject
 
 /**
- * 一个角色的立绘素材。
+ * 一个角色的两套素材（目录约定 `assets/pet/<角色>/`）：
  *
- * 每个角色两套图（目录约定 assets/pet/<角色>/）：
- *   corner.png  角落状态用，**正立、头朝上**
- *   border.png  边框状态用，源图也是正立，**渲染时逆时针转 90°** 变成头朝屏幕内侧
- *   pet.json    尺寸清单
+ *   corner.png    角落素材（正立，头朝上）—— A 区用
+ *   upright.png   正立素材（正立，头朝上）—— B / C / E 区用，**左右共用同一套**
+ *   pet.json      尺寸清单
  *
- * 用户要求：素材**不裁切、不改比例**，所以这里只做等比缩放（绘制时按 dstRect 缩放），
- * 不对像素做任何裁剪。
+ * ## 左侧怎么来的
  *
- * 四个方向的实际位图在这里一次性生成并缓存：
- *   CORNER_BR  正立
- *   CORNER_BL  左源已含镜像，直接用
- *   BORDER_R   逆时针 90°
- *   BORDER_L   逆时针 90°
+ * 不额外存左侧图。实测确认过：
+ *   flip(mirror(角落素材))   == 原来的「左下角」
+ *   flip(mirror(正立素材))   == 原来的「左边框」
+ * 所以左半屏在渲染时做 **水平镜像 + 上下翻转**（等价于旋转 180°）即可，
+ * 省掉一半体积，也保证左右永远一致。
+ *
+ * 用户要求：**不裁切、不改比例**，所以这里只做等比缩放，不裁剪任何像素。
  */
 class PetSprite private constructor(
     val dir: String,
     val displayName: String,
     val cornerW: Int,
     val cornerH: Int,
-    val borderW: Int,
-    val borderH: Int,
+    val uprightW: Int,
+    val uprightH: Int,
     private val cornerSrc: Bitmap,
-    private val borderSrc: Bitmap
+    private val uprightSrc: Bitmap
 ) {
 
-    /** 缓存的、可直接绘制的位图（已含旋转/镜像） */
+    /** 缓存：key = state*4 + (mirror?2:0) + (flipV?1:0) */
     private val cache = HashMap<Int, Bitmap>()
 
     /**
-     * 取某个状态要画的位图（**不含旋转**）。
+     * 取要绘制的位图（**不含旋转**，旋转在绘制时用 Canvas 做）。
      *
-     * 旋转改到绘制时做，因为"只有贴边才转"是跟距离有关的，
-     * 不能按状态缓存成固定角度。
-     *
-     * @param mirrored 左侧状态需要水平镜像
+     * @param mirror 左半屏 -> 水平镜像
+     * @param flipV  左半屏且带旋转时 -> 再上下翻转（否则人物会上下颠倒）
      */
-    fun bitmap(state: Int, mirrored: Boolean): Bitmap {
-        val key = state * 2 + if (mirrored) 1 else 0
+    fun bitmap(state: Int, mirror: Boolean, flipV: Boolean = false): Bitmap {
+        val key = state * 4 + (if (mirror) 2 else 0) + (if (flipV) 1 else 0)
         cache[key]?.let { return it }
-        val src = if (PetState.usesCornerArt(state)) cornerSrc else borderSrc
-        val bmp = mirrorOnly(src, mirrored)
+        val src = if (PetState.usesCornerArt(state)) cornerSrc else uprightSrc
+        val bmp = transform(src, mirror, flipV)
         cache[key] = bmp
         return bmp
     }
 
-    /** 该状态下素材「正立」时的原始尺寸（未旋转），用于算显示大小 */
+    /** 该状态用的素材原始宽（正立） */
     fun naturalWidth(state: Int): Int =
-        if (PetState.usesCornerArt(state)) cornerW else borderW
+        if (PetState.usesCornerArt(state)) cornerW else uprightW
 
+    /** 该状态用的素材原始高（正立） */
     fun naturalHeight(state: Int): Int =
-        if (PetState.usesCornerArt(state)) cornerH else borderH
-
-    /** 该状态下**屏幕上**的宽高（边框状态旋转后宽高互换） */
-    fun displaySize(state: Int): IntArray {
-        val w = naturalWidth(state)
-        val h = naturalHeight(state)
-        return if (PetState.isBorder(state)) intArrayOf(h, w) else intArrayOf(w, h)
-    }
+        if (PetState.usesCornerArt(state)) cornerH else uprightH
 
     fun evict() {
         for (b in cache.values) if (!b.isRecycled) b.recycle()
@@ -78,13 +68,12 @@ class PetSprite private constructor(
     companion object {
         const val ROOT = "pet"
 
-        /** 兜底：如果用户素材缺失，回退到这个角色 */
+        /** 素材缺失时的兜底角色 */
         const val FALLBACK = "后藤一里"
 
         fun listSkins(assets: AssetManager): List<String> =
             (assets.list(ROOT) ?: emptyArray())
                 .filter { dir ->
-                    // 只认含 pet.json 的目录
                     (assets.list("$ROOT/$dir") ?: emptyArray()).contains("pet.json")
                 }
                 .sorted()
@@ -99,18 +88,18 @@ class PetSprite private constructor(
             return try {
                 val root = JSONObject(json)
                 val c = root.getJSONObject("corner")
-                val b = root.getJSONObject("border")
+                val u = root.getJSONObject("upright")
                 val corner = decode(assets, "$base/" + c.getString("file")) ?: return null
-                val border = decode(assets, "$base/" + b.getString("file")) ?: return null
+                val upright = decode(assets, "$base/" + u.getString("file")) ?: return null
                 PetSprite(
                     dir = dir,
                     displayName = root.optString("name", dir),
                     cornerW = c.optInt("w", corner.width),
                     cornerH = c.optInt("h", corner.height),
-                    borderW = b.optInt("w", border.width),
-                    borderH = b.optInt("h", border.height),
+                    uprightW = u.optInt("w", upright.width),
+                    uprightH = u.optInt("h", upright.height),
                     cornerSrc = corner,
-                    borderSrc = border
+                    uprightSrc = upright
                 )
             } catch (e: Exception) {
                 null
@@ -129,17 +118,18 @@ class PetSprite private constructor(
         }
 
         /**
-         * 只做水平镜像（不平移）。右侧和本地的素材都已经是镜像好的，
-         * 这里主要给"临时跨半屏"用。
+         * 用显式 scale 矩阵做镜像 / 上下翻转。
          *
-         * 用显式的 scale 矩阵而不是 [Bitmap.createBitmap] 的重载：
-         * 那个重载会把图裁回原尺寸，镜像后内容会偏。
+         * 不用 [Bitmap.createBitmap] 的 Matrix 重载：那个会把结果裁回原尺寸，
+         * 镜像后内容会偏。
          */
-        private fun mirrorOnly(src: Bitmap, mirror: Boolean): Bitmap {
-            if (!mirror) return src
+        private fun transform(src: Bitmap, mirror: Boolean, flipV: Boolean): Bitmap {
+            if (!mirror && !flipV) return src
             val m = Matrix()
-            m.setScale(-1f, 1f)
-            m.postTranslate(src.width.toFloat(), 0f)
+            m.setScale(if (mirror) -1f else 1f, if (flipV) -1f else 1f)
+            // 负缩放会把内容推到负坐标，平移回来
+            m.postTranslate(if (mirror) src.width.toFloat() else 0f,
+                if (flipV) src.height.toFloat() else 0f)
             return Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)
         }
     }

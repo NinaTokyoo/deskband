@@ -94,6 +94,13 @@ class PetService : Service(), PetView.Host {
                 reloadPet()
                 return START_STICKY
             }
+            ACTION_PREVIEW_ZONE -> {
+                // App 里正在调 A 区大小：同步新尺寸并闪一下指示线
+                prefs.applyZoneSize()
+                petView?.syncWindow()
+                petView?.flashGuides()
+                return START_STICKY
+            }
         }
 
         if (!Settings.canDrawOverlays(this)) {
@@ -207,7 +214,7 @@ class PetService : Service(), PetView.Host {
         //
         // 现在窗口贴合宠物外接矩形，窗口之外的触摸由 Android 直接派发给桌面/应用，
         // 天然不遮挡；窗口内部再由 PetView 做逐像素 alpha 判定。
-        val zero = PetView.boundsFor(s, prefs.snapState, prefs.sizeFraction, b)
+        val zero = PetView.windowRectFor(s, prefs.snapState, prefs.sizeFraction, b)
         val p = WindowManager.LayoutParams(
             zero[2], zero[3],
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -267,12 +274,14 @@ class PetService : Service(), PetView.Host {
         val v = petView ?: return
         v.sprite = sprite
         v.setSizeFraction(prefs.sizeFraction)
-        // 大小变了要重新吸附定位
+        // 尺寸/分区都变了：重新吸附定位，并把窗口尺寸同步过去。
+        // syncWindow 不能省 —— 否则宠物的新尺寸超出窗口，超出部分点不到
+        // （用户实测踩过："调整大小之后明明点到并拖动但是没有反应"）。
+        v.applySnap(v.state)
         if (prefs.hasPosition) {
             v.restore(v.state, prefs.posLeft, prefs.posTop)
-        } else {
-            v.applySnap(v.state)
         }
+        v.syncWindow()
     }
 
     private fun screenBounds(): Rect {
@@ -353,6 +362,22 @@ class PetService : Service(), PetView.Host {
 
         const val ACTION_STOP = "com.dsh.deskpet.action.STOP"
         const val ACTION_RELOAD = "com.dsh.deskpet.action.RELOAD"
+        const val ACTION_PREVIEW_ZONE = "com.dsh.deskpet.action.PREVIEW_ZONE"
+
+        /** App 里调 A 区大小时调用：同步尺寸 + 闪指示线 */
+        fun previewZone(context: Context) {
+            if (!Prefs(context).running) return
+            val i = Intent(context, PetService::class.java).setAction(ACTION_PREVIEW_ZONE)
+            try {
+                if (Build.VERSION.SDK_INT >= 26) {
+                    context.startForegroundService(i)
+                } else {
+                    context.startService(i)
+                }
+            } catch (e: Exception) {
+                // 忽略
+            }
+        }
 
         fun start(context: Context) {
             val i = Intent(context, PetService::class.java)

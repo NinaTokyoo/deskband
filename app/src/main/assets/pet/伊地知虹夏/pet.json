@@ -5,10 +5,9 @@
     "w": 1342,
     "h": 1440
   },
-  "border": {
-    "file": "border.png",
+  "upright": {
+    "file": "upright.png",
     "w": 1024,
     "h": 945
-  },
-  "borderRotationDeg": 90
+  }
 }

@@ -13,6 +13,7 @@ import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.CheckBox
+import android.widget.EditText
 import android.widget.SeekBar
 import android.widget.Spinner
 import android.widget.TextView
@@ -34,6 +35,16 @@ class MainActivity : Activity() {
     private lateinit var spinnerSkin: Spinner
     private lateinit var chkAuto: CheckBox
 
+    // A 区尺寸调节
+    private lateinit var seekZoneW: SeekBar
+    private lateinit var seekZoneH: SeekBar
+    private lateinit var txtZoneW: TextView
+    private lateinit var txtZoneH: TextView
+    private lateinit var editZoneW: EditText
+    private lateinit var editZoneH: EditText
+
+    private var bindingZone = false
+
     private var skins: List<String> = emptyList()
     private var bindingSkin = false
 
@@ -41,6 +52,8 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         prefs = Prefs(this)
+        // 把保存的 A 区尺寸同步进状态机，后续分区判定都用它
+        prefs.applyZoneSize()
 
         txtOverlayStatus = findViewById(R.id.txtOverlayStatus)
         btnOverlay = findViewById(R.id.btnOverlay)
@@ -51,8 +64,15 @@ class MainActivity : Activity() {
         txtSize = findViewById(R.id.txtSize)
         spinnerSkin = findViewById(R.id.spinnerSkin)
         chkAuto = findViewById(R.id.chkAuto)
+        seekZoneW = findViewById(R.id.seekZoneW)
+        seekZoneH = findViewById(R.id.seekZoneH)
+        txtZoneW = findViewById(R.id.txtZoneW)
+        txtZoneH = findViewById(R.id.txtZoneH)
+        editZoneW = findViewById(R.id.editZoneW)
+        editZoneH = findViewById(R.id.editZoneH)
 
         applyEdgeToEdge()
+        setupZoneControls()
 
         btnOverlay.setOnClickListener { openOverlaySettings() }
         btnNotify.setOnClickListener { requestNotificationPermission() }
@@ -211,6 +231,100 @@ class MainActivity : Activity() {
 
             override fun onNothingSelected(parent: AdapterView<*>?) = Unit
         }
+    }
+
+    // ---------------------------------------------------------------- A 区调节
+
+    /**
+     * A 区尺寸调节：滑块 + 数字输入框，两者双向同步。
+     *
+     * 调 A 的同时 B / C 会跟着变（B 左侧对齐 A 左侧，C 上侧对齐 A 上侧），
+     * 所以这里只需要改 A 的宽高两个数。
+     * 调整过程中会通知服务闪一下红色指示线，方便对照。
+     */
+    private fun setupZoneControls() {
+        seekZoneW.max = 1000
+        seekZoneH.max = 1000
+
+        val wListener = object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                val v = zoneWidthOf(progress)
+                prefs.zoneW = v
+                onZoneChanged()
+            }
+            override fun onStartTrackingTouch(sb: SeekBar?) = Unit
+            override fun onStopTrackingTouch(sb: SeekBar?) = Unit
+        }
+        val hListener = object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                val v = zoneHeightOf(progress)
+                prefs.zoneH = v
+                onZoneChanged()
+            }
+            override fun onStartTrackingTouch(sb: SeekBar?) = Unit
+            override fun onStopTrackingTouch(sb: SeekBar?) = Unit
+        }
+        seekZoneW.setOnSeekBarChangeListener(wListener)
+        seekZoneH.setOnSeekBarChangeListener(hListener)
+
+        // 数字输入：失焦或回车时生效
+        val applyEdit = {
+            val w = editZoneW.text.toString().toFloatOrNull()
+            val h = editZoneH.text.toString().toFloatOrNull()
+            if (w != null) prefs.zoneW = w
+            if (h != null) prefs.zoneH = h
+            onZoneChanged()
+        }
+        editZoneW.setOnEditorActionListener { _, _, _ -> applyEdit(); true }
+        editZoneW.setOnFocusChangeListener { _, has ->
+            if (!has) applyEdit()
+        }
+        editZoneH.setOnEditorActionListener { _, _, _ -> applyEdit(); true }
+        editZoneH.setOnFocusChangeListener { _, has ->
+            if (!has) applyEdit()
+        }
+
+        bindZoneControls()
+    }
+
+    private fun zoneWidthOf(progress: Int): Float =
+        PetState.A_W_MIN +
+            (PetState.A_W_MAX - PetState.A_W_MIN) * (progress / 1000f)
+
+    private fun zoneHeightOf(progress: Int): Float =
+        PetState.A_H_MIN +
+            (PetState.A_H_MAX - PetState.A_H_MIN) * (progress / 1000f)
+
+    private fun progressOfW(v: Float): Int =
+        (((v - PetState.A_W_MIN) / (PetState.A_W_MAX - PetState.A_W_MIN)) * 1000f)
+            .roundToInt().coerceIn(0, 1000)
+
+    private fun progressOfH(v: Float): Int =
+        (((v - PetState.A_H_MIN) / (PetState.A_H_MAX - PetState.A_H_MIN)) * 1000f)
+            .roundToInt().coerceIn(0, 1000)
+
+    /** 把当前值刷到滑块 / 文本框 / 摘要文字 */
+    private fun bindZoneControls() {
+        bindingZone = true
+        val w = prefs.zoneW
+        val h = prefs.zoneH
+        seekZoneW.progress = progressOfW(w)
+        seekZoneH.progress = progressOfH(h)
+        editZoneW.setText(w.roundToInt().toString())
+        editZoneH.setText(h.roundToInt().toString())
+        txtZoneW.text = getString(R.string.zone_w_value, w.roundToInt())
+        txtZoneH.text = getString(R.string.zone_h_value, h.roundToInt())
+        bindingZone = false
+    }
+
+    private fun onZoneChanged() {
+        if (bindingZone) return
+        prefs.applyZoneSize()
+        bindZoneControls()
+        // 通知服务：同步尺寸 + 闪指示线
+        PetService.previewZone(this)
     }
 
     // ---------------------------------------------------------------- 大小映射
