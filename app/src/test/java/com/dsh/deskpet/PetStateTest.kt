@@ -820,6 +820,42 @@ class PetStateTest {
         assertEquals(0f, PetState.breathWave(9999f, delay, 0f), 0.0001f)
     }
 
+    /**
+     * 「呼出回弹」卡片里的**回弹幅度**：只缩放回摆的负半周，两端必须仍然精确。
+     *
+     * 用户要求"回弹幅度以现在为 1.0 倍，可调范围 0.1~10"，
+     * 于是把"弹出高度"（过冲距离）与"回弹幅度"（反向冲过的比例）解耦。
+     */
+    @Test
+    fun the_spring_return_gain_scales_only_the_back_swing() {
+        // gain = 1 时与原来逐值一致（默认不能改变现有手感）
+        for (i in 0..200) {
+            val u = i / 200f
+            assertEquals(
+                "gain=1 时应与 springBack 完全一致",
+                PetState.springBack(u), PetState.springBackGained(u, 1f), 0.0001f
+            )
+        }
+        // 两端仍然精确：起点 1（接着过冲点）、终点 0（不留缝）
+        assertEquals(1f, PetState.springBackGained(0f, 3f), 0.0001f)
+        assertEquals(0f, PetState.springBackGained(1f, 3f), 0.0001f)
+        // 负半周随 gain 线性放大
+        val u = 0.5f
+        val base = PetState.springBack(u)
+        assertTrue("u=0.5 应该在负半周", base < 0f)
+        assertEquals(base * 3f, PetState.springBackGained(u, 3f), 0.0001f)
+        assertEquals(base * 0.1f, PetState.springBackGained(u, 0.1f), 0.0001f)
+        // gain = 0：负半周被抹平（只减速停住，不回摆）
+        assertEquals(0f, PetState.springBackGained(u, 0f), 0.0001f)
+        // 正半周不受 gain 影响
+        assertEquals(
+            PetState.springBack(0.1f), PetState.springBackGained(0.1f, 9f), 0.0001f
+        )
+        // 越界要夹住，不能失控
+        assertTrue(PetState.springBackGained(u, 1e9f) >= base * 12f - 0.001f)
+        assertTrue(PetState.springBackGained(u, -5f) >= 0f)
+    }
+
     @Test
     fun attached_states_are_recognised_for_drag_damping() {
         // 吸附状态起步才加阻尼

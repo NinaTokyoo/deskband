@@ -45,6 +45,28 @@
     <string name="bounce_restored">回弹已恢复默认</string>
     <string name="chk_autostart">开机自动叫它出来</string>
 
+    <!-- ④ 呼出回弹 -->
+    <string name="section_summon">呼出回弹</string>
+    <string name="summon_on">启用</string>
+    <string name="summon_off">停用</string>
+    <string name="summon_disabled_hint">呼出回弹已停用</string>
+    <string name="summon_enabled_hint">呼出回弹已启用</string>
+    <string name="summon_time_label_value">总时长倍率　×%1$s　·　%2$d ms</string>
+    <string name="summon_pop_label_value">弹出高度倍率　×%1$s　·　%2$d px</string>
+    <string name="summon_spring_label_value">回弹幅度倍率　×%1$s　·　%2$d%%</string>
+    <string name="summon_input">倍率</string>
+    <string name="summon_restored">呼出回弹已恢复默认</string>
+
+    <!-- ⑤ 呼吸 -->
+    <string name="section_breath">呼吸</string>
+    <string name="breath_on">启用</string>
+    <string name="breath_off">停用</string>
+    <string name="breath_disabled_hint">呼吸已停用</string>
+    <string name="breath_enabled_hint">呼吸已启用</string>
+    <string name="breath_amp_label_value">呼吸幅度倍率　×%1$s　·　±%2$d%% 身高</string>
+    <string name="breath_input">倍率</string>
+    <string name="breath_restored">呼吸已恢复默认</string>
+
     <!-- ④ 边框回弹（介绍文字已按要求去掉） -->
     <string name="section_bounce">边框回弹</string>
     <!-- 总开关：按钮上显示的是"点一下会发生什么" -->

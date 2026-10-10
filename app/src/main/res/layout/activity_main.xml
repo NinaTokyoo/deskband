@@ -33,8 +33,8 @@
             android:id="@+id/txtTitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
-            android:layout_marginEnd="16dp"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="12dp"
             android:layout_marginTop="18dp"
             android:layout_marginBottom="6dp"
             android:maxLines="1"
@@ -44,7 +44,7 @@
             android:textStyle="bold" />
 
         <!-- ① 权限 + 开关 -->
-        <LinearLayout style="@style/Card" android:tag="card" android:layout_marginStart="16dp" android:layout_marginEnd="16dp">
+        <LinearLayout style="@style/Card" android:tag="card" android:layout_marginStart="12dp" android:layout_marginEnd="12dp">
 
             <!-- 两个权限入口并排：文字靠左、标记靠右（两端对齐） -->
             <LinearLayout
@@ -122,7 +122,7 @@
             <Button
                 android:id="@+id/btnToggle"
                 style="@style/BigButton"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="8dp"
                 android:maxLines="1"
                 android:ellipsize="end"
                 android:text="@string/btn_summon" />
@@ -184,8 +184,8 @@
             android:tag="card"
             android:padding="0dp"
             android:clipToOutline="true"
-            android:layout_marginStart="16dp"
-            android:layout_marginEnd="16dp">
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="12dp">
 
             <FrameLayout
                 android:layout_width="match_parent"
@@ -205,7 +205,7 @@
                         android:id="@+id/spinnerSkin"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
+                        android:layout_marginTop="8dp"
                         android:layout_marginEnd="99dp"
                         android:popupAnimationStyle="@style/SpinnerPopupAnim" />
                 </LinearLayout>
@@ -235,7 +235,7 @@
         </LinearLayout>
 
         <!-- ③ 外观 -->
-        <LinearLayout style="@style/Card" android:tag="card" android:layout_marginStart="16dp" android:layout_marginEnd="16dp">
+        <LinearLayout style="@style/Card" android:tag="card" android:layout_marginStart="12dp" android:layout_marginEnd="12dp">
 
             <LinearLayout style="@style/CardTitleRow">
 
@@ -255,7 +255,7 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="8dp"
                 android:orientation="horizontal"
                 android:gravity="center_vertical">
 
@@ -271,13 +271,13 @@
 
                 <EditText
                     android:id="@+id/editSize"
-                    android:layout_width="76dp"
+                    android:layout_width="66dp"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="10dp"
                     android:inputType="numberDecimal"
                     android:imeOptions="actionDone"
                     android:maxLength="5"
-                    android:textSize="14sp"
+                    android:textSize="13sp"
                     android:gravity="center"
                     android:hint="@string/size_input" />
             </LinearLayout>
@@ -293,8 +293,144 @@
                 android:text="@string/save_apply" />
         </LinearLayout>
 
-        <!-- ④ 松手回弹 -->
-        <LinearLayout style="@style/Card" android:tag="card" android:layout_marginStart="16dp" android:layout_marginEnd="16dp">
+        <!-- ④ 呼出回弹（滑入 + 回摆那一段，独立于边框回弹） -->
+        <LinearLayout style="@style/Card" android:tag="card" android:layout_marginStart="12dp" android:layout_marginEnd="12dp">
+
+            <LinearLayout style="@style/CardTitleRow">
+
+                <TextView
+                    style="@style/CardTitle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:text="@string/section_summon" />
+
+                <Button
+                    android:id="@+id/btnSummonToggle"
+                    style="@style/CardAction"
+                    android:text="@string/summon_on" />
+
+                <Button
+                    android:id="@+id/btnResetSummon"
+                    style="@style/CardAction"
+                    android:text="@string/restore_default" />
+            </LinearLayout>
+
+            <!-- 总时长 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/txtSummonTime"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+
+                <EditText
+                    android:id="@+id/editSummonTime"
+                    android:layout_width="66dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:inputType="numberDecimal"
+                    android:imeOptions="actionDone"
+                    android:maxLength="5"
+                    android:textSize="13sp"
+                    android:gravity="center"
+                    android:hint="@string/summon_input" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/seekSummonTime"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+
+            <!-- 弹出高度 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/txtSummonPop"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+
+                <EditText
+                    android:id="@+id/editSummonPop"
+                    android:layout_width="66dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:inputType="numberDecimal"
+                    android:imeOptions="actionDone"
+                    android:maxLength="5"
+                    android:textSize="13sp"
+                    android:gravity="center"
+                    android:hint="@string/summon_input" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/seekSummonPop"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+
+            <!-- 回弹幅度 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/txtSummonSpring"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+
+                <EditText
+                    android:id="@+id/editSummonSpring"
+                    android:layout_width="66dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:inputType="numberDecimal"
+                    android:imeOptions="actionDone"
+                    android:maxLength="5"
+                    android:textSize="13sp"
+                    android:gravity="center"
+                    android:hint="@string/summon_input" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/seekSummonSpring"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+
+            <Button
+                android:id="@+id/btnSaveSummon"
+                style="@style/PrimaryButton"
+                android:text="@string/save_apply" />
+        </LinearLayout>
+
+        <!-- ⑤ 松手回弹 -->
+        <LinearLayout style="@style/Card" android:tag="card" android:layout_marginStart="12dp" android:layout_marginEnd="12dp">
 
             <LinearLayout style="@style/CardTitleRow">
 
@@ -320,7 +456,7 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="8dp"
                 android:orientation="horizontal"
                 android:gravity="center_vertical">
 
@@ -336,13 +472,13 @@
 
                 <EditText
                     android:id="@+id/editBounceAmp"
-                    android:layout_width="76dp"
+                    android:layout_width="66dp"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="10dp"
                     android:inputType="numberDecimal"
                     android:imeOptions="actionDone"
                     android:maxLength="5"
-                    android:textSize="14sp"
+                    android:textSize="13sp"
                     android:gravity="center"
                     android:hint="@string/bounce_amp_input" />
             </LinearLayout>
@@ -372,13 +508,13 @@
 
                 <EditText
                     android:id="@+id/editBounceMs"
-                    android:layout_width="76dp"
+                    android:layout_width="66dp"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="10dp"
                     android:inputType="numberDecimal"
                     android:imeOptions="actionDone"
                     android:maxLength="5"
-                    android:textSize="14sp"
+                    android:textSize="13sp"
                     android:gravity="center"
                     android:hint="@string/bounce_ms_input" />
             </LinearLayout>
@@ -394,8 +530,71 @@
                 android:text="@string/save_apply" />
         </LinearLayout>
 
-        <!-- ⑤ 通知栏自定义 -->
-        <LinearLayout style="@style/Card" android:tag="card" android:layout_marginStart="16dp" android:layout_marginEnd="16dp">
+        <!-- ⑥ 呼吸 -->
+        <LinearLayout style="@style/Card" android:tag="card" android:layout_marginStart="12dp" android:layout_marginEnd="12dp">
+
+            <LinearLayout style="@style/CardTitleRow">
+
+                <TextView
+                    style="@style/CardTitle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:text="@string/section_breath" />
+
+                <Button
+                    android:id="@+id/btnBreathToggle"
+                    style="@style/CardAction"
+                    android:text="@string/breath_on" />
+
+                <Button
+                    android:id="@+id/btnResetBreath"
+                    style="@style/CardAction"
+                    android:text="@string/restore_default" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/txtBreathAmp"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+
+                <EditText
+                    android:id="@+id/editBreathAmp"
+                    android:layout_width="66dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:inputType="numberDecimal"
+                    android:imeOptions="actionDone"
+                    android:maxLength="5"
+                    android:textSize="13sp"
+                    android:gravity="center"
+                    android:hint="@string/breath_input" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/seekBreathAmp"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+
+            <Button
+                android:id="@+id/btnSaveBreath"
+                style="@style/PrimaryButton"
+                android:text="@string/save_apply" />
+        </LinearLayout>
+
+        <!-- ⑦ 通知栏自定义 -->
+        <LinearLayout style="@style/Card" android:tag="card" android:layout_marginStart="12dp" android:layout_marginEnd="12dp">
 
             <TextView
                 style="@style/CardTitle"
@@ -405,7 +604,7 @@
                 android:id="@+id/editNotify"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="8dp"
                 android:inputType="text"
                 android:imeOptions="actionDone"
                 android:maxLength="40"
@@ -432,8 +631,8 @@
         <LinearLayout
             style="@style/Card"
             android:tag="card"
-            android:layout_marginStart="16dp"
-            android:layout_marginEnd="16dp">
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="12dp">
 
             <TextView
                 style="@style/CardTitle"
@@ -443,7 +642,7 @@
                 android:id="@+id/spinnerTheme"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="8dp"
                 android:popupAnimationStyle="@style/SpinnerPopupAnim" />
         </LinearLayout>
     </LinearLayout>

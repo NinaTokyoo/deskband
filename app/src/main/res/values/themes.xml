@@ -9,21 +9,21 @@
         <item name="android:windowLightStatusBar">false</item>
     </style>
 
-    <!-- 提高信息密度：内边距 16->13，卡片间距 14->10 -->
+    <!-- 提高信息密度：内边距 16->11，卡片间距 14->8，标题 16->15sp -->
     <style name="Card">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:orientation">vertical</item>
         <item name="android:background">@drawable/card_bg</item>
-        <item name="android:padding">13dp</item>
-        <item name="android:layout_marginTop">10dp</item>
+        <item name="android:padding">11dp</item>
+        <item name="android:layout_marginTop">8dp</item>
     </style>
 
     <style name="CardTitle">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:textColor">@color/text_primary</item>
-        <item name="android:textSize">16sp</item>
+        <item name="android:textSize">15sp</item>
         <item name="android:textStyle">bold</item>
     </style>
 
@@ -39,13 +39,13 @@
     <style name="CardAction">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_marginStart">10dp</item>
+        <item name="android:layout_marginStart">8dp</item>
         <item name="android:textColor">@color/accent</item>
-        <item name="android:textSize">13sp</item>
-        <item name="android:paddingStart">12dp</item>
-        <item name="android:paddingEnd">12dp</item>
-        <item name="android:paddingTop">7dp</item>
-        <item name="android:paddingBottom">7dp</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:paddingStart">10dp</item>
+        <item name="android:paddingEnd">10dp</item>
+        <item name="android:paddingTop">5dp</item>
+        <item name="android:paddingBottom">5dp</item>
         <item name="android:minWidth">0dp</item>
         <item name="android:minHeight">0dp</item>
         <item name="android:stateListAnimator">@null</item>
@@ -55,9 +55,9 @@
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:textColor">@color/text_secondary</item>
-        <item name="android:textSize">14sp</item>
-        <item name="android:layout_marginTop">10dp</item>
-        <item name="android:lineSpacingExtra">3dp</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:layout_marginTop">8dp</item>
+        <item name="android:lineSpacingExtra">2dp</item>
     </style>
 
     <!--
@@ -76,20 +76,20 @@
     <style name="PrimaryButton">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_marginTop">12dp</item>
+        <item name="android:layout_marginTop">8dp</item>
         <item name="android:textColor">@color/accent</item>
-        <item name="android:textSize">16sp</item>
+        <item name="android:textSize">15sp</item>
         <item name="android:textStyle">bold</item>
-        <item name="android:paddingTop">11dp</item>
-        <item name="android:paddingBottom">11dp</item>
+        <item name="android:paddingTop">9dp</item>
+        <item name="android:paddingBottom">9dp</item>
         <item name="android:stateListAnimator">@null</item>
     </style>
 
     <style name="BigButton" parent="PrimaryButton">
-        <item name="android:textSize">18sp</item>
-        <item name="android:paddingTop">14dp</item>
-        <item name="android:paddingBottom">14dp</item>
-        <item name="android:layout_marginTop">12dp</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:paddingTop">11dp</item>
+        <item name="android:paddingBottom">11dp</item>
+        <item name="android:layout_marginTop">8dp</item>
     </style>
 
 </resources>

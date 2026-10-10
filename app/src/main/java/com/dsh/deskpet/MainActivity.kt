@@ -57,6 +57,28 @@ class MainActivity : Activity() {
     private lateinit var btnResetBounce: Button
     private lateinit var btnBounceToggle: Button
 
+    // ---- 呼出回弹卡 ----
+    private lateinit var seekSummonTime: SeekBar
+    private lateinit var seekSummonPop: SeekBar
+    private lateinit var seekSummonSpring: SeekBar
+    private lateinit var txtSummonTime: TextView
+    private lateinit var txtSummonPop: TextView
+    private lateinit var txtSummonSpring: TextView
+    private lateinit var editSummonTime: EditText
+    private lateinit var editSummonPop: EditText
+    private lateinit var editSummonSpring: EditText
+    private lateinit var btnSaveSummon: Button
+    private lateinit var btnResetSummon: Button
+    private lateinit var btnSummonToggle: Button
+
+    // ---- 呼吸卡 ----
+    private lateinit var seekBreathAmp: SeekBar
+    private lateinit var txtBreathAmp: TextView
+    private lateinit var editBreathAmp: EditText
+    private lateinit var btnSaveBreath: Button
+    private lateinit var btnResetBreath: Button
+    private lateinit var btnBreathToggle: Button
+
     // 通知栏自定义
     private lateinit var editNotify: EditText
     private lateinit var txtNotifyCount: TextView
@@ -131,6 +153,24 @@ class MainActivity : Activity() {
         btnSaveBounce = findViewById(R.id.btnSaveBounce)
         btnResetBounce = findViewById(R.id.btnResetBounce)
         btnBounceToggle = findViewById(R.id.btnBounceToggle)
+        seekSummonTime = findViewById(R.id.seekSummonTime)
+        seekSummonPop = findViewById(R.id.seekSummonPop)
+        seekSummonSpring = findViewById(R.id.seekSummonSpring)
+        txtSummonTime = findViewById(R.id.txtSummonTime)
+        txtSummonPop = findViewById(R.id.txtSummonPop)
+        txtSummonSpring = findViewById(R.id.txtSummonSpring)
+        editSummonTime = findViewById(R.id.editSummonTime)
+        editSummonPop = findViewById(R.id.editSummonPop)
+        editSummonSpring = findViewById(R.id.editSummonSpring)
+        btnSaveSummon = findViewById(R.id.btnSaveSummon)
+        btnResetSummon = findViewById(R.id.btnResetSummon)
+        btnSummonToggle = findViewById(R.id.btnSummonToggle)
+        seekBreathAmp = findViewById(R.id.seekBreathAmp)
+        txtBreathAmp = findViewById(R.id.txtBreathAmp)
+        editBreathAmp = findViewById(R.id.editBreathAmp)
+        btnSaveBreath = findViewById(R.id.btnSaveBreath)
+        btnResetBreath = findViewById(R.id.btnResetBreath)
+        btnBreathToggle = findViewById(R.id.btnBreathToggle)
         editNotify = findViewById(R.id.editNotify)
         txtNotifyCount = findViewById(R.id.txtNotifyCount)
         btnSaveNotify = findViewById(R.id.btnSaveNotify)
@@ -138,7 +178,9 @@ class MainActivity : Activity() {
         spinnerTheme = findViewById(R.id.spinnerTheme)
 
         applyEdgeToEdge()
+        setupSummonControls()
         setupBounceControls()
+        setupBreathControls()
         setupNotifyControls()
         applyTheme()
         refreshCornerPreview()
@@ -225,9 +267,15 @@ class MainActivity : Activity() {
             prefs.sizeScale = 1f
             prefs.bounceAmpScale = 1f
             prefs.bounceTimeScale = 1f
+            prefs.summonTimeScale = 1f
+            prefs.summonPopScale = 1f
+            prefs.summonSpringScale = 1f
+            prefs.breathScale = 1f
         }
         bindSizeControls()
         bindBounceControls()
+        bindSummonControls()
+        bindBreathControls()
         clearInputFocus()
         PetService.reset(this)
     }
@@ -520,6 +568,217 @@ class MainActivity : Activity() {
         bindBounceControls()
     }
 
+    /**
+     * 「呼出回弹」卡片：总时长 / 弹出高度 / 回弹幅度 + 总开关 + 恢复默认 + 保存。
+     *
+     * ⚠️ 三个滑块按用户要求走**线性**映射（[scaleOfLinear]），不是对数。
+     * 这三个参数都是**呼出动画现读**的（`PetView.startSlidingTo`），
+     * 所以不需要通知服务：下一次呼出就会用上新值。
+     */
+    private fun setupSummonControls() {
+        seekSummonTime.max = 1000
+        seekSummonPop.max = 1000
+        seekSummonSpring.max = 1000
+
+        seekSummonTime.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                prefs.summonTimeScale =
+                    scaleOfLinear(progress, Prefs.SUMMON_TIME_MIN, Prefs.SUMMON_TIME_MAX)
+                bindSummonControls()
+            }
+            override fun onStartTrackingTouch(sb: SeekBar?) = Unit
+            override fun onStopTrackingTouch(sb: SeekBar?) = Unit
+        })
+        seekSummonPop.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                prefs.summonPopScale =
+                    scaleOfLinear(progress, Prefs.SUMMON_POP_MIN, Prefs.SUMMON_POP_MAX)
+                bindSummonControls()
+            }
+            override fun onStartTrackingTouch(sb: SeekBar?) = Unit
+            override fun onStopTrackingTouch(sb: SeekBar?) = Unit
+        })
+        seekSummonSpring.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                prefs.summonSpringScale =
+                    scaleOfLinear(progress, Prefs.SUMMON_SPRING_MIN, Prefs.SUMMON_SPRING_MAX)
+                bindSummonControls()
+            }
+            override fun onStartTrackingTouch(sb: SeekBar?) = Unit
+            override fun onStopTrackingTouch(sb: SeekBar?) = Unit
+        })
+
+        val applyTime = {
+            parseScale(
+                editSummonTime.text.toString(), Prefs.SUMMON_TIME_MIN, Prefs.SUMMON_TIME_MAX
+            )?.let { prefs.summonTimeScale = it }
+            bindSummonControls()
+        }
+        val applyPop = {
+            parseScale(
+                editSummonPop.text.toString(), Prefs.SUMMON_POP_MIN, Prefs.SUMMON_POP_MAX
+            )?.let { prefs.summonPopScale = it }
+            bindSummonControls()
+        }
+        val applySpring = {
+            parseScale(
+                editSummonSpring.text.toString(),
+                Prefs.SUMMON_SPRING_MIN, Prefs.SUMMON_SPRING_MAX
+            )?.let { prefs.summonSpringScale = it }
+            bindSummonControls()
+        }
+        editSummonTime.setOnEditorActionListener { _, _, _ -> applyTime(); clearInputFocus(); true }
+        editSummonTime.setOnFocusChangeListener { _, has -> if (!has) applyTime() }
+        editSummonPop.setOnEditorActionListener { _, _, _ -> applyPop(); clearInputFocus(); true }
+        editSummonPop.setOnFocusChangeListener { _, has -> if (!has) applyPop() }
+        editSummonSpring.setOnEditorActionListener { _, _, _ -> applySpring(); clearInputFocus(); true }
+        editSummonSpring.setOnFocusChangeListener { _, has -> if (!has) applySpring() }
+
+        btnSaveSummon.setOnClickListener {
+            parseScale(
+                editSummonTime.text.toString(), Prefs.SUMMON_TIME_MIN, Prefs.SUMMON_TIME_MAX
+            )?.let { prefs.summonTimeScale = it }
+            parseScale(
+                editSummonPop.text.toString(), Prefs.SUMMON_POP_MIN, Prefs.SUMMON_POP_MAX
+            )?.let { prefs.summonPopScale = it }
+            parseScale(
+                editSummonSpring.text.toString(),
+                Prefs.SUMMON_SPRING_MIN, Prefs.SUMMON_SPRING_MAX
+            )?.let { prefs.summonSpringScale = it }
+            bindSummonControls()
+            clearInputFocus()
+        }
+
+        btnResetSummon.setOnClickListener {
+            prefs.summonTimeScale = 1f
+            prefs.summonPopScale = 1f
+            prefs.summonSpringScale = 1f
+            bindSummonControls()
+            clearInputFocus()
+        }
+
+        btnSummonToggle.setOnClickListener {
+            prefs.summonBounceEnabled = !prefs.summonBounceEnabled
+            bindSummonControls()
+            clearInputFocus()
+        }
+
+        bindSummonControls()
+    }
+
+    /** 把呼出回弹卡的控件状态同步到 Prefs（含总开关的启用/停用外观） */
+    private fun bindSummonControls() {
+        val on = prefs.summonBounceEnabled
+        seekSummonTime.progress =
+            progressOfScaleLinear(prefs.summonTimeScale, Prefs.SUMMON_TIME_MIN, Prefs.SUMMON_TIME_MAX)
+        seekSummonPop.progress =
+            progressOfScaleLinear(prefs.summonPopScale, Prefs.SUMMON_POP_MIN, Prefs.SUMMON_POP_MAX)
+        seekSummonSpring.progress = progressOfScaleLinear(
+            prefs.summonSpringScale, Prefs.SUMMON_SPRING_MIN, Prefs.SUMMON_SPRING_MAX
+        )
+        editSummonTime.setText(fmtScale(prefs.summonTimeScale))
+        editSummonPop.setText(fmtScale(prefs.summonPopScale))
+        editSummonSpring.setText(fmtScale(prefs.summonSpringScale))
+
+        // 标签里的绝对值按**典型行程**（贴边呼出约 320px）估算，纯参考
+        val popPx = prefs.summonPopPx(SUMMON_REF_TRAVEL_PX)
+        txtSummonTime.text = getString(
+            R.string.summon_time_label_value, fmtScale(prefs.summonTimeScale),
+            prefs.summonTotalMs.roundToInt()
+        )
+        txtSummonPop.text = getString(
+            R.string.summon_pop_label_value, fmtScale(prefs.summonPopScale), popPx.roundToInt()
+        )
+        txtSummonSpring.text = getString(
+            R.string.summon_spring_label_value, fmtScale(prefs.summonSpringScale),
+            (prefs.summonSpringGain * 100f).roundToInt()
+        )
+
+        btnSummonToggle.text = getString(if (on) R.string.summon_off else R.string.summon_on)
+        seekSummonTime.isEnabled = on
+        seekSummonPop.isEnabled = on
+        seekSummonSpring.isEnabled = on
+        editSummonTime.isEnabled = on
+        editSummonPop.isEnabled = on
+        editSummonSpring.isEnabled = on
+        btnResetSummon.isEnabled = on
+        val a = if (on) 1f else 0.45f
+        txtSummonTime.alpha = a
+        txtSummonPop.alpha = a
+        txtSummonSpring.alpha = a
+    }
+
+    /**
+     * 「呼吸」卡片：呼吸幅度 + 总开关 + 恢复默认 + 保存。
+     *
+     * 幅度是 `PetView` 每帧现读的，所以不需要通知服务；
+     * 关掉总开关时 ticker 会立刻停下（见 PetView 的呼吸分支）。
+     */
+    private fun setupBreathControls() {
+        seekBreathAmp.max = 1000
+        seekBreathAmp.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                prefs.breathScale = scaleOfLinear(progress, Prefs.BREATH_MIN, Prefs.BREATH_MAX)
+                bindBreathControls()
+            }
+            override fun onStartTrackingTouch(sb: SeekBar?) = Unit
+            override fun onStopTrackingTouch(sb: SeekBar?) = Unit
+        })
+
+        val applyAmp = {
+            parseScale(editBreathAmp.text.toString(), Prefs.BREATH_MIN, Prefs.BREATH_MAX)
+                ?.let { prefs.breathScale = it }
+            bindBreathControls()
+        }
+        editBreathAmp.setOnEditorActionListener { _, _, _ -> applyAmp(); clearInputFocus(); true }
+        editBreathAmp.setOnFocusChangeListener { _, has -> if (!has) applyAmp() }
+
+        btnSaveBreath.setOnClickListener {
+            parseScale(editBreathAmp.text.toString(), Prefs.BREATH_MIN, Prefs.BREATH_MAX)
+                ?.let { prefs.breathScale = it }
+            bindBreathControls()
+            clearInputFocus()
+        }
+
+        btnResetBreath.setOnClickListener {
+            prefs.breathScale = 1f
+            bindBreathControls()
+            clearInputFocus()
+        }
+
+        btnBreathToggle.setOnClickListener {
+            prefs.breathEnabled = !prefs.breathEnabled
+            bindBreathControls()
+            clearInputFocus()
+            // ⚠️ 这里**不通知服务**：呼吸开关是 PetView 每帧现读的，
+            // 关掉后 ticker 立刻退出呼吸分支；而 notifyChanged 会触发
+            // ACTION_RELOAD，让桌宠重新落位、白跳一下（边框回弹卡也踩过）。
+        }
+
+        bindBreathControls()
+    }
+
+    /** 把呼吸卡的控件状态同步到 Prefs（含总开关的启用/停用外观） */
+    private fun bindBreathControls() {
+        val on = prefs.breathEnabled
+        seekBreathAmp.progress =
+            progressOfScaleLinear(prefs.breathScale, Prefs.BREATH_MIN, Prefs.BREATH_MAX)
+        editBreathAmp.setText(fmtScale(prefs.breathScale))
+        txtBreathAmp.text = getString(
+            R.string.breath_amp_label_value, fmtScale(prefs.breathScale),
+            (prefs.breathSq * 100f).roundToInt()
+        )
+        btnBreathToggle.text = getString(if (on) R.string.breath_off else R.string.breath_on)
+        seekBreathAmp.isEnabled = on
+        editBreathAmp.isEnabled = on
+        btnResetBreath.isEnabled = on
+        txtBreathAmp.alpha = if (on) 1f else 0.45f
+    }
+
     /** 把回弹区的控件状态同步到 Prefs（含总开关的启用/停用外观） */
     private fun bindBounceEnabledState() {
         val on = prefs.bounceEnabled
@@ -643,6 +902,12 @@ class MainActivity : Activity() {
     private companion object {
         /** 量文字宽度用的基准字号（px）：取得够大，量完再按比例缩 */
         const val PROBE_TEXT_PX = 400f
+
+        /**
+         * 呼出"弹出高度"标签里显示 px 时用的**参考行程**（贴边呼出大约 320px）。
+         * 真实过冲量是按行程算的（见 [Prefs.summonPopPx]），所以标签只是参考值。
+         */
+        const val SUMMON_REF_TRAVEL_PX = 320f
     }
 
     // ---------------------------------------------------------------- 标题铺满

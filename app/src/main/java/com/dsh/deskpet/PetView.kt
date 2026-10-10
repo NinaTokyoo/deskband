@@ -653,7 +653,7 @@ class PetView(context: Context) : View(context) {
      *     所以贴边那条边无论怎么呼吸都不会离开屏幕边（见 [squashPivotLocalY]）。
      */
     private fun currentBreath(): Float {
-        if (!breathing) return 0f
+        if (!breathing || !prefs.breathEnabled) return 0f
         val elapsed = (SystemClock.uptimeMillis() - idleSince).toFloat()
         return PetState.breathWave(elapsed, BREATH_DELAY_MS, BREATH_PERIOD_MS)
     }
@@ -890,14 +890,10 @@ class PetView(context: Context) : View(context) {
                 if (slidePhase2Running) {
                     // 回弹段：从过冲点"弹"回落点。
                     //
-                    // 用 PetState.springBack：中途会荡到**落点另一侧**一点点
-                    // （最深约 41% 过冲量），最后精确停在落点上
-                    // （springBack(1) == 0，所以不会留缝）。
-                    //
-                    // ⚠️ 原来这里是 over→落点的 easeOutCubic，只是"减速停住"、
-                    // 中途不越过落点 —— 观感很生硬。用户反馈：
-                    // "呼出的回弹动画是线性的吗？感觉很生硬，能不能做出弹了一下的感觉？"
-                    val k = PetState.springBack(t)
+                    // 用 PetState.springBackGained：中途会荡到**落点另一侧**
+                    // （深度 = 弹出高度 × 用户在「呼出回弹」卡片里调的回弹幅度），
+                    // 最后精确停在落点上（u=1 严格为 0，所以不会留缝）。
+                    val k = PetState.springBackGained(t, prefs.summonSpringGain)
                     anchorX = slideToX + (slideFromX - slideToX) * k
                     anchorY = slideToY + (slideFromY - slideToY) * k
                 } else {
@@ -969,7 +965,7 @@ class PetView(context: Context) : View(context) {
                 if (t >= 1f) landing = false
                 need = true
             }
-            // ---- 呼吸晃动：完全静止满 BREATH_DELAY_MS 后才开始 ----
+            // ---- 呼吸晃动：完全静止（= 吸附/落位动画结束）后立刻开始 ----
             // "还在动"包括所有动画以及被手指按着（拖动/长按都算被按住）。
             val moving = hopping || pressing || releasing || landing || sliding ||
                 tweening || rotAnimRunning || flipRunning || flipVRunning || dragging
@@ -977,17 +973,17 @@ class PetView(context: Context) : View(context) {
                 idleSince = now
                 breathing = false
             } else {
-                val idle = now - idleSince
-                val wasBreathing = breathing
-                breathing = idle >= BREATH_DELAY_MS.toLong()
+                // 总开关关掉时不进入呼吸态 —— 否则 ticker 会白转（每帧重绘却什么都没变）
+                breathing = prefs.breathEnabled && now - idleSince >= BREATH_DELAY_MS.toLong()
                 if (breathing) {
                     // 只有呼吸这一件事在动时**隔帧重绘**：波形周期 2.6s，
                     // 30fps 完全够看，能省掉一半的绘制。
                     if ((now / 16L) % 2L == 0L) need = true
-                } else if (!wasBreathing) {
-                    // 还差一会儿才开始呼吸：正好在那一刻再来一帧去启动它，
-                    // 否则 ticker 空转结束后就再也没人唤醒（呼吸永远不开始）
-                    scheduleFrameDelayed((BREATH_DELAY_MS - idle).toLong())
+                } else if (!prefs.breathEnabled) {
+                    // 关掉呼吸：彻底安静，不再排帧
+                } else {
+                    // 还差一会儿才开始呼吸：正好在那一刻再来一帧去启动它
+                    scheduleFrameDelayed((BREATH_DELAY_MS - (now - idleSince)).toLong())
                 }
             }
 
@@ -1280,14 +1276,9 @@ class PetView(context: Context) : View(context) {
         val dx = targetX - fromX
         val dy = targetY - fromY
         val len = kotlin.math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
-        // 过冲量按行程放大（见 PetState.bounceAmp）：
-        // 靠边吸附的行程短、36px 占一大半所以很"Q弹"；
-        // 呼出行程长（屏幕外滑回来），同样 36px 只占 4%~11%，看着就不弹了。
-        val amp = if (len > 1f && prefs.bounceEnabled) {
-            PetState.bounceAmp(len, prefs.bouncePx)
-        } else {
-            0f
-        }
+        // 过冲量：按行程给（见 PetState.bounceAmp）+ 用户在「呼出回弹」卡片里调的倍率，
+        // 总开关关掉时直接按 0 处理（于是没有第二段，只剩一次位置补间）。
+        val amp = if (len > 1f && prefs.summonBounceEnabled) prefs.summonPopPx(len) else 0f
         val overX: Float
         val overY: Float
         if (amp > 0f) {
@@ -1297,11 +1288,13 @@ class PetView(context: Context) : View(context) {
             overX = targetX
             overY = targetY
         }
-        // 回弹段时长与靠边吸附**用同一个用户设置**（回弹时长，默认 360ms）。
-        // 原来这里固定 150ms：同样是"弹一下"，吸附能看清、呼出只是一闪。
+        // 两段时长都来自「呼出回弹」卡片的"总时长"（1.0 = 560ms），
+        // 按改动前的 320:380 比例切开。
         startSlide(
             fromX, fromY, overX, overY, null, targetX, targetY,
-            entry = true, settleMs = prefs.bounceBackMs.toFloat()
+            entry = true,
+            settleMs = prefs.summonBackMs,
+            entryMs = prefs.summonInMs
         )
     }
 
@@ -1352,7 +1345,8 @@ class PetView(context: Context) : View(context) {
         fromX: Float, fromY: Float, toX: Float, toY: Float, onDone: (() -> Unit)?,
         endX: Float = toX, endY: Float = toY,
         entry: Boolean = false,
-        settleMs: Float = SLIDE_SETTLE_MS
+        settleMs: Float = SLIDE_SETTLE_MS,
+        entryMs: Float = SLIDE_IN_MS
     ) {
         slideFromX = fromX
         slideFromY = fromY
@@ -1366,9 +1360,8 @@ class PetView(context: Context) : View(context) {
         slidePhase2Running = false
         slideStart = SystemClock.uptimeMillis()
         // 进场比出场短：呼出要"啪一下到位"，收起才是"慢慢平移出去"。
-        // 进场行程长（从屏幕外到落点），420ms 时收尾那一大段几乎是原地飘，
-        // 用户反馈"弹起的滞空时间有点长"，所以这里单独给个更短的时长。
-        slideMs = if (entry) SLIDE_IN_MS else SLIDE_MS
+        // 具体时长由「呼出回弹」卡片的"总时长"按比例切开后传进来。
+        slideMs = if (entry) entryMs else SLIDE_MS
         slideDone = onDone
         sliding = true
         scheduleFrame()
@@ -1898,12 +1891,14 @@ class PetView(context: Context) : View(context) {
             // ⚠️ 支点不是素材中心（贴顶是格子上缘、其余是下缘）——
             // 先相对支点反缩放，再换算回"相对素材中心"的偏移，
             // 因为后面的旋转、换格子坐标都以素材中心为参考。
-            val breathN = br * BREATH_SQ
+            val nSq = prefs.breathSq
+            val swayPx = BREATH_SWAY_PX * (nSq / BREATH_SQ)
+            val breathN = br * nSq
             val breathT = -breathN * BREATH_TANGENT
             val sx = (1f + sq) * (1f + breathT)
             val sy = (1f - sq) * (1f + breathN)
             val py = squashPivotLocalY()
-            dx = (localX - cx) / sx - br * BREATH_SWAY_PX
+            dx = (localX - cx) / sx - br * swayPx
             dy = (localY - py) / sy + (py - cy) - PetState.jumpSignY(state) * push
         }
 
@@ -2431,7 +2426,10 @@ class PetView(context: Context) : View(context) {
             // ⚠️ 呼吸幅度必须先乘 [BREATH_SQ] 再乘切向比例：
             // 直接写 `1 - br * BREATH_TANGENT` 会得到 ±35% 的横向缩放（踩过这个坑，
             // 实测人物一顿一顿地变大变小，而不是"微微呼吸"）。
-            val breathN = br * BREATH_SQ
+            // 幅度与摆动都按用户在「呼吸」卡片里调的倍率等比放大。
+            val nSq = prefs.breathSq
+            val swayPx = BREATH_SWAY_PX * (nSq / BREATH_SQ)
+            val breathN = br * nSq
             val breathT = -breathN * BREATH_TANGENT
             val sx = (1f + sq) * (1f + breathT)
             val sy = (1f - sq) * (1f + breathN)
@@ -2439,7 +2437,7 @@ class PetView(context: Context) : View(context) {
             // 弹起方向：背离吸附边、朝屏幕内侧，同为画布 y 轴上的符号
             //（贴顶往下弹，其余三种往上/朝屏幕内弹）。
             // 呼吸则沿画布 x 轴（= 沿吸附边）滑动，绝不垂直离开。
-            canvas.translate(br * BREATH_SWAY_PX, PetState.jumpSignY(state) * push)
+            canvas.translate(br * swayPx, PetState.jumpSignY(state) * push)
         }
 
         // 跨半屏的镜像翻转：中途压成一条线再展开，做出"翻面"观感
@@ -2625,18 +2623,19 @@ class PetView(context: Context) : View(context) {
         private const val PRESS_LAND_MS = 260f
 
         /**
-         * 吸附静止多久之后开始**呼吸晃动**（用户要求 0.5s）。
-         *
-         * 这段时间里 ticker 已经空转结束，所以必须预约一次唤醒（见
-         * [scheduleFrameDelayed]），否则呼吸永远不会开始。
+         * 吸附静止多久之后开始**呼吸晃动**（用户后来改成 0：吸附动画一结束就开始，
+         * 不再等 0.5s）。留着这个常量是为了将来想加延迟时只改一处。
          */
-        private const val BREATH_DELAY_MS = 500f
+        private const val BREATH_DELAY_MS = 0f
 
         /** 呼吸周期：2.6s 一次，接近平静呼吸的频率 */
         private const val BREATH_PERIOD_MS = 2600f
 
         /**
-         * 呼吸幅度：法线方向 ±1.5%（247px 的素材约 ±3.7px，符合"微微"）。
+         * 呼吸幅度的**兜底**值（占素材高度）。
+         *
+         * 实际用的是 `prefs.breathSq`（用户在「呼吸」卡片里调，1.0 = 现在的 1.3 倍），
+         * 这里只在 prefs 不可用时兜底。
          *
          * ⚠️ 无论放大还是缩小，绘制都是**绕吸附边**做的（见 [squashPivotLocalY]），
          * 所以贴边那条边永远不动 —— 这就是"素材吸附边不得离开手机被吸附边"。

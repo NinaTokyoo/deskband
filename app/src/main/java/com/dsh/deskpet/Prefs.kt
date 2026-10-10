@@ -150,6 +150,83 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(KEY_BOUNCE_ON, true)
         set(v) { sp.edit().putBoolean(KEY_BOUNCE_ON, v).apply() }
 
+    // ---------------------------------------------------------------- 呼出回弹
+
+    /**
+     * 呼出回弹总开关。关掉后呼出只做位置补间，不再过冲、也不回摆。
+     *
+     * ⚠️ 只管"呼出滑入 + 回摆"这一段；单击轻跳、长按弹起、落地回弹都不受影响。
+     */
+    var summonBounceEnabled: Boolean
+        get() = sp.getBoolean(KEY_SUMMON_ON, true)
+        set(v) { sp.edit().putBoolean(KEY_SUMMON_ON, v).apply() }
+
+    /** 呼出回弹**总时长**倍率：1.0 = [SUMMON_MS_BASE]（560ms），范围 0.2~5 */
+    var summonTimeScale: Float
+        get() = sp.getFloat(KEY_SUMMON_TIME, 1f).coerceIn(SUMMON_TIME_MIN, SUMMON_TIME_MAX)
+        set(v) {
+            sp.edit()
+                .putFloat(KEY_SUMMON_TIME, v.coerceIn(SUMMON_TIME_MIN, SUMMON_TIME_MAX))
+                .apply()
+        }
+
+    /** 呼出**弹出高度**倍率：1.0 = 现在过冲量的一半，范围 0.1~10 */
+    var summonPopScale: Float
+        get() = sp.getFloat(KEY_SUMMON_POP, 1f).coerceIn(SUMMON_POP_MIN, SUMMON_POP_MAX)
+        set(v) {
+            sp.edit()
+                .putFloat(KEY_SUMMON_POP, v.coerceIn(SUMMON_POP_MIN, SUMMON_POP_MAX))
+                .apply()
+        }
+
+    /** 呼出**回弹幅度**倍率：1.0 = 现在回摆反向冲过的比例（0.39），范围 0.1~10 */
+    var summonSpringScale: Float
+        get() = sp.getFloat(KEY_SUMMON_SPRING, 1f).coerceIn(SUMMON_SPRING_MIN, SUMMON_SPRING_MAX)
+        set(v) {
+            sp.edit()
+                .putFloat(KEY_SUMMON_SPRING, v.coerceIn(SUMMON_SPRING_MIN, SUMMON_SPRING_MAX))
+                .apply()
+        }
+
+    /** 呼出滑入 + 回摆的**总时长**（ms） */
+    val summonTotalMs: Float get() = SUMMON_MS_BASE * summonTimeScale
+
+    /** 呼出滑入段时长（ms）：总时长的 [SUMMON_IN_RATIO] */
+    val summonInMs: Float get() = summonTotalMs * SUMMON_IN_RATIO
+
+    /** 呼出回摆段时长（ms） */
+    val summonBackMs: Float get() = summonTotalMs * (1f - SUMMON_IN_RATIO)
+
+    /**
+     * 呼出**弹出高度**（过冲距离，px）。
+     *
+     * 仍然按行程给（见 [PetState.bounceAmp]，短行程时就是"靠边吸附那种 Q 弹"），
+     * 再乘"现在的 0.5 倍"这个基准与用户倍率 —— 用户要求
+     * "弹出高度以现在的 0.5 倍为 1.0 倍，可调范围 0.1~10"。
+     */
+    fun summonPopPx(travel: Float): Float =
+        PetState.bounceAmp(travel, BOUNCE_PX_BASE) * SUMMON_POP_BASE_RATIO * summonPopScale
+
+    /** 呼出回摆的反向冲过比例（相对弹出高度）：现在 = [SUMMON_SPRING_BASE] */
+    val summonSpringGain: Float get() = SUMMON_SPRING_BASE * summonSpringScale
+
+    // ---------------------------------------------------------------- 呼吸晃动
+
+    /** 呼吸晃动总开关。关掉后吸附静止时完全不动 */
+    var breathEnabled: Boolean
+        get() = sp.getBoolean(KEY_BREATH_ON, true)
+        set(v) { sp.edit().putBoolean(KEY_BREATH_ON, v).apply() }
+
+    /** 呼吸幅度倍率：1.0 = 现在幅度的 1.3 倍，范围 0.5~10 */
+    var breathScale: Float
+        get() = sp.getFloat(KEY_BREATH_SCALE, 1f).coerceIn(BREATH_MIN, BREATH_MAX)
+        set(v) {
+            sp.edit().putFloat(KEY_BREATH_SCALE, v.coerceIn(BREATH_MIN, BREATH_MAX)).apply()
+        }
+
+    /** 呼吸在**法线**方向的幅度（占素材高度的比例） */
+    val breathSq: Float get() = BREATH_SQ_BASE * breathScale
+
     /**
      * 复位时是否**保留当前设置**。
      *
@@ -187,6 +264,12 @@ class Prefs(context: Context) {
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_BOUNCE_ON = "bounce_on"
         private const val KEY_RESET_KEEP = "reset_keep"
+        private const val KEY_SUMMON_ON = "summon_bounce_on"
+        private const val KEY_SUMMON_TIME = "summon_time_scale"
+        private const val KEY_SUMMON_POP = "summon_pop_scale"
+        private const val KEY_SUMMON_SPRING = "summon_spring_scale"
+        private const val KEY_BREATH_ON = "breath_on"
+        private const val KEY_BREATH_SCALE = "breath_scale"
 
         /** 通知栏自定义内容的字符上限（用户指定 40） */
         const val NOTIFY_TEXT_MAX = 40
@@ -227,5 +310,43 @@ class Prefs(context: Context) {
         /** 由倍率范围推出的实际比例上下限：4% ~ 40% */
         const val MIN_SIZE = SIZE_BASE * SIZE_SCALE_MIN
         const val MAX_SIZE = SIZE_BASE * SIZE_SCALE_MAX
+
+        // ---- 呼出回弹：标准值与可调倍率范围（用户指定） ----
+        /**
+         * 呼出回弹**总时长**标准值（ms），倍率 1.0 对应它。
+         *
+         * 用户要求"总时长以现在的 0.8 倍为 1.0 倍"：现在滑入 320ms + 回摆 380ms = 700ms，
+         * 0.8 倍就是 **560ms**。
+         */
+        const val SUMMON_MS_BASE = 560f
+
+        /** 滑入段占总时长的比例（沿用改动前的 320 / 700） */
+        const val SUMMON_IN_RATIO = 320f / 700f
+
+        /**
+         * "弹出高度"的基准比例：用户要求"以现在的 0.5 倍为 1.0 倍"，
+         * 即默认过冲量 = 现在的一半（现在按行程算，见 [PetState.bounceAmp]）。
+         */
+        const val SUMMON_POP_BASE_RATIO = 0.5f
+
+        /** "回弹幅度"标准值 = 回摆时反向冲过弹出高度的比例（现在 springBack 的 0.39） */
+        const val SUMMON_SPRING_BASE = 0.39f
+
+        const val SUMMON_TIME_MIN = 0.2f
+        const val SUMMON_TIME_MAX = 5f
+        const val SUMMON_POP_MIN = 0.1f
+        const val SUMMON_POP_MAX = 10f
+        const val SUMMON_SPRING_MIN = 0.1f
+        const val SUMMON_SPRING_MAX = 10f
+
+        // ---- 呼吸晃动 ----
+        /**
+         * 呼吸幅度标准值（法线方向占素材高度的比例）。
+         * 用户要求"以现在的 1.3 倍为 1.0 倍"，所以是 0.015 × 1.3。
+         */
+        const val BREATH_SQ_BASE = 0.015f * 1.3f
+
+        const val BREATH_MIN = 0.5f
+        const val BREATH_MAX = 10f
     }
 }
