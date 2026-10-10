@@ -1714,8 +1714,14 @@ class PetView(context: Context) : View(context) {
         //   · 抗锯齿造成的半透明边缘（alpha 低于阈值）
         // 外接框远小于窗口（窗口还有对角线包络的富余量），
         // 所以不会让整屏变得不可点。
-        val b = alphaBounds(bmp) ?: return false
-        return bx >= b[0] && bx < b[2] && by >= b[1] && by < b[3]
+        //
+        // ⚠️ 但只用外接框的 **75%**（以框中心为基准等比缩小，见 [PetState.hitBox]）：
+        // 整个矩形会让"人物旁边明显是空白的地方"也能点中。
+        // 用户反馈："感觉可互动面积还是有点大，互动面积等比缩小到现在的 75%。"
+        // 缩小后人物轮廓（不透明像素）照旧可点，只是框外侧那一圈空白不再命中。
+        val bounds = alphaBounds(bmp) ?: return false
+        val box = PetState.hitBox(bounds, HIT_BOX_SCALE)
+        return bx >= box[0] && bx < box[2] && by >= box[1] && by < box[3]
     }
 
     /**
@@ -2219,6 +2225,14 @@ class PetView(context: Context) : View(context) {
     companion object Geometry {
         private const val FRAME_MS = 16L
         private const val HIT_ALPHA_MIN = 16
+
+        /**
+         * 可互动面积 = 素材 alpha 外接框的 **75%**（以框中心为基准等比缩小）。
+         *
+         * 用户要求："感觉可互动面积还是有点大，互动面积等比缩小到现在的 75%。"
+         * 只影响"透明像素靠外接框兜底"那一档：人物轮廓本身照旧可点。
+         */
+        private const val HIT_BOX_SCALE = 0.75f
         private const val SNAP_MS = 220f
 
         /** 收起（滑出）的时长：要"慢慢平移出去" */

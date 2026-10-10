@@ -605,6 +605,31 @@ object PetState {
     }
 
     /**
+     * 命中判定用的**有效外接框**：把素材 alpha 外接框以**中心为基准等比缩小** `scale` 倍。
+     *
+     * 为什么要缩：单像素 alpha 判定之外还有一条"落在 alpha 外接框里也算命中"的兜底
+     * （用来兜住发丝之间的透明缝隙、抗锯齿边缘 —— 否则点上去会穿透到下层桌面）。
+     * 但外接框是**矩形**，人物往往不占满它，于是"明显是空白的地方"也能点中。
+     * 用户反馈："感觉可互动面积还是有点大，互动面积等比缩小到现在的 75%。"
+     *
+     * 缩小后：人物轮廓本身（不透明像素）照样可点，只是外接框外侧那一圈空白不再命中。
+     *
+     * @param bounds `[left, top, right, bottom]`（`alphaBounds` 的结果，单位像素）
+     * @return `[left, top, right, bottom]`，中心不变、宽高各乘 `scale`
+     */
+    fun hitBox(bounds: IntArray, scale: Float): FloatArray {
+        val l = bounds[0].toFloat()
+        val t = bounds[1].toFloat()
+        val r = bounds[2].toFloat()
+        val b = bounds[3].toFloat()
+        val cx = (l + r) / 2f
+        val cy = (t + b) / 2f
+        val hw = (r - l) * scale.coerceIn(0.05f, 1f) / 2f
+        val hh = (b - t) * scale.coerceIn(0.05f, 1f) / 2f
+        return floatArrayOf(cx - hw, cy - hh, cx + hw, cy + hh)
+    }
+
+    /**
      * 收起时往哪条边滑出去：**取最近的那条边**（纯函数，便于单测）。
      *
      * 关键点：这个函数**永远返回一个方向**，没有"都不贴边就返回某种兜底"的分支。

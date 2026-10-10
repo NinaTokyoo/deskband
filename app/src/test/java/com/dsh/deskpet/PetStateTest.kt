@@ -448,6 +448,47 @@ class PetStateTest {
     }
 
     /**
+     * 可互动面积 = 素材 alpha 外接框的 75%（中心不变、等比缩小）。
+     *
+     * 用户要求："感觉可互动面积还是有点大，互动面积等比缩小到现在的 75%。"
+     */
+    @Test
+    fun the_hit_box_shrinks_to_75_percent_around_its_centre() {
+        // 典型角落素材的外接框（缩放后的取样位图：288x270 -> 216x202 之类）
+        val b = intArrayOf(10, 20, 210, 220) // 200 x 200
+        val box = PetState.hitBox(b, 0.75f)
+        // 中心不变
+        assertEquals(110f, (box[0] + box[2]) / 2f, 0.001f)
+        assertEquals(120f, (box[1] + box[3]) / 2f, 0.001f)
+        // 宽高各是原来的 75%
+        assertEquals(150f, box[2] - box[0], 0.001f)
+        assertEquals(150f, box[3] - box[1], 0.001f)
+        // 原框的角落在新框之外（这正是"面积变小"的部分）
+        assertTrue(10f < box[0] && 20f < box[1])
+        assertTrue(210f > box[2] && 220f > box[3])
+        // 中心仍在框内
+        assertTrue(110f >= box[0] && 110f < box[2])
+        assertTrue(120f >= box[1] && 120f < box[3])
+        // 新框边缘内侧一点点：命中；外侧一点点：不命中
+        assertTrue(box[0] + 1f >= box[0] && box[0] + 1f < box[2])
+        assertFalse(box[0] - 1f >= box[0])
+        // scale = 1 时与原框一致
+        val same = PetState.hitBox(b, 1f)
+        assertEquals(10f, same[0], 0.001f)
+        assertEquals(20f, same[1], 0.001f)
+        assertEquals(210f, same[2], 0.001f)
+        assertEquals(220f, same[3], 0.001f)
+        // 非正方框同样等比（宽高比不变）
+        val r = PetState.hitBox(intArrayOf(0, 0, 400, 100), 0.75f)
+        assertEquals(300f, r[2] - r[0], 0.001f)
+        assertEquals(75f, r[3] - r[1], 0.001f)
+        // scale 夹在 [0.05, 1]：不会缩成 0，也不会放大
+        val clamped = PetState.hitBox(b, 5f)
+        assertEquals(200f, clamped[2] - clamped[0], 0.001f)
+        assertTrue(PetState.hitBox(b, 0f)[2] - PetState.hitBox(b, 0f)[0] > 0f)
+    }
+
+    /**
      * 呼出的过冲量要**按行程放大**，否则长行程下那点过冲完全看不见。
      *
      * 靠边吸附的行程短（几十像素），36px 过冲占 24%~90%，所以很"Q弹"；
