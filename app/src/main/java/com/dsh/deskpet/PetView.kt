@@ -625,19 +625,34 @@ class PetView(context: Context) : View(context) {
 
             if (tweening) {
                 val t = ((now - tweenStart).toFloat() / tweenMs).coerceIn(0f, 1f)
-                val e = easeOutCubic(t)
-                anchorX = tweenFromX + (tweenToX - tweenFromX) * e
-                anchorY = tweenFromY + (tweenToY - tweenFromY) * e
+                if (tweenSpring) {
+                    // 回弹段：从过冲点"弹"回落点。
+                    // springBack 是**相对落点的偏移系数**（1 -> 0，中途为负），
+                    // 不是 0->1 的插值系数，所以这里要用 to + (from-to)*k 的写法。
+                    // 好处：中途会越过落点到另一侧一点点（"弹一下"），
+                    // 而 springBack(1) == 0 保证终点精确 —— 不会留缝。
+                    val k = PetState.springBack(t)
+                    anchorX = tweenToX + (tweenFromX - tweenToX) * k
+                    anchorY = tweenToY + (tweenFromY - tweenToY) * k
+                } else {
+                    val e = easeOutCubic(t)
+                    anchorX = tweenFromX + (tweenToX - tweenFromX) * e
+                    anchorY = tweenFromY + (tweenToY - tweenFromY) * e
+                }
                 if (t >= 1f) {
                     anchorX = tweenToX
                     anchorY = tweenToY
                     tweening = false
+                    tweenSpring = false
                     if (bouncePending) {
-                        // 第一段（冲到过冲点）结束 -> 平滑回到贴边位置
+                        // 第一段（冲到过冲点）结束 -> 弹回落点。
                         // 注意：这一段结束时停在**过冲点**上，还不是落点，
                         // 所以不能在这里 markRest（落点已由 settleInternal 记好）
                         bouncePending = false
-                        animateTo(bounceToX, bounceToY, prefs.bounceBackMs.toLong())
+                        // spring=true：阻尼摆动，"弹一下"而不是减速停住
+                        animateTo(
+                            bounceToX, bounceToY, prefs.bounceBackMs.toLong(), spring = true
+                        )
                     } else {
                         // 补间走完才换状态，避免中途改尺寸导致的跳变
                         // 到这里才真正停稳 —— 落点就是这里
@@ -766,6 +781,15 @@ class PetView(context: Context) : View(context) {
 
     /** 是否正处于"回弹收回"那一段（决定用哪条缓动曲线） */
     private var slidePhase2Running = false
+
+    /**
+     * 当前这条位移补间是不是**回弹段**（过冲点 -> 落点）。
+     *
+     * 是的话不用 easeOutCubic 插值，而是走 `PetState.springBack`
+     * 的阻尼摆动：会**冲过落点、到另一侧一点点**再贴住 —— 就是"弹一下"。
+     * 终点仍然是精确的（`springBack(1) == 0`），不会留缝。
+     */
+    private var tweenSpring = false
 
     /**
      * 这次滑动是**进场**（呼出/滑回屏幕内）还是出场（收起）。
@@ -907,26 +931,33 @@ class PetView(context: Context) : View(context) {
     /**
      * 退出方向：**按实际贴边情况**判断，不再只看状态。
      *
-     * 规则：**贴底优先** -> 向下收；然后**贴上沿** -> 向上收；
-     * 否则贴左 -> 左；贴右 -> 右；都没贴（悬空）也向下收。
+     * 规则：**取最近的那条边**出去（贴底/贴顶/贴左/贴右），悬空时也取最近的。
+     * 平手时按 上 -> 下 -> 左 -> 右 的顺序，所以贴底角仍然往下收。
      *
-     * ⚠️ 原来只按 state 判断（BORDER_* 走水平），于是"吸附在底边"
-     * 但状态仍是右边框时就会往左右跑（用户反馈：
-     * "吸附在底边的时候应该是收入到屏幕下面，现在是往左右跑的"）。
-     * 上边组同理：贴在屏幕顶上就必须**向上**收出去。
+     * ⚠️ 两个必须守住的点，都是踩过的坑：
+     *
+     * 1. **足迹要用"状态自己的"尺寸与素材中心**，不能用 [trackW]/[trackH] 与
+     *    [centerFromTrackX]。那两个在**旋转冻结**期间（`frozen=true`，180ms 动画
+     *    还没跑完）仍然是**旧形态**的值 —— 而 state 已经是新形态了。
+     *    横竖互换会让边距差 42px、右边缘差 21px，四条边**一条都对不上**。
+     * 2. 因此兜底**绝不能是"向下"**。原来四条边都用 `误差 2px 以内` 判定，
+     *    全不匹配就 `return (0,1)` —— 于是贴右边框的人物会**竖着往下滑出屏幕**，
+     *    也就是用户反馈的"跑到右下角跑出屏幕了"
+     *    （快速点按时收起正好落在旋转动画窗口里，就是这个组合）。
      */
     private fun exitVector(): FloatArray {
         val b = host?.bounds() ?: return floatArrayOf(0f, 1f)
-        val left = anchorX - centerFromTrackX()
-        val top = anchorY - centerFromTrackY()
-        val right = left + trackW
-        val bottom = top + trackH
-        val eps = 2f
-        if (bottom >= b.height() - eps) return floatArrayOf(0f, 1f)
-        if (top <= eps) return floatArrayOf(0f, -1f)
-        if (left <= eps) return floatArrayOf(-1f, 0f)
-        if (right >= b.width() - eps) return floatArrayOf(1f, 0f)
-        return floatArrayOf(0f, 1f)
+        // 用状态自己的足迹：不受 frozen 记账值影响，永远与画面一致
+        val foot = footprintOf(state)
+        val off = centerOffsetInTrack(state)
+        val left = anchorX - off[0]
+        val top = anchorY - off[1]
+        val right = left + foot[0]
+        val bottom = top + foot[1]
+
+        // 到四条边的距离（贴边为 0，压出去为负），取最近的一条
+        // —— 判定逻辑在 PetState.exitDir 里，纯函数、有单测
+        return PetState.exitDir(left, top, right, bottom, b.width().toFloat(), b.height().toFloat())
     }
 
     /** 让**整个窗口**都移出屏幕时，锚点（素材中心）该在哪 */
@@ -1070,7 +1101,10 @@ class PetView(context: Context) : View(context) {
         slideEntry = entry
         slidePhase2Running = false
         slideStart = SystemClock.uptimeMillis()
-        slideMs = SLIDE_MS
+        // 进场比出场短：呼出要"啪一下到位"，收起才是"慢慢平移出去"。
+        // 进场行程长（从屏幕外到落点），420ms 时收尾那一大段几乎是原地飘，
+        // 用户反馈"弹起的滞空时间有点长"，所以这里单独给个更短的时长。
+        slideMs = if (entry) SLIDE_IN_MS else SLIDE_MS
         slideDone = onDone
         sliding = true
         scheduleFrame()
@@ -1123,12 +1157,24 @@ class PetView(context: Context) : View(context) {
         animateTo(tx, ty)
     }
 
-    /** 平滑移动到目标位置；任何"宠物自己动"的地方都走这里 */
-    fun animateTo(toX: Float, toY: Float, durationMs: Long = SNAP_MS.toLong()) {
+    /**
+     * 平滑移动到目标位置；任何"宠物自己动"的地方都走这里。
+     *
+     * @param spring `true` = 这条是**回弹段**：不走 `easeOutCubic` 的"减速停住"，
+     *   而是用 `PetState.springBack` 的阻尼摆动 —— 冲过落点、荡到另一侧一点点、
+     *   最后精确贴住，也就是"弹一下"（用户要求松手回弹也要这个手感）。
+     */
+    fun animateTo(
+        toX: Float,
+        toY: Float,
+        durationMs: Long = SNAP_MS.toLong(),
+        spring: Boolean = false
+    ) {
         tweenFromX = anchorX
         tweenFromY = anchorY
         tweenToX = toX
         tweenToY = toY
+        tweenSpring = spring
         if (abs(anchorX - toX) < 0.5f && abs(anchorY - toY) < 0.5f) {
             anchorX = toX
             anchorY = toY
@@ -2140,22 +2186,37 @@ class PetView(context: Context) : View(context) {
         super.onDetachedFromWindow()
     }
 
-    private fun easeOutCubic(t: Float): Float {
-        val u = 1f - t
-        return 1f - u * u * u
-    }
+    /**
+     * 减速曲线（旋转/翻转/轻跳/第一段补间都用它）。
+     *
+     * 与呼出进场段用的是**同一条**曲线，所以直接委托给 [PetState.easeInArrive] ——
+     * 曲线定义只保留一份，免得以后调手感时两边不一致。
+     */
+    private fun easeOutCubic(t: Float): Float = PetState.easeInArrive(t)
 
     companion object Geometry {
         private const val FRAME_MS = 16L
         private const val HIT_ALPHA_MIN = 16
         private const val SNAP_MS = 220f
 
-        /** 呼出/收起滑出滑入的时长（"慢慢平移"，比吸附慢得多） */
+        /** 收起（滑出）的时长：要"慢慢平移出去" */
         private const val SLIDE_MS = 420f
 
-        /** 呼出回弹第二段（收回落点）的时长：要"啪"一下，不能慢 */
-        /** 呼出回弹第二段（过冲点 -> 落点）的时长：够看清"弹一下"，又不拖沓 */
-    private const val SLIDE_SETTLE_MS = 210f
+        /**
+         * 呼出（滑入）第一段的时长。
+         *
+         * 比收起短：进场行程很长（从屏幕外到落点），用 420ms 时末段几乎是原地飘，
+         * 用户反馈"弹起的滞空时间有点长"。缩短后是"冲进来然后立刻刹住"。
+         */
+        private const val SLIDE_IN_MS = 320f
+
+        /**
+         * 呼出回弹第二段（过冲点 -> 落点）的时长。
+         *
+         * 阻尼摆动要能看清"弹一下"，但又不能拖 —— 210ms 时最后 40% 几乎不动，
+         * 观感就是**滞空**，所以压到 150ms：一个来回干净利落。
+         */
+        private const val SLIDE_SETTLE_MS = 150f
         private const val FLIP_MS = 260f
         private const val ROT_MS = 180f
 

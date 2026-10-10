@@ -447,6 +447,65 @@ class PetStateTest {
         assertEquals(0.5f, PetState.smoothstep(0.5f), 0.0001f)
     }
 
+    /**
+     * 收起方向 = **最近的那条边**，而且任何时候都必须给出正确方向。
+     *
+     * 回归用例：旋转冻结期间 `trackW/trackH` 还是旧形态的值，足迹宽度会差 42px、
+     * 右边缘因此离墙 21px —— 原来的实现要求"误差 2px 以内"，四条边全不匹配，
+     * 就掉进写死的兜底 `(0,1)`，贴右边框的人物于是**竖着往下滑出屏幕**
+     * （用户反馈："跑到右下角跑出屏幕了"）。
+     */
+    @Test
+    fun exit_direction_is_always_the_nearest_edge() {
+        val w = 1440f
+        val h = 3084f
+
+        // 贴右边框（上 1/3，足迹 247x289）：往右
+        var v = PetState.exitDir(1193f, 885f, 1440f, 1174f, w, h)
+        assertEquals(1f, v[0], 0.001f)
+        assertEquals(0f, v[1], 0.001f)
+
+        // ★ 离墙 21px（冻结期宽度算错导致的错配）：**仍然往右**，绝不能往下
+        v = PetState.exitDir(1193f, 885f, 1440f - 21f, 1174f, w, h)
+        assertEquals("离墙 21px 也必须从右边出去", 1f, v[0], 0.001f)
+        assertEquals("绝不能往下滑", 0f, v[1], 0.001f)
+
+        // 更进一步：差得更多也一样（45px）
+        v = PetState.exitDir(1150f, 885f, 1440f - 45f, 1174f, w, h)
+        assertEquals(1f, v[0], 0.001f)
+        assertEquals(0f, v[1], 0.001f)
+
+        // 贴左边框：往左
+        v = PetState.exitDir(0f, 885f, 247f, 1174f, w, h)
+        assertEquals(-1f, v[0], 0.001f)
+        assertEquals(0f, v[1], 0.001f)
+
+        // 贴底（正立/倒挂都一样）：往下
+        v = PetState.exitDir(575f, 2837f, 864f, 3084f, w, h)
+        assertEquals(0f, v[0], 0.001f)
+        assertEquals(1f, v[1], 0.001f)
+
+        // 贴上沿：往上
+        v = PetState.exitDir(575f, 0f, 864f, 247f, w, h)
+        assertEquals(0f, v[0], 0.001f)
+        assertEquals(-1f, v[1], 0.001f)
+
+        // 右下角（两条边都贴）平手 -> 往下，与旧行为一致
+        v = PetState.exitDir(1177f, 2837f, 1440f, 3084f, w, h)
+        assertEquals(0f, v[0], 0.001f)
+        assertEquals(1f, v[1], 0.001f)
+
+        // 压出屏幕（负距离）也取"压得最多"的那条边
+        v = PetState.exitDir(1400f, 885f, 1647f, 1174f, w, h)
+        assertEquals(1f, v[0], 0.001f)
+        assertEquals(0f, v[1], 0.001f)
+
+        // 悬空（四条边都是正距离）：取最近的那条，绝不会是"往下"的兜底
+        v = PetState.exitDir(600f, 100f, 889f, 347f, w, h)
+        assertEquals("悬空时取最近边（上沿）", 0f, v[0], 0.001f)
+        assertEquals(-1f, v[1], 0.001f)
+    }
+
     @Test
     fun attached_states_are_recognised_for_drag_damping() {
         // 吸附状态起步才加阻尼

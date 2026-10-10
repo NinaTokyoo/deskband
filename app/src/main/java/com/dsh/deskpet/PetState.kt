@@ -577,4 +577,35 @@ object PetState {
         val t = u.coerceIn(0f, 1f)
         return t * t * (3f - 2f * t)
     }
+
+    /**
+     * 收起时往哪条边滑出去：**取最近的那条边**（纯函数，便于单测）。
+     *
+     * 关键点：这个函数**永远返回一个方向**，没有"都不贴边就返回某种兜底"的分支。
+     * 因为兜底方向一旦写死（原来是"向下"），只要状态与位置有细微错配就会露馅 ——
+     * 典型场景：旋转动画期间 `frozen=true`，`trackW/trackH` 还是**旧形态**的值，
+     * 横竖互换会让足迹宽高差 42px、右边缘差 21px，四条边一条都对不上，
+     * 于是贴右边框的人物会**竖着往下滑出屏幕**
+     * （用户反馈："跑到右下角跑出屏幕了"）。
+     *
+     * 平手时按 上 -> 下 -> 左 -> 右 的顺序，所以贴右下角仍然往下收（与旧行为一致）。
+     *
+     * @return `[dirX, dirY]`，分量取 -1 / 0 / 1
+     */
+    fun exitDir(
+        left: Float, top: Float, right: Float, bottom: Float,
+        screenW: Float, screenH: Float
+    ): FloatArray {
+        val dTop = top
+        val dBottom = screenH - bottom
+        val dLeft = left
+        val dRight = screenW - right
+        val nearest = minOf(dTop, dBottom, dLeft, dRight)
+        return when (nearest) {
+            dTop -> floatArrayOf(0f, -1f)
+            dBottom -> floatArrayOf(0f, 1f)
+            dLeft -> floatArrayOf(-1f, 0f)
+            else -> floatArrayOf(1f, 0f)
+        }
+    }
 }
