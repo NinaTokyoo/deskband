@@ -552,6 +552,42 @@
                     android:text="@string/restore_default" />
             </LinearLayout>
 
+            <!-- 速度：决定呼吸动画播得快慢（周期 = 基准 2600ms / 速度倍率） -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/txtBreathSpeed"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+
+                <EditText
+                    android:id="@+id/editBreathSpeed"
+                    android:layout_width="66dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:inputType="numberDecimal"
+                    android:imeOptions="actionDone"
+                    android:maxLength="5"
+                    android:textSize="13sp"
+                    android:gravity="center"
+                    android:hint="@string/breath_input" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/seekBreathSpeed"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

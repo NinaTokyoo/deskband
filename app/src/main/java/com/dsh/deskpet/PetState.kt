@@ -767,7 +767,7 @@ object PetState {
      *
      * @param elapsedMs 距上一次"有动画/被按住"结束的毫秒数
      * @param delayMs 静止多久之后开始呼吸（= `PetView.BREATH_DELAY_MS`，500ms）
-     * @param periodMs 呼吸周期（= `PetView.BREATH_PERIOD_MS`）
+     * @param periodMs 呼吸周期（用户可调，见 `Prefs.breathPeriodMs`）
      * @return -1..1；未到 delay 或参数非法时为 0
      */
     fun breathWave(elapsedMs: Float, delayMs: Float, periodMs: Float): Float {
@@ -946,4 +946,22 @@ object PetState {
         if (!s.contains(n)) return null
         return s.replace(n, NAME_TOKEN)
     }
+
+    // ---------------------------------------------------------------- 呼吸
+
+    /**
+     * 「呼吸速度倍率」-> 呼吸周期（ms）。
+     *
+     * ⚠️ 用**除法**：用户调的是"速度"，2 倍速度就该"一个周期只用一半时间"。
+     *    写成乘法的话，滑条往右拉会变慢 —— 与"速度"的直觉相反。
+     *
+     * 速度只作用于周期，**不影响幅度**（幅度另见 `Prefs.breathSq`）。
+     * 用户明确："呼吸幅度倍率则只决定呼吸动画的幅度"。
+     *
+     * @param speed 速度倍率（Prefs 会把输入夹到 0.1~10）
+     * @param basePeriodMs 基准周期（= `Prefs.BREATH_PERIOD_BASE_MS`，2600ms）
+     * @return 周期（ms）；speed <= 0 时返回基准值（防御，避免除零）
+     */
+    fun breathPeriod(speed: Float, basePeriodMs: Float): Float =
+        if (speed <= 0f) basePeriodMs else basePeriodMs / speed
 }

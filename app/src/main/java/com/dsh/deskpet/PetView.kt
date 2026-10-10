@@ -664,7 +664,12 @@ class PetView(context: Context) : View(context) {
     private fun currentBreath(): Float {
         if (!breathing || !prefs.breathEnabled) return 0f
         val elapsed = (SystemClock.uptimeMillis() - idleSince).toFloat()
-        return PetState.breathWave(elapsed, BREATH_DELAY_MS, BREATH_PERIOD_MS)
+        // 周期随「呼吸速度倍率」变（prefs.breathPeriodMs = 基准 / 速度）。
+        //
+        // ⚠️ 速度只作用在**波形**上，不动 [BREATH_DELAY_MS] 那个启动延迟 ——
+        //    用户要的是"呼吸动画播得快慢"，不是"多久之后才开始呼吸"。
+        //    把 delay 也一起缩放的话，调到 10 倍速会变成"一静止就猛吸一口气"。
+        return PetState.breathWave(elapsed, BREATH_DELAY_MS, prefs.breathPeriodMs)
     }
 
     /**
@@ -2699,8 +2704,12 @@ class PetView(context: Context) : View(context) {
          */
         private const val BREATH_DELAY_MS = 0f
 
-        /** 呼吸周期：2.6s 一次，接近平静呼吸的频率 */
-        private const val BREATH_PERIOD_MS = 2600f
+        /**
+         * 呼吸周期基准值已挪到 [Prefs.BREATH_PERIOD_BASE_MS] ——
+         * 它现在是**用户可调**的（「呼吸速度倍率」），必须与 prefs 里的默认值
+         * 用同一个真值，否则"恢复默认"会和这里的常量对不上。
+         * 实际周期见 [Prefs.breathPeriodMs]。
+         */
 
         /**
          * 呼吸幅度的**兜底**值（占素材高度）。

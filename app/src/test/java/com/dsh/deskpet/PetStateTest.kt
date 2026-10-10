@@ -1789,4 +1789,67 @@ class PetStateTest {
             PetState.titleForDisplay(storedBody, name, TITLE_DEFAULT)
         )
     }
+
+    // ------------------------------------------------------ 呼吸速度 / 幅度
+
+    /** 速度倍率 -> 周期：1.0 是基准，2 倍速度周期减半，0.5 倍周期翻倍 */
+    @Test
+    fun breath_period_is_inverse_to_speed() {
+        val base = 2600f
+        assertEquals("1.0 倍 = 基准周期", base, PetState.breathPeriod(1f, base), 0.01f)
+        assertEquals("2 倍速度 = 半个周期", base / 2f, PetState.breathPeriod(2f, base), 0.01f)
+        assertEquals("10 倍速度", base / 10f, PetState.breathPeriod(10f, base), 0.01f)
+        assertEquals("0.5 倍 = 两倍周期", base * 2f, PetState.breathPeriod(0.5f, base), 0.01f)
+        assertEquals("0.1 倍（下限）", base * 10f, PetState.breathPeriod(0.1f, base), 0.01f)
+    }
+
+    /**
+     * **速度调大周期必须变短** —— 这条单独钉死，防止有人把除法改成乘法。
+     *
+     * 用户调的是"速度"：滑条往右拉应该呼吸更快。写成乘法的话往右拉会变慢，
+     * 是个很容易犯、又很难在代码审查里看出来的方向性错误。
+     */
+    @Test
+    fun faster_speed_means_shorter_period() {
+        val base = 2600f
+        val slow = PetState.breathPeriod(0.5f, base)
+        val mid = PetState.breathPeriod(1f, base)
+        val fast = PetState.breathPeriod(4f, base)
+        assertTrue("0.5 倍应该比 1 倍慢（周期更长）", slow > mid)
+        assertTrue("4 倍应该比 1 倍快（周期更短）", fast < mid)
+    }
+
+    /** 防御：speed <= 0 时不能除零，退回基准周期 */
+    @Test
+    fun breath_period_guards_against_non_positive_speed() {
+        val base = 2600f
+        assertEquals(base, PetState.breathPeriod(0f, base), 0.01f)
+        assertEquals(base, PetState.breathPeriod(-3f, base), 0.01f)
+    }
+
+    /**
+     * 波形本身只认周期：同一个 elapsed、周期越短 -> 相位越靠后。
+     *
+     * 也就是说"速度只影响播放快慢"，与幅度（由调用方另乘）互不干涉。
+     */
+    @Test
+    fun breath_wave_phase_advances_faster_with_shorter_period() {
+        // ⚠️ 容差不能取太小：sin(2*pi*n) 在浮点下不是精确的 0，
+        //    实测 sin(pi) = -8.7e-8。用 1e-4 的容差足够表达"回到 0"。
+        val eps = 1e-4f
+        val elapsed = 2600f
+        // 三个周期都能整除 elapsed，都应回到 0 —— 说明确实是"相位推进更快"
+        // 而不是幅度变了
+        assertEquals(0f, PetState.breathWave(elapsed, 0f, 2600f), eps)
+        assertEquals(0f, PetState.breathWave(elapsed, 0f, 1300f), eps)
+        assertEquals(0f, PetState.breathWave(elapsed, 0f, 650f), eps)
+        // ⚠️ 峰值在 **u = 0.25**（四分之一周期），不是 0.5。
+        //    breathWave 是 sin(2*pi*u)：u=0.25 -> 1，u=0.5 -> 0，u=1 -> 0。
+        //    我第一版把 0.5 当成峰，结果拿到 -8.7e-8（就是那个 0），
+        //    还误以为是浮点精度问题去放宽容差 —— 实际是参数给错了。
+        assertEquals(1f, PetState.breathWave(650f, 0f, 2600f), eps)
+        assertEquals(1f, PetState.breathWave(325f, 0f, 1300f), eps)
+        // 四分之三周期处是谷
+        assertEquals(-1f, PetState.breathWave(1950f, 0f, 2600f), eps)
+    }
 }

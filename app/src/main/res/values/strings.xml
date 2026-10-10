@@ -64,6 +64,7 @@
     <string name="breath_disabled_hint">呼吸已停用</string>
     <string name="breath_enabled_hint">呼吸已启用</string>
     <string name="breath_amp_label_value">呼吸幅度倍率　×%1$s　·　±%2$d%% 身高</string>
+    <string name="breath_speed_label_value">呼吸速度倍率　×%1$s　·　%2$d 毫秒/次</string>
     <string name="breath_input">倍率</string>
     <string name="breath_restored">呼吸已恢复默认</string>
 

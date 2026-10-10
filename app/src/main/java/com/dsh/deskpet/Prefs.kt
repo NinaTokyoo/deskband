@@ -228,15 +228,46 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(KEY_BREATH_ON, true)
         set(v) { sp.edit().putBoolean(KEY_BREATH_ON, v).apply() }
 
-    /** 呼吸幅度倍率：1.0 = 现在幅度的 1.3 倍，范围 0.5~10 */
+    /**
+     * 呼吸**幅度**倍率：1.0 = 基准幅度（[BREATH_SQ_BASE]），范围 [BREATH_MIN]~[BREATH_MAX]。
+     *
+     * ⚠️ 用户明确要求**幅度与速度分开**：
+     * "呼吸幅度倍率则只决定呼吸动画的幅度" —— 所以这个值只影响幅度，
+     * 不要再顺手拿它去缩周期（速度见 [breathSpeed]）。
+     */
     var breathScale: Float
         get() = sp.getFloat(KEY_BREATH_SCALE, 1f).coerceIn(BREATH_MIN, BREATH_MAX)
         set(v) {
             sp.edit().putFloat(KEY_BREATH_SCALE, v.coerceIn(BREATH_MIN, BREATH_MAX)).apply()
         }
 
+    /**
+     * 呼吸**速度**倍率：1.0 = 基准周期 [BREATH_PERIOD_BASE_MS]（2600ms），
+     * 范围 [BREATH_SPEED_MIN]~[BREATH_SPEED_MAX]（0.1~10）。
+     *
+     * 值越大呼吸越快 —— 玩法是用它去**除**周期（见 [breathPeriodMs]）。
+     * 用户要求："新增呼吸速度倍率，决定呼吸动画的播放速度，0.1~10 可调节"。
+     */
+    var breathSpeed: Float
+        get() = sp.getFloat(KEY_BREATH_SPEED, 1f)
+            .coerceIn(BREATH_SPEED_MIN, BREATH_SPEED_MAX)
+        set(v) {
+            sp.edit()
+                .putFloat(KEY_BREATH_SPEED, v.coerceIn(BREATH_SPEED_MIN, BREATH_SPEED_MAX))
+                .apply()
+        }
+
     /** 呼吸在**法线**方向的幅度（占素材高度的比例） */
     val breathSq: Float get() = BREATH_SQ_BASE * breathScale
+
+    /**
+     * 呼吸周期（ms）= 基准周期 / 速度倍率。
+     *
+     * 换算本身在 [PetState.breathPeriod] 里（纯函数、有单测）—— 那段逻辑
+     * 最容易把"速度"写成乘法，所以特意挪出去让它可测。
+     */
+    val breathPeriodMs: Float
+        get() = PetState.breathPeriod(breathSpeed, BREATH_PERIOD_BASE_MS)
 
     /**
      * 复位时是否**保留当前设置**。
@@ -282,6 +313,7 @@ class Prefs(context: Context) {
         private const val KEY_SUMMON_SPRING = "summon_spring_scale"
         private const val KEY_BREATH_ON = "breath_on"
         private const val KEY_BREATH_SCALE = "breath_scale"
+        private const val KEY_BREATH_SPEED = "breath_speed"
 
         /** 通知栏自定义内容的字符上限（用户指定 40） */
         const val NOTIFY_TEXT_MAX = 40
@@ -372,5 +404,23 @@ class Prefs(context: Context) {
 
         const val BREATH_MIN = 0.5f
         const val BREATH_MAX = 10f
+
+        /**
+         * 呼吸**周期**基准值（ms）。倍率 1.0 对应它。
+         *
+         * 原来这个数写死在 `PetView.BREATH_PERIOD_MS`，现在挪到这里成为
+         * 唯一真值，PetView 改为读 [breathPeriodMs]。
+         */
+        const val BREATH_PERIOD_BASE_MS = 2600f
+
+        /**
+         * 呼吸速度倍率范围：**0.1 ~ 10**（用户指定）。
+         *
+         * 与幅度范围（[BREATH_MIN]/[BREATH_MAX] = 0.5~10）**不同**：
+         * 速度下限是 0.1（能慢到几乎看不出在动），幅度下限是 0.5。
+         * 别把两者合并成一个常量。
+         */
+        const val BREATH_SPEED_MIN = 0.1f
+        const val BREATH_SPEED_MAX = 10f
     }
 }

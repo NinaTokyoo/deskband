@@ -87,6 +87,9 @@ class MainActivity : Activity() {
     private lateinit var btnSummonToggle: Button
 
     // ---- 呼吸卡 ----
+    private lateinit var seekBreathSpeed: SeekBar
+    private lateinit var txtBreathSpeed: TextView
+    private lateinit var editBreathSpeed: EditText
     private lateinit var seekBreathAmp: SeekBar
     private lateinit var txtBreathAmp: TextView
     private lateinit var editBreathAmp: EditText
@@ -185,6 +188,9 @@ class MainActivity : Activity() {
         btnSaveSummon = findViewById(R.id.btnSaveSummon)
         btnResetSummon = findViewById(R.id.btnResetSummon)
         btnSummonToggle = findViewById(R.id.btnSummonToggle)
+        seekBreathSpeed = findViewById(R.id.seekBreathSpeed)
+        txtBreathSpeed = findViewById(R.id.txtBreathSpeed)
+        editBreathSpeed = findViewById(R.id.editBreathSpeed)
         seekBreathAmp = findViewById(R.id.seekBreathAmp)
         txtBreathAmp = findViewById(R.id.txtBreathAmp)
         editBreathAmp = findViewById(R.id.editBreathAmp)
@@ -831,6 +837,35 @@ class MainActivity : Activity() {
      * 关掉总开关时 ticker 会立刻停下（见 PetView 的呼吸分支）。
      */
     private fun setupBreathControls() {
+        // ---- 速度：与幅度完全独立 ----
+        //
+        // 用**线性**映射：区间 0.1~10 跨度不大，线性下 1.0 落在偏左但可接受；
+        // 用对数的话 1.0 正好在正中，但 0.1~10 的两端手感差别（0.1 慢到几乎
+        // 看不出、10 快到发颤）更适合线性 —— 与幅度一致，用户已在幅度上习惯。
+        seekBreathSpeed.max = 1000
+        seekBreathSpeed.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                prefs.breathSpeed =
+                    scaleOfLinear(progress, Prefs.BREATH_SPEED_MIN, Prefs.BREATH_SPEED_MAX)
+                bindBreathControls()
+            }
+            override fun onStartTrackingTouch(sb: SeekBar?) = Unit
+            override fun onStopTrackingTouch(sb: SeekBar?) = Unit
+        })
+
+        val applySpeed = {
+            parseScale(
+                editBreathSpeed.text.toString(),
+                Prefs.BREATH_SPEED_MIN, Prefs.BREATH_SPEED_MAX
+            )?.let { prefs.breathSpeed = it }
+            bindBreathControls()
+        }
+        editBreathSpeed.setOnEditorActionListener { _, _, _ ->
+            applySpeed(); clearInputFocus(); true
+        }
+        editBreathSpeed.setOnFocusChangeListener { _, has -> if (!has) applySpeed() }
+
         seekBreathAmp.max = 1000
         seekBreathAmp.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
@@ -851,6 +886,11 @@ class MainActivity : Activity() {
         editBreathAmp.setOnFocusChangeListener { _, has -> if (!has) applyAmp() }
 
         btnSaveBreath.setOnClickListener {
+            // 两个输入框一起应用（用户点的是这张卡的"保存并应用"）
+            parseScale(
+                editBreathSpeed.text.toString(),
+                Prefs.BREATH_SPEED_MIN, Prefs.BREATH_SPEED_MAX
+            )?.let { prefs.breathSpeed = it }
             parseScale(editBreathAmp.text.toString(), Prefs.BREATH_MIN, Prefs.BREATH_MAX)
                 ?.let { prefs.breathScale = it }
             bindBreathControls()
@@ -858,7 +898,10 @@ class MainActivity : Activity() {
         }
 
         btnResetBreath.setOnClickListener {
+            // ⚠️ 两个参数都要归位 —— 这张卡现在有幅度和速度两项，
+            //    只复位其中一个会让"恢复默认值"变得不可预期。
             prefs.breathScale = 1f
+            prefs.breathSpeed = 1f
             bindBreathControls()
             clearInputFocus()
         }
@@ -878,6 +921,18 @@ class MainActivity : Activity() {
     /** 把呼吸卡的控件状态同步到 Prefs（含总开关的启用/停用外观） */
     private fun bindBreathControls() {
         val on = prefs.breathEnabled
+
+        // 速度
+        seekBreathSpeed.progress = progressOfScaleLinear(
+            prefs.breathSpeed, Prefs.BREATH_SPEED_MIN, Prefs.BREATH_SPEED_MAX
+        )
+        editBreathSpeed.setText(fmtScale(prefs.breathSpeed))
+        txtBreathSpeed.text = getString(
+            R.string.breath_speed_label_value, fmtScale(prefs.breathSpeed),
+            prefs.breathPeriodMs.roundToInt()
+        )
+
+        // 幅度
         seekBreathAmp.progress =
             progressOfScaleLinear(prefs.breathScale, Prefs.BREATH_MIN, Prefs.BREATH_MAX)
         editBreathAmp.setText(fmtScale(prefs.breathScale))
@@ -885,10 +940,14 @@ class MainActivity : Activity() {
             R.string.breath_amp_label_value, fmtScale(prefs.breathScale),
             (prefs.breathSq * 100f).roundToInt()
         )
+
         btnBreathToggle.text = getString(if (on) R.string.breath_off else R.string.breath_on)
+        seekBreathSpeed.isEnabled = on
+        editBreathSpeed.isEnabled = on
         seekBreathAmp.isEnabled = on
         editBreathAmp.isEnabled = on
         btnResetBreath.isEnabled = on
+        txtBreathSpeed.alpha = if (on) 1f else 0.45f
         txtBreathAmp.alpha = if (on) 1f else 0.45f
     }
 
