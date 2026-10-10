@@ -645,17 +645,24 @@ class PetService : Service(), PetView.Host {
         }
         val v = petView ?: return
         v.sprite = sprite
-        // setSizeFraction 已经"以吸附边为基准"缩放并夹进屏幕，这里不必再吸附一次
+        // 以**吸附边为基准**缩放（贴底/下角 -> 底边不动，贴侧边 -> 那一侧不动）。
         v.setSizeFraction(prefs.sizeFraction)
-        if (prefs.hasPosition) {
-            // 用存档精确落位
-            v.restore(v.state, prefs.posLeft, prefs.posTop)
-        } else {
-            // 没有存档才退回"按状态的标准位置"（否则每次改大小都会先跳一下）
-            v.applySnap(v.state)
-        }
-        // syncWindow 不能省 —— 否则宠物的新尺寸超出窗口，超出部分点不到
-        // （用户实测踩过："调整大小之后明明点到并拖动但是没有反应"）。
+        // ⚠️ 这里**不要**再调 v.restore(...)。
+        //
+        // 曾经是"先 setSizeFraction，再 restore(state, posLeft, posTop)"。
+        // setSizeFraction 的锚定是对的（记下吸附边的屏幕位置，缩放后让那条边
+        // 回到原位）；但紧接着的 restore 会用**存档里的 posLeft/posTop** 重新摆位，
+        // 而那对坐标在这次改动里根本没变过 —— 等于按"足迹左上角固定"缩放，
+        // 贴右边框时右缘会随着变小一路往左退。
+        //
+        // 实测（贴右边框，屏宽 1440）：
+        //   scale 1.0   -> 窗口 right=1550
+        //   scale 0.841 -> 窗口 right=1495，而存档仍是 pos=(1193,1392)
+        //   scale 0.653 -> 窗口 right=1429
+        // 右缘退到 1429 就是用户看到的"人物悬浮、不吸附"。
+        //
+        // 侧边形态（贴左右边框）纵向本来要**垂直居中**，按足迹左上角固定也保不住
+        // 居中 —— 所以不恢复位置反而是更正确的行为。
         v.syncWindow()
     }
 
