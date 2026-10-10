@@ -693,6 +693,43 @@ class PetStateTest {
         assertTrue("长按弹起($longJump)应该明显大于轻跳($tapJump)", longJump > tapJump * 2.5f)
     }
 
+    /**
+     * 落地回弹曲线：`0 -> 压扁 -> 轻微拉伸 -> 0`，两端精确。
+     *
+     * 用户要求："长按弹起落地之后加一个回弹效果"，"还有单击也是"。
+     */
+    @Test
+    fun the_landing_rebound_squashes_then_springs_back_to_zero() {
+        // 两端必须精确：起点 0、终点 0（否则落地后会残留变形）
+        assertEquals(0f, PetState.landSquash(0f), 0.0001f)
+        assertEquals(0f, PetState.landSquash(1f), 0.0001f)
+        // 越界夹住
+        assertEquals(0f, PetState.landSquash(-1f), 0.0001f)
+        assertEquals(0f, PetState.landSquash(2f), 0.0001f)
+
+        // 前 25% 压到最深（= 1），随后回落
+        assertEquals(1f, PetState.landSquash(0.25f), 0.0001f)
+        // 两段在 0.25 处连续（左右极限一致）
+        assertTrue(abs(PetState.landSquash(0.249f) - PetState.landSquash(0.251f)) < 0.01f)
+
+        var peak = -1f
+        var deepest = 0f
+        var prev = PetState.landSquash(0f)
+        for (i in 1..400) {
+            val v = PetState.landSquash(i / 400f)
+            if (v > peak) peak = v
+            if (v < deepest) deepest = v
+            // 曲线要连续（相邻采样不跳变）
+            assertTrue("曲线跳变", abs(v - prev) < 0.03f)
+            prev = v
+        }
+        // 峰值就是 1（压到设定的深度），不会超出
+        assertTrue("峰值 $peak 应为 1", peak <= 1.0001f && peak > 0.99f)
+        // 必须真的"弹回来"：中途要过冲到轻微拉伸（负值），否则只是慢慢鼓回来
+        assertTrue("没有回弹过冲：$deepest", deepest < -0.05f)
+        assertTrue("过冲过大：$deepest", deepest > -0.35f)
+    }
+
     @Test
     fun attached_states_are_recognised_for_drag_damping() {
         // 吸附状态起步才加阻尼

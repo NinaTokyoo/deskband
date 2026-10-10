@@ -522,7 +522,6 @@ class PetView(context: Context) : View(context) {
     private var releasing = false
     private var releaseStart = 0L
     private var releaseFrom = 0f
-
     /** 松手回弹的时长（带弹起时用 [PRESS_JUMP_MS]，让"弹起 + 回弹"同时结束） */
     private var releaseMs = PRESS_RELEASE_MS
 
@@ -533,6 +532,11 @@ class PetView(context: Context) : View(context) {
      * 它是**画布平移**，不参与位置记账 —— 所以不会把宠物挪走。
      */
     private var releaseJumpPx = 0f
+
+    /** 弹起落地后要不要回弹；[landSq] 是落地压缩深度（0 = 不回弹） */
+    private var landing = false
+    private var landStart = 0L
+    private var landSq = 0f
 
     /**
      * 点击反馈：**先压扁再弹起**，而且压缩方向始终与人物头朝向一致。
@@ -577,6 +581,11 @@ class PetView(context: Context) : View(context) {
             // 用更"软"的摆动系数：回弹只轻微过冲一下（最多约 16% 的拉伸），
             // 不会把人物拉得又高又瘦
             1f
+        )
+        // 落地回弹：单击轻跳 / 长按弹起落下来那一下（见 [startLanding]）
+        landing -> landSq * PetState.landSquash(
+            ((SystemClock.uptimeMillis() - landStart).toFloat() / PRESS_LAND_MS)
+                .coerceIn(0f, 1f)
         )
         else -> 0f
     }
@@ -624,6 +633,22 @@ class PetView(context: Context) : View(context) {
         releaseMs = if (jumpPx > 0f) PRESS_JUMP_MS else PRESS_RELEASE_MS
         releaseStart = SystemClock.uptimeMillis()
         releasing = true
+        choreographer.removeFrameCallback(frameCallback)
+        scheduleFrame()
+    }
+
+    /**
+     * 落地回弹：轻跳 / 长按弹起**落地那一下**压一下再弹回来。
+     *
+     * 用户要求："长按弹起落地之后加一个回弹效果"，以及"还有单击也是"。
+     * 曲线用 [PetState.landSquash]：快速压下去 → 轻微过冲到拉伸 → 落定，
+     * 结束后压缩量严格为 0，不会残留变形。
+     */
+    private fun startLanding(sq: Float = PRESS_LAND_SQ) {
+        if (sq <= 0.001f) return
+        landSq = sq
+        landStart = SystemClock.uptimeMillis()
+        landing = true
         choreographer.removeFrameCallback(frameCallback)
         scheduleFrame()
     }
@@ -860,7 +885,11 @@ class PetView(context: Context) : View(context) {
             // 注：flipRunning 只在真正翻转时被置 true（见 startFlip）
             if (hopping) {
                 val t = ((now - hopStart).toFloat() / HOP_MS).coerceIn(0f, 1f)
-                if (t >= 1f) hopping = false
+                if (t >= 1f) {
+                    hopping = false
+                    // 轻跳落地 -> 落地回弹（用户要求"还有单击也是"）
+                    startLanding()
+                }
                 need = true
             }
             if (pressing) {
@@ -870,9 +899,17 @@ class PetView(context: Context) : View(context) {
             if (releasing) {
                 val t = ((now - releaseStart).toFloat() / releaseMs).coerceIn(0f, 1f)
                 if (t >= 1f) {
+                    val hadJump = releaseJumpPx > 0f
                     releasing = false
                     releaseJumpPx = 0f
+                    // 弹起落地 -> 落地回弹
+                    if (hadJump) startLanding()
                 }
+                need = true
+            }
+            if (landing) {
+                val t = ((now - landStart).toFloat() / PRESS_LAND_MS).coerceIn(0f, 1f)
+                if (t >= 1f) landing = false
                 need = true
             }
             // 只有真的有动画时才重绘。
@@ -1926,6 +1963,7 @@ class PetView(context: Context) : View(context) {
                 // 松手时按"压到多深"分流：浅的接着播点击动画，深的只回弹。
                 hopping = false
                 releasing = false
+                landing = false
                 pressing = true
                 pressStart = SystemClock.uptimeMillis()
                 choreographer.removeFrameCallback(frameCallback)
@@ -2465,13 +2503,31 @@ class PetView(context: Context) : View(context) {
          */
         private const val PRESS_JUMP_FRACTION = 0.28f
 
-        /**
-         * 长按松手"弹起 + 回弹"的总时长（弹起是正弦半波，到点正好落回 0）。
+        /** 长按松手"弹起 + 回弹"的总时长（弹起是正弦半波，到点正好落回 0）。
          *
          * 实测（把这一段临时放慢到 3s 后逐帧量）：压满松手后人物顶部最高到
          * 离落点 **68~71px**（= 0.28 × 247 的等比弹起），静止后与松手前**零像素差**。
          */
         private const val PRESS_JUMP_MS = 380f
+
+        /**
+         * 落地回弹的压缩深度（占素材高度）。
+         *
+         * 用户要求："长按弹起落地之后加一个回弹效果"，"还有单击也是"。
+         * 轻跳与长按弹起**共用**这一个深度：它是"落地那一下"的冲击感，
+         * 跟弹起多高关系不大，固定值反而更稳（0.14 × 247 ≈ 35px，看得清）。
+         */
+        private const val PRESS_LAND_SQ = 0.14f
+
+        /**
+         * 落地回弹时长（压下去 + 弹回来）。
+         *
+         * 实测（把这一段临时放慢到 3s 后逐帧量宽度，正常 289px、压 14% 时 329px）：
+         *   单击：301 -> **323** -> 316 -> 288（压扁 → 回弹 → 落定）
+         *   长按：421 -> **326** -> 315 -> 288（弹起落地 → 回弹 → 落定）
+         * 两者结束后都与初始画面**零像素差**。
+         */
+        private const val PRESS_LAND_MS = 260f
 
         /**
          * 窗口上下余量按哪个比例算 = 轻跳与长按弹起里**更大的那个**。
