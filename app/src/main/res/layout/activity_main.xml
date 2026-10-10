@@ -66,9 +66,8 @@
 
                     <TextView
                         android:id="@+id/txtPermOverlay"
-                        android:layout_width="0dp"
+                        android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
                         android:maxLines="1"
                         android:ellipsize="end"
                         android:text="@string/perm_overlay"
@@ -79,7 +78,7 @@
                         android:id="@+id/markOverlay"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="6dp"
+                        android:layout_marginStart="3dp"
                         android:textSize="16sp"
                         android:textStyle="bold"
                         android:text="@string/perm_missing_mark" />
@@ -99,9 +98,8 @@
 
                     <TextView
                         android:id="@+id/txtPermNotify"
-                        android:layout_width="0dp"
+                        android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
                         android:maxLines="1"
                         android:ellipsize="end"
                         android:text="@string/perm_notify"
@@ -112,7 +110,7 @@
                         android:id="@+id/markNotify"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="6dp"
+                        android:layout_marginStart="3dp"
                         android:textSize="16sp"
                         android:textStyle="bold"
                         android:text="@string/perm_missing_mark" />
