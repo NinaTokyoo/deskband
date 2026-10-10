@@ -1,4 +1,7 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+// ⚠️ 必须显式 import：在 Gradle 的 Kotlin DSL 里 `java` 会被解析成 Java 插件扩展，
+//    写 `java.util.Properties` 会报 "Unresolved reference: util"。
+import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -74,9 +77,12 @@ android {
         //                     而浅色那张图四角颜色并不一致，铺底会在圆角外露出
         //                     一圈可见色差边（用户反馈的"粉色框"）。
         //                     现在不裁切、不拼接、无色差）
+        //   2.0.13 -> 20013（发布前安全整改：签名口令从 app/build.gradle.kts 挪到
+        //                     local.properties（已被 .gitignore 排除）；
+        //                     该文件会进仓库，明文口令会随仓库公开）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏。
-        val vName = "2.0.12"
+        val vName = "2.0.13"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()
@@ -84,26 +90,50 @@ android {
         // 纯平台实现，不依赖 AndroidX / Material，包体小、构建面窄
     }
 
+    // 签名配置。
+    //
+    // ⚠️ 口令**不写在这里**：这个文件是提交进仓库的，明文口令会随仓库一起公开。
+    //    改从 local.properties 读（该文件已在 .gitignore 里），键名见下方注释；
+    //    本地那份已经填好了，所以日常构建不受影响。
+    //    如果 local.properties 里没有这几项（比如别人 clone 下来直接构建），
+    //    签名配置会被跳过、release 产出未签名包 —— 不影响 assembleDebug 与单测。
+    val signProps = Properties().apply {
+        val f = rootProject.file("local.properties")
+        if (f.exists()) f.inputStream().use { load(it) }
+    }
+    val signStore = signProps.getProperty("signing.storeFile")
+        ?: System.getenv("DESKBAND_STORE_FILE")
+    val signStorePwd = signProps.getProperty("signing.storePassword")
+        ?: System.getenv("DESKBAND_STORE_PASSWORD")
+    val signAlias = signProps.getProperty("signing.keyAlias")
+        ?: System.getenv("DESKBAND_KEY_ALIAS")
+    val signKeyPwd = signProps.getProperty("signing.keyPassword")
+        ?: System.getenv("DESKBAND_KEY_PASSWORD")
+    val canSign = signStore != null && signStorePwd != null &&
+        signAlias != null && signKeyPwd != null
+
     signingConfigs {
-        create("petkey") {
-            storeFile = rootProject.file("keystore/deskpet.jks")
-            storePassword = "deskpet2026"
-            keyAlias = "deskpet"
-            keyPassword = "deskpet2026"
+        if (canSign) {
+            create("petkey") {
+                storeFile = rootProject.file(signStore!!)
+                storePassword = signStorePwd
+                keyAlias = signAlias
+                keyPassword = signKeyPwd
+            }
         }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("petkey")
+            if (canSign) signingConfig = signingConfigs.getByName("petkey")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
         debug {
-            signingConfig = signingConfigs.getByName("petkey")
+            if (canSign) signingConfig = signingConfigs.getByName("petkey")
         }
     }
 
