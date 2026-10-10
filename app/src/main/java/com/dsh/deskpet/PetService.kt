@@ -135,6 +135,18 @@ class PetService : Service(), PetView.Host {
     // ---------------------------------------------------------------- 通知
 
     /**
+     * 通知标题：「<当前形象名>正在陪伴你」。
+     *
+     * 形象名取 sprite 的 displayName（pet.json 里的 name），
+     * 还没加载出 sprite 时退回通用文案。
+     */
+    private fun notificationTitle(): String {
+        val name = sprite?.displayName
+        return if (name.isNullOrBlank()) getString(R.string.notif_title_fallback)
+        else getString(R.string.notif_title_fmt, name)
+    }
+
+    /**
      * 通知正文：优先用用户自定义内容，为空则回落到默认文案。
      *
      * 再 take 一次上限是防御性的 —— 万一历史存档里有超长串。
@@ -173,7 +185,7 @@ class PetService : Service(), PetView.Host {
 
         val builder = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_pet_notify)
-            .setContentTitle(getString(R.string.notif_title))
+            .setContentTitle(notificationTitle())
             .setContentText(notificationText())
             .setContentIntent(open)
             .setOngoing(true)
@@ -211,6 +223,9 @@ class PetService : Service(), PetView.Host {
                 return
             }
         sprite = s
+        // 通知标题里要带形象名，而 onCreate 里第一次 startForeground 时
+        // sprite 还是 null（会退回默认文案）。这里加载完立刻重发一次通知。
+        runCatching { startForegroundCompat() }
 
         val b = screenBounds()
         val view = PetView(this)

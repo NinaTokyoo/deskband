@@ -3,6 +3,7 @@ package com.dsh.deskpet
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Paint
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -27,10 +28,10 @@ class MainActivity : Activity() {
 
     private lateinit var prefs: Prefs
 
-    private lateinit var txtOverlayStatus: TextView
-    private lateinit var btnOverlay: Button
-    private lateinit var txtNotifyStatus: TextView
-    private lateinit var btnNotify: Button
+    private lateinit var rowOverlay: View
+    private lateinit var rowNotify: View
+    private lateinit var markOverlay: TextView
+    private lateinit var markNotify: TextView
     private lateinit var btnToggle: Button
     private lateinit var seekSize: SeekBar
     private lateinit var txtSize: TextView
@@ -56,16 +57,27 @@ class MainActivity : Activity() {
     private var skins: List<String> = emptyList()
     private var bindingSkin = false
 
+    /** 通知权限是否已经弹过系统对话框（弹过之后再点就直接去设置页） */
+    private var notifyAsked = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         prefs = Prefs(this)
         // 分区几何用 PetState 里的固定默认值（A 区尺寸调节功能已取消）
 
-        txtOverlayStatus = findViewById(R.id.txtOverlayStatus)
-        btnOverlay = findViewById(R.id.btnOverlay)
-        txtNotifyStatus = findViewById(R.id.txtNotifyStatus)
-        btnNotify = findViewById(R.id.btnNotify)
+        rowOverlay = findViewById(R.id.rowOverlay)
+        rowNotify = findViewById(R.id.rowNotify)
+        markOverlay = findViewById(R.id.markOverlay)
+        markNotify = findViewById(R.id.markNotify)
+
+        // 下划线只能在代码里加（android:paintFlags 不是合法的 XML 属性）
+        for (tv in arrayOf(
+            findViewById<TextView>(R.id.txtPermOverlay),
+            findViewById<TextView>(R.id.txtPermNotify)
+        )) {
+            tv.paintFlags = tv.paintFlags or Paint.UNDERLINE_TEXT_FLAG
+        }
         btnToggle = findViewById(R.id.btnToggle)
         seekSize = findViewById(R.id.seekSize)
         txtSize = findViewById(R.id.txtSize)
@@ -88,8 +100,8 @@ class MainActivity : Activity() {
         setupBounceControls()
         setupNotifyControls()
 
-        btnOverlay.setOnClickListener { openOverlaySettings() }
-        btnNotify.setOnClickListener { requestNotificationPermission() }
+        rowOverlay.setOnClickListener { openOverlaySettings() }
+        rowNotify.setOnClickListener { openNotificationSettings() }
         btnToggle.setOnClickListener { togglePet() }
         btnReset.setOnClickListener { doReset() }
 
@@ -190,31 +202,34 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------------- 状态刷新
 
     private fun refreshUi() {
-        val overlayOk = Settings.canDrawOverlays(this)
-        txtOverlayStatus.text = getString(
-            if (overlayOk) R.string.perm_overlay_on else R.string.perm_overlay_off
-        )
-        btnOverlay.text = getString(
-            if (overlayOk) R.string.perm_overlay_btn_on else R.string.perm_overlay_btn_off
-        )
-        btnOverlay.isEnabled = !overlayOk
+        // 权限行：已开启 -> 绿勾，未开启 -> 红叉
+        setPermMark(markOverlay, Settings.canDrawOverlays(this))
+        setPermMark(markNotify, hasNotificationPermission())
 
-        val notifyOk = hasNotificationPermission()
-        txtNotifyStatus.text = getString(
-            if (notifyOk) R.string.perm_notify_on else R.string.perm_notify_off
+        // 开关按钮：呼出/收起 + **当前形象名**。
+        // 名字跟着下拉框走，与桌宠是否在运行无关。
+        btnToggle.text = getString(
+            if (prefs.running) R.string.btn_dismiss else R.string.btn_summon,
+            currentSkinName()
         )
-        btnNotify.isEnabled = !notifyOk && Build.VERSION.SDK_INT >= 33
-
-        btnToggle.text = getString(if (prefs.running) R.string.btn_stop else R.string.btn_start)
 
         bindingSkin = true
         val idx = skins.indexOf(prefs.skin).coerceAtLeast(0)
         spinnerSkin.setSelection(idx, false)
         bindingSkin = false
 
-
         bindSizeControls()
     }
+
+    /** 小标记：已开启绿勾，未开启红叉 */
+    private fun setPermMark(tv: TextView, ok: Boolean) {
+        tv.text = getString(if (ok) R.string.perm_granted_mark else R.string.perm_missing_mark)
+        tv.setTextColor(if (ok) COLOR_OK else COLOR_BAD)
+    }
+
+    /** 当前形象的中文显示名（pet.json 里的 name），取不到就退回目录名 */
+    private fun currentSkinName(): String =
+        PetSprite.load(assets, prefs.skin)?.displayName ?: prefs.skin
 
     private fun hasNotificationPermission(): Boolean {
         if (Build.VERSION.SDK_INT < 33) return true
@@ -247,11 +262,39 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * 跳到系统的**通知设置页**（用户要求"点击直接跳转到设置中对应的权限界面"）。
+     *
+     * 33 以上优先走运行时申请对话框（体验更顺），用户拒绝过之后再点才去设置页。
+     */
+    private fun openNotificationSettings() {
+        if (Build.VERSION.SDK_INT >= 33 && !hasNotificationPermission() && !notifyAsked) {
+            notifyAsked = true
+            requestNotificationPermission()
+            return
+        }
+        try {
+            startActivity(
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+            )
+        } catch (e: Exception) {
+            try {
+                startActivity(
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                        .setData(Uri.parse("package:$packageName"))
+                )
+            } catch (e2: Exception) {
+                // 忽略
+            }
+        }
+    }
+
     private fun togglePet() {
         if (prefs.running) {
             PetService.stop(this)
             prefs.running = false
-            btnToggle.text = getString(R.string.btn_start)
+            refreshUi()
             return
         }
         if (!Settings.canDrawOverlays(this)) {
@@ -262,7 +305,7 @@ class MainActivity : Activity() {
         try {
             PetService.start(this)
             prefs.running = true
-            btnToggle.text = getString(R.string.btn_stop)
+            refreshUi()
         } catch (e: Exception) {
             Toast.makeText(this, R.string.start_failed, Toast.LENGTH_LONG).show()
         }
@@ -284,6 +327,11 @@ class MainActivity : Activity() {
                 val dir = skins.getOrNull(position) ?: return
                 if (dir == prefs.skin) return
                 prefs.skin = dir
+                // 按钮上的名字要立刻跟着换（与是否运行无关）
+                btnToggle.text = getString(
+                    if (prefs.running) R.string.btn_dismiss else R.string.btn_summon,
+                    labels.getOrNull(position) ?: dir
+                )
                 PetService.notifyChanged(this@MainActivity)
             }
 
@@ -441,6 +489,14 @@ class MainActivity : Activity() {
         txtNotifyCount.text = getString(R.string.notify_count, n, Prefs.NOTIFY_TEXT_MAX)
     }
 
+    private companion object {
+        /** 权限已开启的绿勾颜色 */
+        const val COLOR_OK = 0xFF4CD964.toInt()
+
+        /** 权限未开启的红叉颜色 */
+        const val COLOR_BAD = 0xFFFF453A.toInt()
+    }
+
     // ---------------------------------------------------------------- 大小调节
 
     /** 滑块进度(0..1000) <-> 大小倍率(0.5..5)，同样用对数刻度让 1.0 落在中间 */
@@ -480,21 +536,30 @@ class MainActivity : Activity() {
     /**
      * 收掉输入焦点：清焦点 + 隐藏软键盘。
      *
-     * 不清的话，点完"保存并应用"输入框仍处于聚焦态 ——
-     * 表现为蓝色下划线和一直闪的光标。
+     * **遍历整棵视图树找出所有 EditText**，而不是逐个写死名字 ——
+     * 用户要求"所有支持输入并保存的输入框都要在保存后去焦点"，
+     * 逐个写的话以后新增输入框很容易漏（已经因此踩过两次：
+     * 漏 editSize、漏 editNotify），遍历就永远不会漏。
      *
-     * ⚠️ 两个坑：
-     *   1. 三个输入框都要清（曾经漏掉 editSize，导致大小那个框一直亮着）
-     *   2. 必须先取 windowToken 再 clearFocus —— clearFocus() 之后
-     *      currentFocus 会变成 null，那时再取就拿到 null，
-     *      hideSoftInputFromWindow(null, 0) 是空操作，键盘根本不会关。
+     * ⚠️ 必须先取 windowToken 再 clearFocus —— clearFocus() 之后
+     * currentFocus 会变成 null，那时再取就拿到 null，
+     * hideSoftInputFromWindow(null, 0) 是空操作，键盘根本不会关。
      */
     private fun clearInputFocus() {
-        val token = (currentFocus ?: editSize).windowToken
-        editSize.clearFocus()
-        editBounceAmp.clearFocus()
-        editBounceMs.clearFocus()
+        val edits = ArrayList<EditText>()
+        collectEditTexts(findViewById(R.id.root), edits)
+        val token = (currentFocus ?: edits.firstOrNull())?.windowToken
+        for (e in edits) e.clearFocus()
         val imm = getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager
         imm?.hideSoftInputFromWindow(token, 0)
+    }
+
+    private fun collectEditTexts(v: View?, out: MutableList<EditText>) {
+        when (v) {
+            is EditText -> out.add(v)
+            is android.view.ViewGroup -> {
+                for (i in 0 until v.childCount) collectEditTexts(v.getChildAt(i), out)
+            }
+        }
     }
 }

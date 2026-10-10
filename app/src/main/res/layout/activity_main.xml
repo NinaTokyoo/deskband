@@ -27,12 +27,13 @@
 
         <TextView
             android:id="@+id/txtTitle"
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
-            android:text="@string/app_name"
+            android:gravity="center"
+            android:text="@string/ui_title"
             android:textColor="@color/text_primary"
-            android:textSize="24sp"
+            android:textSize="22sp"
             android:textStyle="bold" />
 
         <!-- ① 开关与权限 -->
@@ -51,55 +52,75 @@
                     android:layout_height="match_parent"
                     android:layout_weight="1"
                     android:layout_marginTop="0dp"
-                    android:text="@string/btn_start" />
+                    android:text="@string/btn_summon" />
 
                 <LinearLayout
                     android:layout_width="0dp"
-                    android:layout_height="wrap_content"
+                    android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:layout_marginStart="14dp"
-                    android:orientation="vertical">
+                    android:layout_marginStart="16dp"
+                    android:orientation="vertical"
+                    android:gravity="center_vertical">
 
-                    <TextView
-                        android:id="@+id/txtOverlayStatus"
+                    <!-- 悬浮窗权限：整行可点，右侧绿勾/红叉 -->
+                    <LinearLayout
+                        android:id="@+id/rowOverlay"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="13sp" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:background="?android:attr/selectableItemBackground"
+                        android:paddingTop="6dp"
+                        android:paddingBottom="6dp">
 
-                    <Button
-                        android:id="@+id/btnOverlay"
+                        <TextView
+                            android:id="@+id/txtPermOverlay"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/perm_overlay"
+                            android:textColor="@color/accent"
+                            android:textSize="15sp" />
+
+                        <TextView
+                            android:id="@+id/markOverlay"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:textSize="17sp"
+                            android:textStyle="bold"
+                            android:text="@string/perm_missing_mark" />
+                    </LinearLayout>
+
+                    <!-- 通知权限 -->
+                    <LinearLayout
+                        android:id="@+id/rowNotify"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:background="@drawable/btn_primary_bg"
-                        android:paddingTop="7dp"
-                        android:paddingBottom="7dp"
-                        android:textSize="13sp"
-                        android:textColor="@color/on_accent"
-                        android:stateListAnimator="@null"
-                        android:text="@string/perm_overlay_btn_off" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:background="?android:attr/selectableItemBackground"
+                        android:paddingTop="6dp"
+                        android:paddingBottom="6dp">
 
-                    <TextView
-                        android:id="@+id/txtNotifyStatus"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="13sp" />
+                        <TextView
+                            android:id="@+id/txtPermNotify"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/perm_notify"
+                            android:textColor="@color/accent"
+                            android:textSize="15sp" />
 
-                    <Button
-                        android:id="@+id/btnNotify"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:background="@drawable/btn_primary_bg"
-                        android:paddingTop="7dp"
-                        android:paddingBottom="7dp"
-                        android:textSize="13sp"
-                        android:textColor="@color/on_accent"
-                        android:stateListAnimator="@null"
-                        android:text="@string/perm_notify_btn_off" />
+                        <TextView
+                            android:id="@+id/markNotify"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:textSize="17sp"
+                            android:textStyle="bold"
+                            android:text="@string/perm_missing_mark" />
+                    </LinearLayout>
                 </LinearLayout>
             </LinearLayout>
         </LinearLayout>
@@ -140,10 +161,6 @@
                     android:stateListAnimator="@null"
                     android:text="@string/btn_reset" />
             </LinearLayout>
-
-            <TextView
-                style="@style/StatusLine"
-                android:text="@string/reset_hint" />
         </LinearLayout>
 
         <!-- ③ 外观 -->
@@ -206,10 +223,6 @@
             <TextView
                 style="@style/CardTitle"
                 android:text="@string/section_bounce" />
-
-            <TextView
-                style="@style/StatusLine"
-                android:text="@string/bounce_hint" />
 
             <TextView
                 android:layout_width="wrap_content"
@@ -304,10 +317,6 @@
             <TextView
                 style="@style/CardTitle"
                 android:text="@string/section_notify" />
-
-            <TextView
-                style="@style/StatusLine"
-                android:text="@string/notify_hint" />
 
             <EditText
                 android:id="@+id/editNotify"

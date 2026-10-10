@@ -3,23 +3,23 @@
     <string name="app_name">桌宠 DeskPet</string>
     <string name="subtitle">让它待在桌面上陪着你。点一下它会开心跳一下，拖起来能换边。</string>
 
+    <!-- 页面标题 -->
+    <string name="ui_title">Band Pet by NinaTokyoo</string>
+
     <!-- ① 开关与权限 -->
-    <string name="btn_start">开启桌宠</string>
-    <string name="btn_stop">收起桌宠</string>
+    <string name="btn_summon">呼出%1$s</string>
+    <string name="btn_dismiss">收起%1$s</string>
     <string name="need_overlay">还没有悬浮窗权限，先去设置里打开</string>
     <string name="start_failed">启动失败，请确认悬浮窗权限已开启</string>
-    <string name="perm_overlay_on">悬浮窗权限：已开启</string>
-    <string name="perm_overlay_off">悬浮窗权限：未开启（必须开，否则桌宠出不来）</string>
-    <string name="perm_overlay_btn_on">悬浮窗权限已开启</string>
-    <string name="perm_overlay_btn_off">去开启悬浮窗权限</string>
-    <string name="perm_notify_on">通知权限：已开启</string>
-    <string name="perm_notify_off">通知权限：未开启（不开也能用，只是看不到常驻通知）</string>
-    <string name="perm_notify_btn_off">开启通知权限</string>
+    <!-- 权限入口：文案严格按用户要求，只有这两行 -->
+    <string name="perm_overlay">悬浮窗权限</string>
+    <string name="perm_notify">通知权限</string>
+    <string name="perm_granted_mark">✓</string>
+    <string name="perm_missing_mark">✗</string>
 
     <!-- ② 形象与复位 -->
     <string name="section_skin">当前形象</string>
     <string name="btn_reset">复位</string>
-    <string name="reset_hint">出现任何 bug，请尝试点击右侧「复位」键：大小与回弹恢复默认，桌宠回到右边框中点。</string>
     <string name="reset_done">已复位</string>
     <string name="reset_need_running">桌宠还没开启，先点左侧「开启桌宠」</string>
 
@@ -34,9 +34,8 @@
     <string name="save_apply">保存并应用</string>
     <string name="chk_autostart">开机自动叫它出来</string>
 
-    <!-- ④ 松手回弹 -->
+    <!-- ④ 松手回弹（介绍文字已按要求去掉） -->
     <string name="section_bounce">松手回弹</string>
-    <string name="bounce_hint">松手吸附时的小回弹：素材没超出屏幕就往外弹一下，已超出就往内弹一下。下面是相对标准值的倍率（1.0 为标准）。</string>
     <string name="label_bounce_amp">幅度倍率</string>
     <string name="label_bounce_ms">时长倍率</string>
     <string name="bounce_amp_value">×%1$s　（%2$d px）</string>
@@ -45,9 +44,8 @@
     <string name="bounce_ms_input">倍率</string>
     <string name="bounce_saved">回弹设置已保存</string>
 
-    <!-- ⑤ 通知栏自定义 -->
+    <!-- ⑤ 通知栏自定义（介绍文字已按要求去掉） -->
     <string name="section_notify">通知栏内容</string>
-    <string name="notify_hint">自定义常驻通知显示的文字，上限 40 字符。支持各种语言、数字、符号与 emoji。留空则用默认文案。</string>
     <string name="notify_input">留空使用默认文案</string>
     <string name="notify_count">已输入 %1$d / %2$d 字符</string>
     <string name="notify_saved">通知内容已保存</string>
@@ -57,7 +55,9 @@
     <!-- 通知 -->
     <string name="notif_channel">桌宠</string>
     <string name="notif_channel_desc">桌宠在桌面上运行时显示的常驻通知</string>
-    <string name="notif_title">桌宠正在陪着你</string>
+    <!-- 标题随当前形象变化，例如「山田凉正在陪伴你」 -->
+    <string name="notif_title_fmt">%1$s正在陪伴你</string>
+    <string name="notif_title_fallback">桌宠正在陪伴你</string>
     <string name="notif_text">点这里回到设置，或直接收起桌宠</string>
     <string name="action_stop">收起</string>
 </resources>
