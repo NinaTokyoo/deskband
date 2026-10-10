@@ -731,7 +731,7 @@ class PetView(context: Context) : View(context) {
                         slideToX = slideEndX
                         slideToY = slideEndY
                         slideStart = now
-                        slideMs = SLIDE_SETTLE_MS
+                        slideMs = slideSettleMs
                         need = true
                     } else {
                         anchorX = slideToX
@@ -790,6 +790,14 @@ class PetView(context: Context) : View(context) {
      * 终点仍然是精确的（`springBack(1) == 0`），不会留缝。
      */
     private var tweenSpring = false
+
+    /**
+     * 这次滑动的**回弹段时长**。
+     *
+     * 呼出/滑回用用户设定的"回弹时长"（与靠边吸附同一个设置），
+     * 这样两处的"弹一下"手感一致；默认值只在没显式传时兜底。
+     */
+    private var slideSettleMs = SLIDE_SETTLE_MS
 
     /**
      * 这次滑动是**进场**（呼出/滑回屏幕内）还是出场（收起）。
@@ -1030,7 +1038,14 @@ class PetView(context: Context) : View(context) {
         val dx = targetX - fromX
         val dy = targetY - fromY
         val len = kotlin.math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
-        val amp = if (len > 1f && prefs.bounceEnabled) prefs.bouncePx else 0f
+        // 过冲量按行程放大（见 PetState.bounceAmp）：
+        // 靠边吸附的行程短、36px 占一大半所以很"Q弹"；
+        // 呼出行程长（屏幕外滑回来），同样 36px 只占 4%~11%，看着就不弹了。
+        val amp = if (len > 1f && prefs.bounceEnabled) {
+            PetState.bounceAmp(len, prefs.bouncePx)
+        } else {
+            0f
+        }
         val overX: Float
         val overY: Float
         if (amp > 0f) {
@@ -1040,7 +1055,12 @@ class PetView(context: Context) : View(context) {
             overX = targetX
             overY = targetY
         }
-        startSlide(fromX, fromY, overX, overY, null, targetX, targetY, entry = true)
+        // 回弹段时长与靠边吸附**用同一个用户设置**（回弹时长，默认 360ms）。
+        // 原来这里固定 150ms：同样是"弹一下"，吸附能看清、呼出只是一闪。
+        startSlide(
+            fromX, fromY, overX, overY, null, targetX, targetY,
+            entry = true, settleMs = prefs.bounceBackMs.toFloat()
+        )
     }
 
     /**
@@ -1089,7 +1109,8 @@ class PetView(context: Context) : View(context) {
     private fun startSlide(
         fromX: Float, fromY: Float, toX: Float, toY: Float, onDone: (() -> Unit)?,
         endX: Float = toX, endY: Float = toY,
-        entry: Boolean = false
+        entry: Boolean = false,
+        settleMs: Float = SLIDE_SETTLE_MS
     ) {
         slideFromX = fromX
         slideFromY = fromY
@@ -1099,6 +1120,7 @@ class PetView(context: Context) : View(context) {
         slideEndY = endY
         slideHasPhase2 = (endX != toX || endY != toY)
         slideEntry = entry
+        slideSettleMs = settleMs
         slidePhase2Running = false
         slideStart = SystemClock.uptimeMillis()
         // 进场比出场短：呼出要"啪一下到位"，收起才是"慢慢平移出去"。

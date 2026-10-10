@@ -579,6 +579,32 @@ object PetState {
     }
 
     /**
+     * 呼出回弹的**过冲量**：按行程放大，但夹在 `[base, base×maxFactor]` 之间。
+     *
+     * 为什么需要它：靠边吸附的回弹看着很"Q弹"，是因为**行程短**（拖动后松手，
+     * 往往只有几十像素），36px 的过冲占了行程的 24%~90%，一眼就能看到；
+     * 而呼出的行程是"从屏幕外滑回落点"（300~900px），同样是 36px，
+     * 只占 4%~11% —— 同一条曲线、同一个幅度，一个弹一个不弹，差别全在这里。
+     *
+     * 所以过冲量跟着行程走（默认 22%），但两头都夹住：
+     *   - 不低于用户设定的 [base]：短行程（滑回、连点）时手感和靠边吸附完全一致；
+     *   - 不超过 base 的 [maxFactor] 倍：行程再长也不会甩出夸张的一大截
+     *     （素材只有两三百像素，过冲太大就成了"飞出去又飞回来"）。
+     *
+     * @param travel 这次的行程（像素）
+     * @param base 用户设定的回弹幅度
+     */
+    fun bounceAmp(
+        travel: Float,
+        base: Float,
+        travelFrac: Float = 0.22f,
+        maxFactor: Float = 2f
+    ): Float {
+        if (base <= 0f || travel <= 0f) return 0f
+        return maxOf(base, minOf(travel * travelFrac, base * maxFactor))
+    }
+
+    /**
      * 收起时往哪条边滑出去：**取最近的那条边**（纯函数，便于单测）。
      *
      * 关键点：这个函数**永远返回一个方向**，没有"都不贴边就返回某种兜底"的分支。

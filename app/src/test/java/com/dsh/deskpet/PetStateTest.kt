@@ -448,6 +448,39 @@ class PetStateTest {
     }
 
     /**
+     * 呼出的过冲量要**按行程放大**，否则长行程下那点过冲完全看不见。
+     *
+     * 靠边吸附的行程短（几十像素），36px 过冲占 24%~90%，所以很"Q弹"；
+     * 呼出从屏幕外滑回来（300~900px），同样的 36px 只占 4%~11%，看着就不弹。
+     * 用户要求："把呼出动画做成靠边吸附动画那种 Q 弹的"。
+     */
+    @Test
+    fun summon_overshoot_scales_with_the_travel_distance() {
+        val base = 36f
+        // 短行程（靠边吸附 / 连点滑回）：原样，不做任何放大 —— 手感与吸附一致
+        assertEquals(base, PetState.bounceAmp(40f, base), 0.001f)
+        assertEquals(base, PetState.bounceAmp(80f, base), 0.001f)
+        assertEquals(base, PetState.bounceAmp(163f, base), 0.001f) // 163*0.22 = 36
+        // 长行程（呼出）：放大，最多 2 倍
+        assertEquals(59.4f, PetState.bounceAmp(270f, base), 0.01f)
+        assertEquals(2f * base, PetState.bounceAmp(330f, base), 0.001f)
+        assertEquals(2f * base, PetState.bounceAmp(900f, base), 0.001f)
+        // 单调不减、且有上界
+        var last = 0f
+        for (i in 0..400) {
+            val v = PetState.bounceAmp(i * 10f, base)
+            assertTrue("不该回落", v >= last - 0.001f)
+            assertTrue("超过 2 倍上界", v <= 2f * base + 0.001f)
+            last = v
+        }
+        // 关掉回弹（base = 0）或没有行程时必须是 0，不能凭空放大
+        assertEquals(0f, PetState.bounceAmp(500f, 0f), 0.001f)
+        assertEquals(0f, PetState.bounceAmp(0f, base), 0.001f)
+        // 用户把幅度调大时，上界跟着一起放大（滑块依然有效）
+        assertEquals(180f, PetState.bounceAmp(900f, 90f), 0.001f)
+    }
+
+    /**
      * 收起方向 = **最近的那条边**，而且任何时候都必须给出正确方向。
      *
      * 回归用例：旋转冻结期间 `trackW/trackH` 还是旧形态的值，足迹宽度会差 42px、
