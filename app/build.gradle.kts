@@ -57,9 +57,11 @@ android {
         //                     选中态 = 主题色文字 + 镂空底色，未选中 = 常规文字 + 同款镂空；
         //                     顺带清理死代码：dropdownBackground / ThemedAdapter /
         //                     SpinnerPopupAnim —— 两个下拉框都没了，它们再无调用点）
+        //   2.0.08 -> 20008（重画启动图标：小生物扒在桌边上（用户选定方向），
+        //                     配色沿用深蓝底 + 青色；前景全部改用三次贝塞尔）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏。
-        val vName = "2.0.07"
+        val vName = "2.0.08"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()
