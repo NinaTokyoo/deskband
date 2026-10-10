@@ -254,7 +254,13 @@ class MainActivity : Activity() {
         //
         // prefs.running 是持久化的：进程被从最近任务里划掉时服务已经死了，
         // 但那个布尔值还留着 true —— 冷启动后界面显示"收起"、实际没有桌宠。
-        if (prefs.running != PetService.alive) prefs.running = PetService.alive
+        // 只在服务**确实已经不在**时把标志纠回 false。
+        //
+        // ⚠️ 不能写成 `prefs.running = PetService.alive`：点「收起」时
+        // PetService.stop() 是异步的，此刻 onDestroy 还没跑、alive 仍是 true，
+        // 赋值会把 running 又改回 true —— 表现就是"点了收起没反应、按钮还是收起"。
+        // 方向只能是"true -> false"，永远不要在这里把它翻回 true。
+        if (!PetService.alive && prefs.running) prefs.running = false
 
         // 权限行：已开启 -> 绿勾，未开启 -> 红叉
         setPermMark(markOverlay, Settings.canDrawOverlays(this))
