@@ -523,15 +523,18 @@ class MainActivity : Activity() {
         )
     }
 
-    /** 菜单展开/收起的时长与动画器（切换时先取消，避免连点互相打架） */
+    /** 当前的展开动画（切换时先取消，避免连点互相打架） */
     private val menuAnim = android.animation.ValueAnimator()
     private var menuAnimating = false
 
     /**
      * 点整框：展开 / 收起二级菜单，三角同步翻转。
      *
-     * 动画：高度从 0 长到内容高度（减速曲线）**并且**每一行依次淡入 ——
-     * 直接切 GONE/VISIBLE 太生硬（用户反馈）。收起走反向、时长短一些。
+     * ⚠️ 动画**只能碰 translationY / alpha**，不能碰 layoutParams.height。
+     *    曾经写成每帧改高度 + requestLayout()，实测 dumpsys gfxinfo 掉帧 32.9%
+     *    （50 分位 26ms、95 分位 77ms，预算 16.7ms）—— 原因是每改一次高度，
+     *    外层 ScrollView 就要把整页所有卡片重新测量一遍。
+     *    现在高度只在展开/收起时各设一次，动画期间零布局。
      */
     private fun toggleSkinMenu() {
         if (menuAnimating) return          // 动画途中忽略连点，免得状态错乱
@@ -539,27 +542,31 @@ class MainActivity : Activity() {
         if (open) expandSkinMenu() else collapseSkinMenu()
     }
 
-    /** 展开：先量高度，再从 0 长开；每行错开淡入 */
+    /**
+     * 展开：把容器高度一次性设成菜单实际高度，再让菜单从框底下滑出来。
+     *
+     * 溢出部分由卡片的 clipToOutline 裁掉，所以看上去就是"卡片被撑开"。
+     */
     private fun expandSkinMenu() {
+        // 先让它 VISIBLE 并量高度：GONE 的视图不参与测量，量不到内容高度
         skinMenuWrap.visibility = View.VISIBLE
-        // ⚠️ 顺序很重要：必须先让它 VISIBLE、再 applyTheme（applyTheme 会重建菜单，
-        //    重建出来的行才是"新的"，随后才能给它们初始 alpha 做淡入），
-        //    最后量高度。
-        applyTheme()
+        skinMenuWrap.layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+        applyTheme()                       // 重建菜单项（新行才谈得上淡入）
         skinMenuWrap.post {
-            val target = skinMenu.contentHeight(skinMenuWrap)
-            if (target <= 0) {                 // 没量到就不动画，别让菜单卡在 0 高
+            val full = skinMenu.contentHeight(skinMenuWrap)
+            if (full <= 0) {               // 没量到就不动画，别把菜单卡在 0 高
                 skinMenuWrap.layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
                 return@post
             }
             val rows = skinMenuRows()
-            // 初始态：整块高度 0 + 每行透明、略微下移
-            skinMenuWrap.layoutParams.height = 0
+            // 顺序要紧：先把高度定死、并让菜单整体下移一整屏（藏到框后面），
+            // 再动画。反过来的话会先闪一下完整菜单。
+            skinMenuWrap.layoutParams.height = full
+            skinMenu.translationY = full.toFloat()
+            rows.forEach { it.alpha = 0f }
             skinMenuWrap.requestLayout()
-            rows.forEach { r ->
-                r.alpha = 0f
-                r.translationY = -dpf(6f)
-            }
+            skinMenuWrap.invalidate()
+
             menuAnimating = true
             menuAnim.removeAllUpdateListeners()
             menuAnim.removeAllListeners()
@@ -568,23 +575,21 @@ class MainActivity : Activity() {
             menuAnim.duration = MENU_OPEN_MS.toLong()
             menuAnim.interpolator = android.view.animation.DecelerateInterpolator()
             menuAnim.addUpdateListener { a ->
-                val f = a.animatedFraction
-                skinMenuWrap.layoutParams.height = (target * f).toInt()
-                skinMenuWrap.requestLayout()
+                // 只动 translationY：纯绘制属性，不触发布局
+                skinMenu.translationY = full * (1f - a.animatedFraction)
             }
             menuAnim.addListener(object : android.animation.AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: android.animation.Animator) {
-                    // 收尾：高度交回 WRAP_CONTENT，免得以后内容变化时被写死的高度卡住
-                    skinMenuWrap.layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
-                    skinMenuWrap.requestLayout()
+                    skinMenu.translationY = 0f
                     menuAnimating = false
                 }
             })
             menuAnim.start()
+
             // 逐行淡入：错开一点点，像"依次冒出来"
             val step = (MENU_OPEN_MS * 0.35f / rows.size.coerceAtLeast(1)).toLong()
             rows.forEachIndexed { i, r ->
-                r.animate().alpha(1f).translationY(0f)
+                r.animate().alpha(1f)
                     .setStartDelay(i * step)
                     .setDuration(MENU_OPEN_MS - i * step)
                     .setInterpolator(android.view.animation.DecelerateInterpolator())
@@ -595,29 +600,42 @@ class MainActivity : Activity() {
             .setInterpolator(android.view.animation.DecelerateInterpolator()).start()
     }
 
-    /** 收起：高度缩回 0，行同步淡出；结束再真正隐藏并复位 */
+    /**
+     * 收起：菜单滑回框底下，行同步淡出；结束再真正隐藏并复位。
+     *
+     * ⚠️ 滑动距离必须取 **skinMenu.height**，不能取 skinMenuWrap.height：
+     *    容器的高度在收起时已经是 0（收起后要归 0 让卡片缩回；展开动画期间
+     *    高度也只写在 layoutParams 上，容器自身要等下一次布局才生效）。
+     *    取 0 的后果是动画距离为 0 —— 菜单瞬间跳回原位（看起来像"迅速打开"），
+     *    紧接着 translationY 那段再滑下去（"再按动画收起"）。这个 bug 踩过一次。
+     */
     private fun collapseSkinMenu() {
-        val from = skinMenu.height
-        menuAnimating = true
-        menuAnim.removeAllUpdateListeners()
-        menuAnim.removeAllListeners()
-        menuAnim.cancel()
-        menuAnim.setFloatValues(1f, 0f)
-        menuAnim.duration = MENU_CLOSE_MS.toLong()
-        menuAnim.interpolator = android.view.animation.AccelerateInterpolator()
-        menuAnim.addUpdateListener { a ->
-            skinMenuWrap.layoutParams.height = (from * a.animatedFraction).toInt()
-            skinMenuWrap.requestLayout()
-        }
-        menuAnim.addListener(object : android.animation.AnimatorListenerAdapter() {
-            override fun onAnimationEnd(animation: android.animation.Animator) {
-                finishCollapse()
+        // 先把裁剪框设回菜单高度：容器高度为 0 的话菜单会被整块裁掉、看不见
+        val full = skinMenu.height
+        if (full <= 0) { finishCollapse(); return }
+        skinMenuWrap.layoutParams.height = full
+        skinMenuWrap.post {
+            // 等这次 resize 的布局走完再启动动画，保证第一帧就有正确的裁剪框
+            menuAnimating = true
+            menuAnim.removeAllUpdateListeners()
+            menuAnim.removeAllListeners()
+            menuAnim.cancel()
+            menuAnim.setFloatValues(0f, 1f)
+            menuAnim.duration = MENU_CLOSE_MS.toLong()
+            menuAnim.interpolator = android.view.animation.AccelerateInterpolator()
+            menuAnim.addUpdateListener { a ->
+                skinMenu.translationY = full * a.animatedFraction
             }
-        })
-        menuAnim.start()
-        // 行同步淡出（不按顺序，一起走，收起要干脆）
-        skinMenuRows().forEach { r ->
-            r.animate().alpha(0f).setDuration(MENU_CLOSE_MS.toLong()).start()
+            menuAnim.addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: android.animation.Animator) {
+                    finishCollapse()
+                }
+            })
+            menuAnim.start()
+            // 行一起淡出（不按顺序，收起要干脆）
+            skinMenuRows().forEach { r ->
+                r.animate().alpha(0f).setDuration(MENU_CLOSE_MS.toLong()).start()
+            }
         }
         icoSkinArrow.animate().rotation(0f).setDuration(MENU_CLOSE_MS.toLong())
             .setInterpolator(android.view.animation.AccelerateInterpolator()).start()
@@ -626,16 +644,17 @@ class MainActivity : Activity() {
     /**
      * 收起动画结束 / 需要立刻关闭时调用：隐藏、复位高度与每行状态、刷新主题。
      *
-     * ⚠️ 每行的 alpha/translationY 一定要复位：它们是普通 View 属性，会留到下一次
-     *    展开；不复位的话下次展开时那些行会带着旧值（闪一下或不显示）。
+     * ⚠️ alpha / translationY 是普通 View 属性，会留到下一次展开，必须复位，
+     *    否则下次展开时那些行会带着旧值（闪一下或不显示）。
      */
     private fun finishCollapse() {
         skinMenuWrap.visibility = View.GONE
-        skinMenuWrap.layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+        // 高度归 0：卡片随之收回。这一步有布局，但每次开合只发生一次，不影响动画帧率。
+        skinMenuWrap.layoutParams.height = 0
+        skinMenu.translationY = 0f
         skinMenuRows().forEach { r ->
             r.animate().cancel()
             r.alpha = 1f
-            r.translationY = 0f
         }
         skinMenuWrap.requestLayout()
         menuAnimating = false
