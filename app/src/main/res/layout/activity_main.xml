@@ -134,11 +134,10 @@
                 android:orientation="horizontal"
                 android:baselineAligned="false">
 
-                <Space
-                    android:layout_width="0dp"
-                    android:layout_height="1dp"
-                    android:layout_weight="1" />
-
+                <!-- 复位左沿 = 呼出左沿（都贴卡片内容区左边缘）
+                     保留右沿 = 呼出右沿（都贴卡片内容区右边缘）
+                     中间留白 = 呼出左边缘到卡片边框的距离 = 卡片内边距 13dp
+                     所以中间用固定 13dp 的 Space，保留用 weight 吃掉剩余宽度。 -->
                 <Button
                     android:id="@+id/btnReset"
                     style="@style/BigButton"
@@ -151,26 +150,21 @@
                     android:text="@string/btn_reset" />
 
                 <Space
-                    android:layout_width="0dp"
-                    android:layout_height="1dp"
-                    android:layout_weight="1" />
+                    android:layout_width="13dp"
+                    android:layout_height="1dp" />
 
                 <Button
                     android:id="@+id/btnResetKeep"
                     style="@style/BigButton"
-                    android:layout_width="wrap_content"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
+                    android:layout_weight="1"
                     android:layout_marginTop="0dp"
                     android:paddingStart="26dp"
                     android:paddingEnd="26dp"
                     android:maxLines="1"
                     android:ellipsize="end"
                     android:text="@string/reset_keep_off" />
-
-                <Space
-                    android:layout_width="0dp"
-                    android:layout_height="1dp"
-                    android:layout_weight="1" />
             </LinearLayout>
         </LinearLayout>
 
