@@ -540,7 +540,7 @@ class PetView(context: Context) : View(context) {
 
     /**
      * 上一次的垂直基准（[PetState.VERT_TOP] / [PetState.VERT_BOTTOM]），
-     * 用于**屏幕中线**的滞回判定 —— 见 [PetState.vertOf]。
+     * 用于**上边带边界**的滞回判定 —— 见 [PetState.vertOf]。
      */
     private var lastVert = PetState.VERT_NONE
 
@@ -1589,8 +1589,8 @@ class PetView(context: Context) : View(context) {
         val trackHf = trackH.toFloat()
 
         // ---- 垂直基准：这里只决定"以哪条水平边为准"，距离语义本身不动 ----
-        // 离上沿近就是上边组（带中线滞回，见 PetState.vertOf）。
-        // 选完基准才去量距离，于是上/下两组天然共用同一套 A/B/E 判定。
+        // 进到离上沿 240px 的带子里才是上边组（带边界滞回，见 PetState.vertOf）；
+        // 带外一律按下边组算。选完基准才去量距离，于是上下两组共用同一套 A/B/E 判定。
         val v = PetState.vertOf(y, trackHf, screenH, lastVert)
         lastVert = v
         val dv = PetState.vertDistFor(v, y, trackHf, screenH)

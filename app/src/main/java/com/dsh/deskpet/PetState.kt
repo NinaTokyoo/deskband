@@ -17,8 +17,12 @@ package com.dsh.deskpet
  * **A 区尺寸用户可调**（滑块 / 数字输入），B 跟着一起变：
  *   B 的横向起点 = A 的横向尺寸（B 左侧对齐 A 左侧）
  *
- * 没有 D 区，**没有模糊**。稳定存在的朝向只有「正立」与「旋转 90°」两种；
- * 上半屏的形态则是下半屏的**上下镜像**（素材上下翻转，见 [flipVFor]）。
+ * **上边组只在离上沿 [TOP_BAND_PX] 的带子里成立**（用户规定）：
+ *   带内 -> 上角 / 贴上沿，素材**上下翻转**（[flipVFor]），头朝下；
+ *   带外 -> 一律按下边组算，**跟贴下沿完全一致**（不看"上半屏"）。
+ *   左右两侧的**旋转区（B 区）**永远是躺倒形态，不上翻也不下翻。
+ *
+ * 没有 D 区，**没有模糊**。稳定存在的朝向只有「正立」与「旋转 90°」两种。
  * ============================================================================
  *
  * ==================== 为什么要有 VERT_* 这个显式枚举 ====================
@@ -60,7 +64,7 @@ object PetState {
 
     /**
      * **贴上沿**（正立素材上下翻转），与贴下沿的 [BORDER_R_UPRIGHT] /
-     * [BORDER_L_UPRIGHT] 完全对称 —— 上半屏的"正立"就是下半屏倒过来挂。
+     * [BORDER_L_UPRIGHT] 完全对称 —— 上边带内的"正立"就是下边倒过来挂。
      */
     const val EDGE_TOP_R = 9
     const val EDGE_TOP_L = 10
@@ -70,7 +74,7 @@ object PetState {
     /**
      * **无纵向基准**：只贴侧边，纵向自由（旋转躺倒的侧边形态）。
      *
-     * 也用作 [vertOf] 的 `prev` 默认值，表示"没有上一次的基准，直接比大小"。
+     * 也用作 [vertOf] 的 `prev` 默认值，表示"没有上一次的基准"。
      */
     const val VERT_NONE = 0
 
@@ -81,9 +85,25 @@ object PetState {
     const val VERT_TOP = 2
 
     /**
-     * 中线滞回带（px）：跨越屏幕中线后要**多走这么远**才换组。
+     * **上边带的纵向范围**（px，从屏幕上沿量起）。
      *
-     * 不设它的话，手指停在中线附近抖动会让素材在"正立 / 倒挂"之间高频翻转。
+     * 用户规定：**离上沿 240px 以内人物才是头朝下的**（上角 / 贴上沿），
+     * 上方其余区域一律**跟下边组保持一致** —— 也就是说不看"上半屏"，
+     * 只看这 240px 的带子。
+     *
+     * 曾经按"屏幕中线"分组，结果整个上半屏都倒挂：拖到屏幕中间偏上就翻过来，
+     * 而那个位置离上沿还很远，观感上根本不是"贴在顶上"。
+     *
+     * ⚠️ 左右两侧的**旋转区**（B 区，躺倒形态）不在这条带子的规则里：
+     * 躺倒形态从来不上翻下翻（见 [flipVFor]）。而带内贴着侧边时
+     * 判的是 A 区（上角），那也不是旋转形态。
+     */
+    const val TOP_BAND_PX = 240f
+
+    /**
+     * 换组滞回带（px）：在 [TOP_BAND_PX] 边界上**多走这么远**才换组。
+     *
+     * 不设它的话，手指停在 240px 边界附近抖动会让素材在"正立 / 倒挂"之间高频翻转。
      * 换组是**整个形态翻过来**的视觉变化，比 B/E 分界那种切换更醒目，
      * 所以死区比 [HYSTERESIS_PX] 稍大。
      */
@@ -217,23 +237,24 @@ object PetState {
         minOf(topDist(y, h, screenH), bottomDist(y, h, screenH))
 
     /**
-     * **选垂直基准**：离上沿更近就是上边组，否则是下边组。
+     * **选垂直基准**：足迹进到离上沿 [TOP_BAND_PX] 的带子里就是上边组（倒挂），
+     * 其余一律是下边组 —— **上方其余区域跟下边完全一致**（用户规定）。
      *
-     * 带**中线滞回**：`prev` 给出的上一次基准在中线附近 [VERT_HYSTERESIS_PX]
-     * 之内保持不变，避免手指抖动时素材在正立/倒挂之间反复翻。
+     * ⚠️ 判据是"到上沿的距离"，**不是"在上半屏"**：屏幕中线跟这件事无关。
      *
-     * @param prev 上一次的基准；[VERT_NONE] 表示没有上一次，直接比大小
+     * 带**边界滞回**：已经是上边组时要越出 [TOP_BAND_PX] + [VERT_HYSTERESIS_PX]
+     * 才退回下边组，避免手指停在边界上时素材在正立/倒挂之间反复翻。
+     *
+     * @param prev 上一次的基准；[VERT_NONE] 表示没有上一次
      * @return [VERT_TOP] 或 [VERT_BOTTOM]（**从不返回 VERT_NONE**）
      */
     fun vertOf(y: Float, h: Float, screenH: Float, prev: Int = VERT_NONE): Int {
         val t = topDist(y, h, screenH)
-        val b = bottomDist(y, h, screenH)
         return when (prev) {
-            // 已经在上边组：要"明显变成下沿更近"才换组
-            VERT_TOP -> if (t > b + VERT_HYSTERESIS_PX) VERT_BOTTOM else VERT_TOP
-            // 已经在下边组：要"明显变成上沿更近"才换组
-            VERT_BOTTOM -> if (b > t + VERT_HYSTERESIS_PX) VERT_TOP else VERT_BOTTOM
-            else -> if (t <= b) VERT_TOP else VERT_BOTTOM
+            // 已经在上边组：要明显离开这条带子才换组
+            VERT_TOP -> if (t > TOP_BAND_PX + VERT_HYSTERESIS_PX) VERT_BOTTOM else VERT_TOP
+            // 不在上边组：要真正进到带子里才换组
+            else -> if (t <= TOP_BAND_PX) VERT_TOP else VERT_BOTTOM
         }
     }
 

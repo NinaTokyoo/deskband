@@ -31,9 +31,6 @@ class PetStateTest {
     private val TRACK_W = 541f
     private val TRACK_H = 463f
 
-    /** 屏幕中线（足迹的可用纵向范围的中点） */
-    private val MID = (SH - TRACK_H) / 2f
-
     @After
     fun resetZone() {
         // 每个用例后恢复默认，避免互相影响
@@ -442,12 +439,16 @@ class PetStateTest {
      * 相同的旋转角，以及镜像的吸附位置。
      */
     @Test
-    fun the_top_half_is_the_exact_vertical_mirror_of_the_bottom_half() {
+    fun the_top_band_is_the_exact_vertical_mirror_of_the_bottom_edge() {
         PetState.setZoneSize(200f, 365f)
         val w = TRACK_W
         val h = TRACK_H
         var checked = 0
-        for (d in intArrayOf(0, 30, 100, 200, 364, 365, 366, 500, 800, 1200, 1310)) {
+        // ⚠️ d 只能取到上边带以内（240）：带外不再是上边组了
+        for (d in intArrayOf(
+            0, 1, 30, 100, 150, 200, 239,
+            (PetState.TOP_BAND_PX - 1f).toInt(), PetState.TOP_BAND_PX.toInt()
+        )) {
             for (x in intArrayOf(0, 60, 200, 300, 500, 900, 1100, 899)) {
                 for (leftHalf in booleanArrayOf(false, true)) {
                     val yB = SH - h - d          // 下边组：离下沿 d
@@ -461,7 +462,7 @@ class PetStateTest {
                     val vB = PetState.vertOf(yB.toFloat(), h, SH)
                     val vT = PetState.vertOf(yT.toFloat(), h, SH)
                     assertEquals(PetState.VERT_BOTTOM, vB)
-                    assertEquals(PetState.VERT_TOP, vT)
+                    assertEquals("d=$d 在带内应判上边组", PetState.VERT_TOP, vT)
 
                     val dvB = PetState.vertDistFor(vB, yB.toFloat(), h, SH)
                     val dvT = PetState.vertDistFor(vT, yT.toFloat(), h, SH)
@@ -488,10 +489,8 @@ class PetStateTest {
                         "flipV 必须与 isTop 一致",
                         PetState.isTop(sT), PetState.flipVFor(sT)
                     )
-                    // 侧边带是躺倒的旋转形态，上下半屏完全一样，不该翻转
-                    if (zT != PetState.ZONE_B) {
-                        assertTrue("d=$d x=$x 上边组状态必须翻转素材", PetState.flipVFor(sT))
-                    }
+                    // 带内的上边组一定是"上角 / 贴上沿"，都要上下翻转
+                    assertTrue("d=$d x=$x 上边组状态必须翻转素材", PetState.flipVFor(sT))
                     assertEquals(
                         "上下两组的旋转角必须一致",
                         PetState.rotationForSnap(sB), PetState.rotationForSnap(sT), 0.001f
@@ -516,37 +515,147 @@ class PetStateTest {
         assertTrue("用例数异常", checked > 100)
     }
 
-    /** 屏幕中线附近必须**滞回**：来回一两个像素不能把素材翻过来翻过去 */
+    /**
+     * **用户最新规则**：上边带以外（离上沿 > 240），一切都跟下边组一模一样 ——
+     * 素材不上翻、状态不会用上角/贴上沿、吸附也不贴上沿。
+     *
+     * 这条把"上方其余区域跟下面保持一致"逐点钉死：整片上半屏（带外）都拿
+     * 改动前的下边组参考实现来对照。
+     */
     @Test
-    fun the_midline_has_hysteresis_so_the_art_cannot_flicker() {
-        // 中线：topDist == bottomDist 的位置
-        val yMid = MID
-        // 没有上一次时，正好在中线上按下 -> 归上边组（<= 的约定）
-        assertEquals(PetState.VERT_TOP, PetState.vertOf(yMid, TRACK_H, SH, PetState.VERT_NONE))
-        // 已经在下边组：稍微越过中线还保持下边组
-        val justAbove = yMid - PetState.VERT_HYSTERESIS_PX / 2f
-        assertEquals(
-            PetState.VERT_BOTTOM,
-            PetState.vertOf(justAbove, TRACK_H, SH, PetState.VERT_BOTTOM)
-        )
-        // 已经在上边组：稍微越过中线也保持上边组
-        val justBelow = yMid + PetState.VERT_HYSTERESIS_PX / 2f
+    fun outside_the_top_band_everything_matches_the_bottom_group() {
+        PetState.setZoneSize(200f, 365f)
+        val w = TRACK_W
+        val h = TRACK_H
+        var checked = 0
+        // 上边带边界之外的整片上方区域，一直扫到屏幕底部
+        for (d in intArrayOf(265, 300, 400, 600, 900, 1200, 1500, 2000, 2400, 2621)) {
+            for (x in intArrayOf(0, 60, 200, 300, 500, 720, 900, 1100, 1180)) {
+                for (leftHalf in booleanArrayOf(false, true)) {
+                    val y = d.toFloat()          // 离上沿 d（带外）
+                    val dr = PetState.sideDist(x.toFloat(), w, SW, leftHalf)
+
+                    val v = PetState.vertOf(y, h, SH)
+                    assertEquals("d=$d 带外必须按下边组算", PetState.VERT_BOTTOM, v)
+
+                    // 距离语义必须完全等同于"离下沿的距离"
+                    val db = PetState.bottomDist(y, h, SH)
+                    assertEquals(
+                        "d=$d 带外的垂直距离必须还是 bottomDist",
+                        db, PetState.vertDistFor(v, y, h, SH), 0.001f
+                    )
+
+                    // 分区 / 吸附边 / 状态 / 吸附位置全部与改动前的下边组实现一致
+                    val zone = oldZoneOf(db, dr)
+                    assertEquals("d=$d x=$x 分区变了", zone, PetState.zoneOf(v, db, dr, leftHalf))
+                    assertEquals(
+                        "d=$d x=$x 吸附边变了",
+                        oldSnapEdges(zone, db, dr),
+                        PetState.snapEdgesForZone(v, zone, db, dr).toList()
+                    )
+                    val st = PetState.stateForZone(v, zone, leftHalf)
+                    assertEquals("d=$d x=$x 状态变了", oldStateForZone(zone, leftHalf), st)
+                    // 关键：带外**绝不**出现倒挂形态
+                    assertFalse("d=$d x=$x 带外不该上下翻转", PetState.flipVFor(st))
+                    assertFalse("d=$d x=$x 带外不该用上角/贴上沿", PetState.isTop(st))
+
+                    val eOld = oldSnapEdges(zone, db, dr)
+                    val px = PetState.snapPosition(
+                        v, x.toFloat(), y, w, h, db, dr, SW, SH, leftHalf, zone
+                    )
+                    assertEquals(
+                        "d=$d x=$x 吸附后 y 变了",
+                        if (eOld[0] == 1) SH - h else y,
+                        px[1], 0.5f
+                    )
+                    checked++
+                }
+            }
+        }
+        assertEquals("用例数应为 10×9×2", 10 * 9 * 2, checked)
+    }
+
+    /**
+     * 上边带里贴着侧边时判的是**上角**（角落素材、头朝下），
+     * 带外贴着侧边才轮到**侧边旋转区**（躺倒）；而躺倒形态永远不翻转。
+     */
+    @Test
+    fun the_side_rotation_zone_never_flips_even_inside_the_top_band() {
+        PetState.setZoneSize(200f, 365f)
+        // 带内 + 贴着右边 -> 右上角（角落素材、翻转、不旋转）
+        val inBandV = PetState.vertOf(100f, TRACK_H, SH)
+        assertEquals(PetState.VERT_TOP, inBandV)
+        val corner = PetState.stateForZone(inBandV, PetState.ZONE_A, false)
+        assertEquals(PetState.CORNER_TR, corner)
+        assertTrue(PetState.flipVFor(corner))
+        assertEquals(0f, PetState.rotationForSnap(corner), 0.001f)
+
+        // 带外 + 贴着右边 -> 侧边带（躺倒、旋转、不翻转）
+        val outBandV = PetState.vertOf(400f, TRACK_H, SH)
+        assertEquals(PetState.VERT_BOTTOM, outBandV)
+        val side = PetState.stateForZone(outBandV, PetState.ZONE_B, false)
+        assertEquals(PetState.BORDER_R, side)
+        assertFalse("躺倒形态永远不翻转", PetState.flipVFor(side))
+        assertEquals(-90f, PetState.rotationForSnap(side), 0.001f)
+    }
+
+    /**
+     * 上边带边界必须**滞回**：在 240px 附近来回一两个像素不能把素材翻过来翻过去。
+     *
+     * 滞回是**单向**的：带内（<= 240）**永远**是上边组 —— 用户给的是几何规则
+     * "离上沿 240px 以内就是头朝下"，所以进带立刻倒挂；而退出要越出
+     * 240 + [PetState.VERT_HYSTERESIS_PX] 才生效，避免在边界上抖动。
+     */
+    @Test
+    fun the_top_band_edge_has_hysteresis_so_the_art_cannot_flicker() {
+        val band = PetState.TOP_BAND_PX
+        val hys = PetState.VERT_HYSTERESIS_PX
+
+        // 没有上一次时：正好在边界上算带内（<= 的约定），出去一点就不算
+        assertEquals(PetState.VERT_TOP, PetState.vertOf(band, TRACK_H, SH, PetState.VERT_NONE))
+        assertEquals(PetState.VERT_TOP, PetState.vertOf(band - 1f, TRACK_H, SH))
+        assertEquals(PetState.VERT_BOTTOM, PetState.vertOf(band + 1f, TRACK_H, SH))
+
+        // **带内一定是上边组**：与上一次是什么无关（规则是几何的）
+        run {
+            var d = 0f
+            while (d <= band) {
+                assertEquals(
+                    "离上沿 $d 在带内，必须头朝下",
+                    PetState.VERT_TOP,
+                    PetState.vertOf(d, TRACK_H, SH, PetState.VERT_BOTTOM)
+                )
+                assertEquals(
+                    "离上沿 $d 在带内，必须头朝下",
+                    PetState.VERT_TOP,
+                    PetState.vertOf(d, TRACK_H, SH, PetState.VERT_NONE)
+                )
+                d += 7f
+            }
+        }
+
+        // 已经在上边组：刚出界还保持上边组（不到 边界+滞回 不换）
         assertEquals(
             PetState.VERT_TOP,
-            PetState.vertOf(justBelow, TRACK_H, SH, PetState.VERT_TOP)
+            PetState.vertOf(band + hys / 2f, TRACK_H, SH, PetState.VERT_TOP)
         )
-        // 明显越过去 -> 换组
         assertEquals(
             PetState.VERT_TOP,
-            PetState.vertOf(
-                yMid - PetState.VERT_HYSTERESIS_PX - 2f, TRACK_H, SH, PetState.VERT_BOTTOM
-            )
+            PetState.vertOf(band + hys, TRACK_H, SH, PetState.VERT_TOP)
+        )
+        // 明显越界 -> 换组
+        assertEquals(
+            PetState.VERT_BOTTOM,
+            PetState.vertOf(band + hys + 2f, TRACK_H, SH, PetState.VERT_TOP)
+        )
+        // 带外（且上一次是下边组）始终是下边组
+        assertEquals(
+            PetState.VERT_BOTTOM,
+            PetState.vertOf(band + 1f, TRACK_H, SH, PetState.VERT_BOTTOM)
         )
         assertEquals(
             PetState.VERT_BOTTOM,
-            PetState.vertOf(
-                yMid + PetState.VERT_HYSTERESIS_PX + 2f, TRACK_H, SH, PetState.VERT_TOP
-            )
+            PetState.vertOf(band + 400f, TRACK_H, SH, PetState.VERT_BOTTOM)
         )
     }
 
