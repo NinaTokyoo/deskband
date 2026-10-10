@@ -605,95 +605,42 @@ object PetState {
     }
 
     /**
-     * 命中判定用的**有效外接框**。
+     * 命中判定用的**有效外接框**：把素材 alpha 外接框以**中心为基准等比缩小** `scale` 倍。
      *
      * 为什么要缩：单像素 alpha 判定之外还有一条"落在 alpha 外接框里也算命中"的兜底
      * （用来兜住发丝之间的透明缝隙、抗锯齿边缘 —— 否则点上去会穿透到下层桌面）。
      * 但外接框是**矩形**，人物往往不占满它，于是"明显是空白的地方"也能点中。
      * 用户反馈："感觉可互动面积还是有点大，互动面积等比缩小到现在的 75%。"
-     * 缩小后人物轮廓本身（不透明像素）照样可点，只是外接框外侧那一圈空白不再命中。
      *
-     * ## 吸附边锚定（用户要求）
-     *
-     * "交互区域调节时还是保证交互区域的吸附边保持吸附，只挪动其他三边"。
-     *
-     * 所以缩放**不是以中心为基准**，而是以[该状态贴着的那条屏幕边][attachEdgeOf]
-     * 为基准：那条边在框内的坐标**逐值不变**，只把对面的三条边往里挪。
-     *
-     * 为什么这件事重要：贴右边框的宠物，用户最自然的点击位置就是屏幕右缘那一片。
-     * 如果按中心缩，框会从两侧一起往里收 —— 右缘反而变成不可点区域，
-     * 调小交互区域之后"贴着边的地方点不动了"。锚定之后，
-     * 缩得越小，可点范围越是**从屏幕边往里收**，边缘那一条始终有效。
-     *
-     * 框坐标是**画布局部**坐标。对侧边状态（BORDER_R/BORDER_L）素材是旋转 90° 画的，
-     * 屏幕的左右方向对应画布的 y —— 这个换算已经由 [attachEdgeOf] 处理好了，
-     * 调用方只要把 `state` 传进来即可，不需要自己判断坐标系。
-     *
-     * ⚠️ 这里的 `scale` 是**调用方算好的**系数，本函数不再做任何状态相关的特判。
-     *    尤其是"吸附到四个角落时不生效"这条规则在 [hitBoxScaleFor] 里 ——
-     *    那里会在角落状态下直接给 1.0，于是这里算出来的就是原框本身。
-     *    规则只留一处，免得两边各写一遍后走偏。
+     * 缩小后：人物轮廓本身（不透明像素）照样可点，只是外接框外侧那一圈空白不再命中。
      *
      * @param bounds `[left, top, right, bottom]`（`alphaBounds` 的结果，单位像素）
-     * @param scale 边长系数；`1.0` = 直接用 [bounds]，`0.8` = 缩到 80%
-     * @param state 当前状态，用来决定锚定哪条边
-     * @return `[left, top, right, bottom]`，吸附边不变、宽高各乘 `scale`
+     * @return `[left, top, right, bottom]`，中心不变、宽高各乘 `scale`
      */
-    fun hitBox(bounds: IntArray, scale: Float, state: Int): FloatArray {
+    fun hitBox(bounds: IntArray, scale: Float): FloatArray {
         val l = bounds[0].toFloat()
         val t = bounds[1].toFloat()
         val r = bounds[2].toFloat()
         val b = bounds[3].toFloat()
-        val s = scale.coerceIn(0.05f, 2f)
         val cx = (l + r) / 2f
         val cy = (t + b) / 2f
-        val hw = (r - l) * s / 2f
-        val hh = (b - t) * s / 2f
-        // 先把中心缩放的框算出来，再整体平移，使**吸附边**回到原坐标
-        var nl = cx - hw
-        var nt = cy - hh
-        var nr = cx + hw
-        var nb = cy + hh
-        when (attachEdgeOf(state)) {
-            ATTACH_TOP -> {
-                // 贴上沿：框的上边不动
-                val d = t - nt
-                nt += d; nb += d
-            }
-            ATTACH_LEFT -> {
-                // 贴左边：框的左边不动
-                val d = l - nl
-                nl += d; nr += d
-            }
-            ATTACH_RIGHT -> {
-                // 贴右边：框的右边不动
-                val d = r - nr
-                nl += d; nr += d
-            }
-            else -> {
-                // 贴下沿：框的下边不动
-                val d = b - nb
-                nt += d; nb += d
-            }
-        }
-        return floatArrayOf(nl, nt, nr, nb)
+        val hw = (r - l) * scale.coerceIn(0.05f, 1f) / 2f
+        val hh = (b - t) * scale.coerceIn(0.05f, 1f) / 2f
+        return floatArrayOf(cx - hw, cy - hh, cx + hw, cy + hh)
     }
 
     /**
-     * 某状态实际使用的交互区域边长系数。
+     * 某状态的可互动面积缩放系数。
      *
-     * ⚠️ **四个角落固定 1.0（完全不缩、也不随设置变）**。用户要求：
-     * "吸附至四个角的时候调节不生效，按照当前版本的交互区域来"
-     * （当前版本 = 角落用**整个** alpha 外接框，不缩）。
-     * 界面上「交互区域」卡片标题后也注明了"吸附至角落时不生效"。
-     *
-     * 理由：角落素材（四角那套图）透明缝隙最多 —— 发丝、头与身体之间到处都是洞，
-     * 缩小后很容易点不中、抓不住；而角落位置本来就贴死在屏幕角上，
+     * ⚠️ **四个角落保持 1.0（完全不缩）**。用户要求：
+     * "吸附至四个角落时的面积不要改动，只改动没有吸附到四个角落情况的"。
+     * 理由也站得住：角落素材（四角那套图）透明缝隙最多 —— 发丝、头与身体之间
+     * 到处都是洞，缩小后很容易点不中、抓不住；而角落位置本来就贴死在屏幕角上，
      * 留一圈可点区域反而更好把它拖出来。
      *
-     * @param normal 非角落状态用的系数
+     * @param normal 非角落状态用的系数（默认 0.75 = 缩到 75%）
      */
-    fun hitBoxScaleFor(state: Int, normal: Float): Float =
+    fun hitBoxScaleFor(state: Int, normal: Float = 0.75f): Float =
         if (isCorner(state)) 1f else normal
 
     /**

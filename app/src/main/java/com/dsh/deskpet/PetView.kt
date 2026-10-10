@@ -1979,48 +1979,42 @@ class PetView(context: Context) : View(context) {
         val v = cv / cellH
         if (u < 0f || u > 1f || v < 0f || v > 1f) return false
 
-        // 该状态的位图。直接对**它**取像素即可，不要另存"预缩放副本"：
-        // Bitmap.getPixel 是单像素读，**O(1)，与位图大小无关** ——
-        // 曾经为此维护过一个 scaledCache，收益为零，代价是每状态一份整尺寸
-        // 副本（大小拉满时 10 份 x 3.3 MiB ≈ 33 MiB）。
+        // alpha 取样。
+        //
+        // ⚠️ 这里直接对**该状态的位图**采样，不要再去另存一份"预缩放副本"：
+        //    Bitmap.getPixel 是单像素读，**O(1)，与位图大小无关** ——
+        //    曾经为此维护过一个 scaledCache，收益为零，代价是每状态一份整尺寸
+        //    副本（大小拉满时 10 份 x 3.3 MiB ≈ 33 MiB）。u/v 是归一化坐标，
+        //    对全分辨率图采样与对缩放图采样结果一致。
         val bmp = runCatching { bitmapFor(state) }.getOrNull() ?: return true
-
-        // ---- 第一步：先看落点是否在**交互区域**内 ----
-        //
-        // ⚠️ 这一步必须在前面，它是**硬边界**。
-        //
-        // 用户澄清了「交互区域」的语义："可以对人物进行拖动、点击等操作的区域 ——
-        // 交互区域比较小的话，点击人物非吸附边边缘就可能没反应；反过来，
-        // 点人物附近的空白区域也可能有反应。"
-        //
-        // 原来的结构是反的：先判单像素 alpha，不透明就直接 return true，
-        // **只有**在点到透明像素时才拿外接框兜底。于是人物轮廓那一大片
-        // 无论把交互区域调到多小都始终命中 —— 调小只剩"少一点空白容错"，
-        // 观感就是"调了没效果"（用户反馈的原话）。
-        //
-        // 现在：框是**包含式容器**，框外一律不响应（事件穿透到下层桌面/App），
-        // 框内一律命中。于是缩放这个框会同时影响两侧：
-        // 调小 -> 非吸附边那侧的人物边缘点不到；调大 -> 人物旁边的空白也能点中。
-        // 正是用户描述的语义。
-        //
-        // 框相对外接框是**吸附边锚定**的（见 [PetState.hitBox]），所以
-        // "非吸附边那一侧"才会随着调小而先失去响应，吸附边那一侧始终贴着屏幕边。
-        val box = PetState.hitBox(
-            alphaBoundsCached(state, bmp), hitBoxScale(state), state
-        )
         val bx = (u * (bmp.width - 1)).toInt().coerceIn(0, bmp.width - 1)
         val by = (v * (bmp.height - 1)).toInt().coerceIn(0, bmp.height - 1)
+        val opaque = runCatching { ((bmp.getPixel(bx, by) ushr 24) and 0xFF) >= HIT_ALPHA_MIN }
+            .getOrDefault(true)
+        if (opaque) return true
 
-        if (bx < box[0] || bx >= box[2] || by < box[1] || by >= box[3]) return false
-
-        // ---- 第二步：框内一律命中 ----
+        // 单像素透明时，**落在素材的 alpha 外接框里也算命中**。
         //
-        // 框内**不再**按 alpha 分档（不透明优先、透明兜底那一套）。
-        // 那是上面说的旧结构，会让"人物轮廓永远可点"、框失去意义；
-        // 而且框内按 alpha 判透明，会让发丝缝里的点击穿透出去 ——
-        // 那正是当年用户报的"吸附到右下角后点/拖素材却操作到下面"的成因
-        // （发丝间、头与身体之间的透明缝隙，角落素材尤其多）。
-        return true
+        // 原来只认"这一个像素不透明"，于是点在以下位置会被判为未命中，
+        // 事件直接穿透到下层窗口 —— 用户看到的现象就是
+        // "吸附到右下角后，点/拖素材却操作到下面的桌面或 App"：
+        //   · 发丝之间、头与身体之间的透明缝隙（角落素材尤其多）
+        //   · 抗锯齿造成的半透明边缘（alpha 低于阈值）
+        // 外接框远小于窗口（窗口还有对角线包络的富余量），
+        // 所以不会让整屏变得不可点。
+        //
+        // ⚠️ 但只用外接框的 **75%**（以框中心为基准等比缩小，见 [PetState.hitBox]）：
+        // 整个矩形会让"人物旁边明显是空白的地方"也能点中。
+        // 用户反馈："感觉可互动面积还是有点大，互动面积等比缩小到现在的 75%。"
+        // 缩小后人物轮廓（不透明像素）照旧可点，只是框外侧那一圈空白不再命中。
+        //
+        // ⚠️⚠️ **四个角落不缩**（`hitBoxScaleFor` 对角落返回 1.0）。用户要求：
+        // "吸附至四个角落时的面积不要改动，只改动没有吸附到四个角落情况的"。
+        // 角落素材透明缝隙最多，缩小后容易点不中/抓不住。
+        val box = PetState.hitBox(
+            alphaBoundsCached(state, bmp), PetState.hitBoxScaleFor(state, HIT_BOX_SCALE)
+        )
+        return bx >= box[0] && bx < box[2] && by >= box[1] && by < box[3]
     }
 
     /**
@@ -2593,31 +2587,20 @@ class PetView(context: Context) : View(context) {
      */
     private fun easeOutCubic(t: Float): Float = PetState.easeInArrive(t)
 
-    /**
-     * 当前生效的**交互区域边长系数**（已按状态决定是否应用用户设置）。
-     *
-     * 用户用「交互区域」卡片调的是**倍率**（[Prefs.hitScale]，0.5~2，1.0 为基准），
-     * 作用于外接框的系数是 `[Prefs.HIT_BOX_BASE] * hitScale`：
-     *   1.0 -> 0.8、0.5 -> 0.4、2.0 -> 1.6。
-     *
-     * ⚠️ **吸附到四个角落时用户设置不生效**，固定用 1.0（整个 alpha 外接框）。
-     *    这是用户明确要求的（"吸附至四个角的时候调节不生效，按照当前版本的交互区域来"），
-     *    界面上也注明了。判断在 [PetState.hitBoxScaleFor] 里，别在这里再写一遍。
-     *
-     * 上限 1.6 比外接框本身还大：滑条拉满就是"在外接框基础上再放宽一圈"，
-     * 属于有意为之，所以 [PetState.hitBox] 里的 clamp 上限是 2 而不是 1。
-     *
-     * ⚠️ 从 prefs **现读**，不做字段缓存：这个值只在 ACTION_DOWN 时用一次，
-     *    不是每帧，省这一次读没有意义，反而要额外维护失效逻辑。
-     */
-    private fun hitBoxScale(state: Int): Float = PetState.hitBoxScaleFor(
-        state,
-        (Prefs.HIT_BOX_BASE * prefs.hitScale).coerceIn(Prefs.MIN_HIT, Prefs.MAX_HIT)
-    )
-
     companion object Geometry {
         private const val FRAME_MS = 16L
         private const val HIT_ALPHA_MIN = 16
+
+        /**
+         * 非角落状态的可互动面积 = 素材 alpha 外接框的 **75%**
+         * （以框中心为基准等比缩小，见 [PetState.hitBox]）。
+         *
+         * 用户要求："感觉可互动面积还是有点大，互动面积等比缩小到现在的 75%。"
+         * 只影响"透明像素靠外接框兜底"那一档：人物轮廓本身照旧可点。
+         *
+         * ⚠️ **四个角落不缩**（[PetState.hitBoxScaleFor] 对角落返回 1.0）。
+         */
+        private const val HIT_BOX_SCALE = 0.75f
         private const val SNAP_MS = 220f
 
         /** 收起（滑出）的时长：要"慢慢平移出去" */

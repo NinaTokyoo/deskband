@@ -42,24 +42,6 @@ class Prefs(context: Context) {
         }
 
     /**
-     * 桌宠**可交互区域**的倍率（用户可调，[HIT_SCALE_MIN] ~ [HIT_SCALE_MAX]）。
-     *
-     * 用户要求："调节内容变成了交互区域边长，修改的数值实际上是等比缩放边长而不是
-     * 面积，以现在边长的 0.8 倍作为 1 倍，调节范围是 0.5~2，保留一位小数"。
-     *
-     * 所以这个值本身只是个倍率，真正生效的系数是 `[HIT_BOX_BASE] * hitScale`：
-     *   · 1.0 -> 0.8（= 用户说的"现在边长的 0.8 倍"）
-     *   · 0.5 -> 0.4（最小）
-     *   · 2.0 -> 1.6（比 alpha 外接框还大，等于"整个外接框再放宽一圈"）
-     *
-     * ⚠️ 注意是**边长**等比缩放，不是面积 —— 所以 2 倍边长意味着 4 倍面积。
-     *    界面文案也按"倍率"写，不要说成面积。
-     */
-    var hitScale: Float
-        get() = sp.getFloat(KEY_HIT_SCALE, 1f).coerceIn(HIT_SCALE_MIN, HIT_SCALE_MAX)
-        set(v) { sp.edit().putFloat(KEY_HIT_SCALE, v.coerceIn(HIT_SCALE_MIN, HIT_SCALE_MAX)).apply() }
-
-    /**
      * 由倍率折算出的实际比例（宠物高度 / 可用高度）。
      *
      * 用户**没手动调过**时直接用标准值，而不是读回旧存档 ——
@@ -282,7 +264,6 @@ class Prefs(context: Context) {
         private const val KEY_SIZE = "size_fraction"
         private const val KEY_SIZE_TUNED = "size_tuned"
         private const val KEY_SIZE_SCALE = "size_scale"
-        private const val KEY_HIT_SCALE = "hit_scale"
         private const val KEY_SNAP = "snap_state"
         private const val KEY_LEFT = "pos_left"
         private const val KEY_TOP = "pos_top"
@@ -353,26 +334,6 @@ class Prefs(context: Context) {
         /** 由倍率范围推出的实际比例上下限：4% ~ 40% */
         const val MIN_SIZE = SIZE_BASE * SIZE_SCALE_MIN
         const val MAX_SIZE = SIZE_BASE * SIZE_SCALE_MAX
-
-        // ---- 交互区域：可交互范围的倍率（用户指定） ----
-
-        /**
-         * 倍率 1.0 对应的**基准边长系数**。
-         *
-         * 用户要求"以现在边长的 0.8 倍作为 1 倍" —— 这里的"现在"指
-         * 原来写死的 `HIT_BOX_SCALE = 0.75`（非角落状态把 alpha 外接框缩到 75%）。
-         * 用户把基准定在 0.8，所以 1.0 档会比改动前**略大一点**，
-         * 这是用户明确指定的，不要"顺手改回 0.75"。
-         */
-        const val HIT_BOX_BASE = 0.8f
-
-        /** 交互区域倍率范围：0.5 ~ 2（用户指定） */
-        const val HIT_SCALE_MIN = 0.5f
-        const val HIT_SCALE_MAX = 2f
-
-        /** 由倍率推出的边长系数上下限：0.4 ~ 1.6 */
-        const val MIN_HIT = HIT_BOX_BASE * HIT_SCALE_MIN
-        const val MAX_HIT = HIT_BOX_BASE * HIT_SCALE_MAX
 
         // ---- 呼出回弹：标准值与可调倍率范围（用户指定） ----
         /**

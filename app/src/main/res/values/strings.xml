@@ -31,15 +31,10 @@
     <string name="reset_need_running">桌宠还没开启，先点左侧「开启桌宠」</string>
 
     <!-- ③ 外观 -->
-    <string name="section_look">外观尺寸</string>
-    <string name="section_hit">交互区域</string>
-    <string name="hit_label_value">区域倍率　×%1$s</string>
-    <string name="hit_input">倍率</string>
-    <!-- 交互区域卡片标题后的浅色提示（角落状态不走用户设置） -->
-    <string name="hit_corner_note">吸附至角落时不生效</string>
+    <string name="section_look">外观大小</string>
     <!-- 标签与当前值合并成一行，提高信息密度。
          只保留倍率，去掉"占屏高 xx%"（太长会被省略号截断） -->
-    <string name="size_label_value">尺寸倍率　×%1$s</string>
+    <string name="size_label_value">大小倍率　×%1$s</string>
     <string name="size_input">倍率</string>
     <string name="size_saved">大小已保存</string>
 
