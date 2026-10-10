@@ -1719,8 +1719,12 @@ class PetView(context: Context) : View(context) {
         // 整个矩形会让"人物旁边明显是空白的地方"也能点中。
         // 用户反馈："感觉可互动面积还是有点大，互动面积等比缩小到现在的 75%。"
         // 缩小后人物轮廓（不透明像素）照旧可点，只是框外侧那一圈空白不再命中。
+        //
+        // ⚠️⚠️ **四个角落不缩**（`hitBoxScaleFor` 对角落返回 1.0）。用户要求：
+        // "吸附至四个角落时的面积不要改动，只改动没有吸附到四个角落情况的"。
+        // 角落素材透明缝隙最多，缩小后容易点不中/抓不住。
         val bounds = alphaBounds(bmp) ?: return false
-        val box = PetState.hitBox(bounds, HIT_BOX_SCALE)
+        val box = PetState.hitBox(bounds, PetState.hitBoxScaleFor(state, HIT_BOX_SCALE))
         return bx >= box[0] && bx < box[2] && by >= box[1] && by < box[3]
     }
 
@@ -2227,10 +2231,13 @@ class PetView(context: Context) : View(context) {
         private const val HIT_ALPHA_MIN = 16
 
         /**
-         * 可互动面积 = 素材 alpha 外接框的 **75%**（以框中心为基准等比缩小）。
+         * 非角落状态的可互动面积 = 素材 alpha 外接框的 **75%**
+         * （以框中心为基准等比缩小，见 [PetState.hitBox]）。
          *
          * 用户要求："感觉可互动面积还是有点大，互动面积等比缩小到现在的 75%。"
          * 只影响"透明像素靠外接框兜底"那一档：人物轮廓本身照旧可点。
+         *
+         * ⚠️ **四个角落不缩**（[PetState.hitBoxScaleFor] 对角落返回 1.0）。
          */
         private const val HIT_BOX_SCALE = 0.75f
         private const val SNAP_MS = 220f

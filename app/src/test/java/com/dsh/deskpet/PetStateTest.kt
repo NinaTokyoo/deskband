@@ -448,6 +448,43 @@ class PetStateTest {
     }
 
     /**
+     * **四个角落的可互动面积不缩**（保持整框），其余状态缩到 75%。
+     *
+     * 用户要求："吸附至四个角落时的面积不要改动，只改动没有吸附到四个角落情况的"。
+     */
+    @Test
+    fun only_non_corner_states_get_the_smaller_hit_box() {
+        val corners = intArrayOf(
+            PetState.CORNER_BR, PetState.CORNER_BL,
+            PetState.CORNER_TR, PetState.CORNER_TL
+        )
+        for (c in corners) {
+            assertTrue("状态 $c 应该被认成角落", PetState.isCorner(c))
+            assertEquals("角落 $c 不许缩", 1f, PetState.hitBoxScaleFor(c), 0.0001f)
+            // 角落用的框必须与原框逐值一致
+            val b = intArrayOf(10, 20, 210, 220)
+            val box = PetState.hitBox(b, PetState.hitBoxScaleFor(c))
+            assertEquals(10f, box[0], 0.001f)
+            assertEquals(20f, box[1], 0.001f)
+            assertEquals(210f, box[2], 0.001f)
+            assertEquals(220f, box[3], 0.001f)
+        }
+
+        // 非角落：贴边、正立变体、上边，全部缩到 75%
+        val others = intArrayOf(
+            PetState.BORDER_R, PetState.BORDER_L,
+            PetState.BORDER_R_UPRIGHT, PetState.BORDER_L_UPRIGHT,
+            PetState.EDGE_TOP_R, PetState.EDGE_TOP_L
+        )
+        for (s in others) {
+            assertFalse("状态 $s 不该被认成角落", PetState.isCorner(s))
+            assertEquals("$s 应该缩到 75%", 0.75f, PetState.hitBoxScaleFor(s), 0.0001f)
+            val box = PetState.hitBox(intArrayOf(10, 20, 210, 220), PetState.hitBoxScaleFor(s))
+            assertEquals(150f, box[2] - box[0], 0.001f)
+        }
+    }
+
+    /**
      * 可互动面积 = 素材 alpha 外接框的 75%（中心不变、等比缩小）。
      *
      * 用户要求："感觉可互动面积还是有点大，互动面积等比缩小到现在的 75%。"
