@@ -618,7 +618,8 @@
                 android:imeOptions="actionDone"
                 android:maxLength="40"
                 android:maxLines="2"
-                android:textSize="15sp" />
+                android:textSize="15sp"
+                android:hint="@string/notify_title_input" />
 
             <TextView
                 android:id="@+id/txtNotifyTitleCount"

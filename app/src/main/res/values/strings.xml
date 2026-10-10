@@ -82,7 +82,10 @@
 
     <!-- ⑤ 通知栏自定义（介绍文字已按要求去掉） -->
     <string name="section_notify">通知栏内容</string>
-    <string name="notify_input">留空使用默认文案</string>
+    <!-- 标题框的提示：留空 -> 回填默认模板 -->
+    <string name="notify_title_input">留空使用默认文案</string>
+    <!-- 正文框的提示：留空 -> 回填当前标题 -->
+    <string name="notify_input">留空使用当前标题</string>
     <string name="notify_count">已输入 %1$d / %2$d 字符</string>
     <string name="notify_saved">通知内容已保存</string>
 
