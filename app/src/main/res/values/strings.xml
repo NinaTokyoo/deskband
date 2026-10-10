@@ -97,8 +97,18 @@
     <string name="notif_channel">桌宠</string>
     <string name="notif_channel_desc">桌宠在桌面上运行时显示的常驻通知</string>
     <!-- 标题随当前形象变化，形象名后留一个空格：例如「山田凉 正在陪伴你」 -->
-    <string name="notif_title_fmt">%1$s 正在陪伴你</string>
-    <string name="notif_title_fallback">桌宠正在陪伴你</string>
+    <!--
+      通知标题的**默认值**。用 {name} 表示角色名 —— 这里是给输入框的 hint 与
+      代码里的兜底共用的，所以写成 {} 而不是 %1$s（%1$s 会被当格式符，
+      用户在输入框里改的时候也不好理解）。
+    -->
+    <string name="notif_title_default">{name} 正在陪你</string>
+    <string name="notify_title_label">标题</string>
+    <string name="notify_body_label">正文</string>
+    <string name="notify_title_hint">用 {name} 表示角色名，例：{name} 正在陪你</string>
+    <string name="notify_title_count">标题已输入 %1$d / %2$d 字符</string>
+    <string name="notif_title_fmt">%1$s 正在陪你</string>
+    <string name="notif_title_fallback">桌宠正在陪你</string>
     <string name="notif_text">点这里回到设置，或直接收起桌宠</string>
     <!-- 已收起（服务仍在跑）时的通知正文 -->
     <string name="notif_text_collapsed">桌宠已收起，点这里回到设置</string>

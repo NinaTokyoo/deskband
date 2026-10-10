@@ -1494,4 +1494,104 @@ class PetStateTest {
         // 躺侧边的旋转形态上下一致（纵向自由，与贴哪条水平边无关）
         else -> s
     }
+
+    // ---------------------------------------------------------------- 通知标题
+
+    private val TITLE_DEFAULT = "{name} 正在陪你"
+
+    /** 留空 -> 用默认模板 */
+    @Test
+    fun title_blank_uses_default() {
+        for (raw in listOf(null, "", "   ", "\n")) {
+            val t = PetState.buildTitle(raw, "后藤一里", TITLE_DEFAULT)
+            assertEquals("后藤一里 正在陪你", t.text)
+            assertEquals(0, t.hlFrom)
+            assertEquals("后藤一里".length, t.hlTo)
+        }
+    }
+
+    /** 自定义模板：{name} 被替换成角色名 */
+    @Test
+    fun title_replaces_name_token() {
+        val t = PetState.buildTitle("{name} 陪你哦", "山田凉", TITLE_DEFAULT)
+        assertEquals("山田凉 陪你哦", t.text)
+        assertEquals(0, t.hlFrom)
+        assertEquals("山田凉".length, t.hlTo)
+    }
+
+    /** 不写 {name} -> 标题固定不变，且不高亮 */
+    @Test
+    fun title_without_token_is_fixed() {
+        val t = PetState.buildTitle("桌宠在线", "山田凉", TITLE_DEFAULT)
+        assertEquals("桌宠在线", t.text)
+        assertEquals(-1, t.hlFrom)
+        assertEquals(-1, t.hlTo)
+    }
+
+    /** {name} 写在中间：高亮区间要跟着挪 */
+    @Test
+    fun title_token_in_middle_shifts_highlight() {
+        val t = PetState.buildTitle("你的 {name} 已上线", "喜多郁代", TITLE_DEFAULT)
+        assertEquals("你的 喜多郁代 已上线", t.text)
+        assertEquals("你的 ".length, t.hlFrom)
+        assertEquals("你的 ".length + "喜多郁代".length, t.hlTo)
+    }
+
+    /**
+     * {name} 写两次 -> 两处都替换，但只高亮**第一处**。
+     *
+     * 这条正是不能用 indexOf 反推的原因：两处都是角色名，indexOf 只能命中一处，
+     * 虽然本例恰好也是第一处，但下面的"名字是模板子串"那条会暴露 indexOf 的错。
+     */
+    @Test
+    fun title_token_twice_replaces_both_but_highlights_first() {
+        val t = PetState.buildTitle("{name} 来了，{name} 陪你", "广井菊里", TITLE_DEFAULT)
+        assertEquals("广井菊里 来了，广井菊里 陪你", t.text)
+        assertEquals(0, t.hlFrom)
+        assertEquals("广井菊里".length, t.hlTo)
+    }
+
+    /**
+     * 角色名恰好是模板里已有的子串 —— indexOf 反推会高亮错位置。
+     *
+     * 模板「一里 陪着一里」、名字「一里」：正确的高亮区间是占位符那一处（开头），
+     * 而不是 indexOf 找到的第一个"一里"（其实本例开头就是占位符，所以再构造
+     * 一个更刁的：模板里角色名先出现、占位符在后）。
+     */
+    @Test
+    fun title_highlight_follows_token_not_first_name_occurrence() {
+        // 模板里先出现字面的"一里"，占位符在后
+        val t = PetState.buildTitle("一里 通知：{name} 正在陪你", "一里", TITLE_DEFAULT)
+        assertEquals("一里 通知：一里 正在陪你", t.text)
+        // 高亮的是**占位符**那一处，不是开头那个字面"一里"
+        val expectedAt = "一里 通知：".length
+        assertEquals(expectedAt, t.hlFrom)
+        assertEquals(expectedAt + "一里".length, t.hlTo)
+    }
+
+    /** 角色名为空：{name} 被去掉，不高亮、也不崩 */
+    @Test
+    fun title_blank_name_drops_token_without_highlight() {
+        for (n in listOf(null, "")) {
+            val t = PetState.buildTitle("{name} 正在陪你", n, TITLE_DEFAULT)
+            assertEquals(" 正在陪你", t.text)
+            assertEquals(-1, t.hlFrom)
+        }
+    }
+
+    /** 首尾空白要 trim 掉（用户常在输入框里手滑） */
+    @Test
+    fun title_trims_whitespace() {
+        val t = PetState.buildTitle("  {name} 陪你  ", "山田凉", TITLE_DEFAULT)
+        assertEquals("山田凉 陪你", t.text)
+    }
+
+    /** 默认模板自身也走同一条替换路径（不能写死"角色名一定在开头"） */
+    @Test
+    fun title_default_template_goes_through_same_path() {
+        val t = PetState.buildTitle("", "后藤一里", "{name} 正在陪你")
+        assertEquals("后藤一里 正在陪你", t.text)
+        assertEquals(0, t.hlFrom)
+        assertEquals("后藤一里".length, t.hlTo)
+    }
 }

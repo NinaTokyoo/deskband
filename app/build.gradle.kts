@@ -80,9 +80,13 @@ android {
         //   2.0.13 -> 20013（发布前安全整改：签名口令从 app/build.gradle.kts 挪到
         //                     local.properties（已被 .gitignore 排除）；
         //                     该文件会进仓库，明文口令会随仓库公开）
+        //   2.0.14 -> 20014（通知栏标题可在 App 内自定义：用 {name} 表示角色名，
+        //                     想插在哪里就写哪里；留空用默认。
+        //                     默认措辞按用户要求由「正在陪伴你」改为「正在陪你」。
+        //                     拼接逻辑抽成 PetState.buildTitle 纯函数并补 9 个单测）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏。
-        val vName = "2.0.13"
+        val vName = "2.0.14"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()

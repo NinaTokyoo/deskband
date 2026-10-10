@@ -137,6 +137,17 @@ class Prefs(context: Context) {
         set(v) { sp.edit().putString(KEY_NOTIFY_TEXT, v.take(NOTIFY_TEXT_MAX)).apply() }
 
     /**
+     * 通知标题的自定义文案，用 `{name}` 表示角色名。
+     *
+     * 空串表示"用默认"（[Prefs.NOTIFY_TITLE_DEFAULT]）—— 与正文一致，
+     * 「留空即默认」比强制填更省事。真正的 `{name}` 替换在
+     * [PetService.notificationTitle] 里做，因为只有那边知道当前角色名。
+     */
+    var notifyTitle: String
+        get() = sp.getString(KEY_NOTIFY_TITLE, "") ?: ""
+        set(v) { sp.edit().putString(KEY_NOTIFY_TITLE, v.take(NOTIFY_TITLE_MAX)).apply() }
+
+    /**
      * 由当前角色发色推出的强调色（缓存，供下次启动先上色避免闪一下默认色）。
      */
     var accentColor: Int
@@ -260,6 +271,7 @@ class Prefs(context: Context) {
         private const val KEY_BOUNCE_AMP = "bounce_amp_scale"
         private const val KEY_BOUNCE_TIME = "bounce_time_scale"
         private const val KEY_NOTIFY_TEXT = "notify_text"
+    private const val KEY_NOTIFY_TITLE = "notify_title"
         private const val KEY_ACCENT = "accent_color"
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_BOUNCE_ON = "bounce_on"
@@ -273,6 +285,18 @@ class Prefs(context: Context) {
 
         /** 通知栏自定义内容的字符上限（用户指定 40） */
         const val NOTIFY_TEXT_MAX = 40
+
+    /** 通知标题长度上限（比正文宽松些，标题允许写长一点） */
+    const val NOTIFY_TITLE_MAX = 40
+
+    /**
+     * 标题的默认文案。`{name}` 是占位符，会被替换成当前角色名。
+     * 与 strings.xml 里的 notif_title_default 保持一致。
+     */
+    const val NOTIFY_TITLE_DEFAULT = "{name} 正在陪你"
+
+    /** 标题里的角色名占位符 */
+    const val NOTIFY_NAME_TOKEN = "{name}"
 
         // ---- 松手回弹：标准值与可调倍率范围 ----
         /** 标准过冲幅度（px），倍率 1.0 对应它 */

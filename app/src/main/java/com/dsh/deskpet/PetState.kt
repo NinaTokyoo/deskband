@@ -826,4 +826,43 @@ object PetState {
             else -> floatArrayOf(1f, 0f)
         }
     }
+
+    // ---------------------------------------------------------------- 通知标题
+
+    /**
+     * 通知标题的解析结果。
+     *
+     * @param text  最终要显示的标题文字
+     * @param hlFrom 角色名高亮的起始下标；-1 表示不高亮（模板里没写 {name}）
+     * @param hlTo   高亮结束下标（不含）
+     */
+    data class Title(val text: String, val hlFrom: Int, val hlTo: Int)
+
+    /**
+     * 把用户自定义的标题模板解析成最终标题。
+     *
+     * 规则（都在 [com.dsh.deskpet.PetService.notificationTitle] 的调用处生效）：
+     *   · 模板为空     -> 用 [default]（默认文案）
+     *   · 模板含 {name} -> 全部替换成 [name]，并以**第一处**的位置作为高亮区间
+     *   · 模板不含 {name} -> 标题固定不变，不高亮
+     *   · [name] 为空   -> 只把 {name} 去掉，不高亮
+     *
+     * ⚠️ 高亮区间**不能**用 `text.indexOf(name)` 反推：角色名可能恰好是模板里
+     *    已有的子串（例如名字叫"一里"、模板里还有别的"一里"），
+     *    也可能 {name} 写了两次而只有第一处该高亮。所以统一按**模板里
+     *    占位符的下标**换算。
+     */
+    fun buildTitle(raw: String?, name: String?, default: String): Title {
+        val custom = raw?.trim().orEmpty()
+        val template = if (custom.isEmpty()) default else custom
+        val n = name.orEmpty()
+        val at = template.indexOf(NAME_TOKEN)
+        val text = template.replace(NAME_TOKEN, n)
+        // 占位符之前的字符数不变，所以第一处占位符的下标就是高亮的起点
+        val hl = if (at >= 0 && n.isNotEmpty()) at else -1
+        return Title(text, hl, if (hl >= 0) hl + n.length else -1)
+    }
+
+    /** 标题模板里的角色名占位符 */
+    const val NAME_TOKEN = "{name}"
 }

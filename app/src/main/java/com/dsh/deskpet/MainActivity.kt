@@ -95,6 +95,8 @@ class MainActivity : Activity() {
     private lateinit var btnBreathToggle: Button
 
     // 通知栏自定义
+    private lateinit var editNotifyTitle: EditText
+    private lateinit var txtNotifyTitleCount: TextView
     private lateinit var editNotify: EditText
     private lateinit var txtNotifyCount: TextView
     private lateinit var btnSaveNotify: Button
@@ -189,6 +191,8 @@ class MainActivity : Activity() {
         btnSaveBreath = findViewById(R.id.btnSaveBreath)
         btnResetBreath = findViewById(R.id.btnResetBreath)
         btnBreathToggle = findViewById(R.id.btnBreathToggle)
+        editNotifyTitle = findViewById(R.id.editNotifyTitle)
+        txtNotifyTitleCount = findViewById(R.id.txtNotifyTitleCount)
         editNotify = findViewById(R.id.editNotify)
         txtNotifyCount = findViewById(R.id.txtNotifyCount)
         btnSaveNotify = findViewById(R.id.btnSaveNotify)
@@ -979,9 +983,18 @@ class MainActivity : Activity() {
      * 通知正文在 startForegroundCompat 里读取，因此需要一次通知刷新）。
      */
     private fun setupNotifyControls() {
+        // 标题：留空表示用默认，所以框里显示的是"已保存的值"而不是默认值 ——
+        // 默认值只作为 hint 提示（hint 里就写明了 {name} 的用法）。
+        editNotifyTitle.setText(prefs.notifyTitle)
         editNotify.setText(prefs.notifyText)
         updateNotifyCount()
+        updateNotifyTitleCount()
 
+        editNotifyTitle.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
+            override fun afterTextChanged(s: android.text.Editable?) = updateNotifyTitleCount()
+        })
         editNotify.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
@@ -989,9 +1002,16 @@ class MainActivity : Activity() {
         })
 
         val applyNotify = {
+            prefs.notifyTitle = editNotifyTitle.text.toString()
             prefs.notifyText = editNotify.text.toString()
+            // 回写一次：setter 会按上限截断，把截断后的真实值显示出来
+            editNotifyTitle.setText(prefs.notifyTitle)
             editNotify.setText(prefs.notifyText)
             updateNotifyCount()
+            updateNotifyTitleCount()
+        }
+        editNotifyTitle.setOnEditorActionListener { _, _, _ ->
+            applyNotify(); clearInputFocus(); true
         }
         editNotify.setOnEditorActionListener { _, _, _ ->
             applyNotify(); clearInputFocus(); true
@@ -1006,6 +1026,12 @@ class MainActivity : Activity() {
     private fun updateNotifyCount() {
         val n = editNotify.text?.length ?: 0
         txtNotifyCount.text = getString(R.string.notify_count, n, Prefs.NOTIFY_TEXT_MAX)
+    }
+
+    private fun updateNotifyTitleCount() {
+        val n = editNotifyTitle.text?.length ?: 0
+        txtNotifyTitleCount.text =
+            getString(R.string.notify_title_count, n, Prefs.NOTIFY_TITLE_MAX)
     }
 
     private companion object {

@@ -187,13 +187,17 @@ class PetService : Service(), PetView.Host {
     private fun notificationTitle(): CharSequence {
         val name = sprite?.displayName
         if (name.isNullOrBlank()) return getString(R.string.notif_title_fallback)
-        val text = getString(R.string.notif_title_fmt, name)
-        val sp = android.text.SpannableString(text)
-        val i = text.indexOf(name)
-        if (i >= 0) {
+
+        // 标题可在 App 内自定义，用 {name} 表示角色名；拼接规则在 PetState.buildTitle
+        // 里（纯函数、有单测），这里只负责把结果套上强调色。
+        val t = PetState.buildTitle(
+            prefs.notifyTitle, name, Prefs.NOTIFY_TITLE_DEFAULT
+        )
+        val sp = android.text.SpannableString(t.text)
+        if (t.hlFrom >= 0) {
             sp.setSpan(
                 android.text.style.ForegroundColorSpan(prefs.accentColor),
-                i, i + name.length,
+                t.hlFrom, t.hlTo,
                 android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
             )
         }
