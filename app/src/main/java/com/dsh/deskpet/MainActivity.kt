@@ -37,7 +37,7 @@ class MainActivity : Activity() {
     private lateinit var editSize: EditText
     private lateinit var btnSaveSize: Button
     private lateinit var spinnerSkin: Spinner
-    private lateinit var chkAuto: CheckBox
+    private lateinit var btnReset: Button
 
     // 松手回弹调节
     private lateinit var seekBounceAmp: SeekBar
@@ -47,6 +47,11 @@ class MainActivity : Activity() {
     private lateinit var editBounceAmp: EditText
     private lateinit var editBounceMs: EditText
     private lateinit var btnSaveBounce: Button
+
+    // 通知栏自定义
+    private lateinit var editNotify: EditText
+    private lateinit var txtNotifyCount: TextView
+    private lateinit var btnSaveNotify: Button
 
     private var skins: List<String> = emptyList()
     private var bindingSkin = false
@@ -67,7 +72,7 @@ class MainActivity : Activity() {
         editSize = findViewById(R.id.editSize)
         btnSaveSize = findViewById(R.id.btnSaveSize)
         spinnerSkin = findViewById(R.id.spinnerSkin)
-        chkAuto = findViewById(R.id.chkAuto)
+        btnReset = findViewById(R.id.btnReset)
         seekBounceAmp = findViewById(R.id.seekBounceAmp)
         seekBounceMs = findViewById(R.id.seekBounceMs)
         txtBounceAmp = findViewById(R.id.txtBounceAmp)
@@ -75,13 +80,18 @@ class MainActivity : Activity() {
         editBounceAmp = findViewById(R.id.editBounceAmp)
         editBounceMs = findViewById(R.id.editBounceMs)
         btnSaveBounce = findViewById(R.id.btnSaveBounce)
+        editNotify = findViewById(R.id.editNotify)
+        txtNotifyCount = findViewById(R.id.txtNotifyCount)
+        btnSaveNotify = findViewById(R.id.btnSaveNotify)
 
         applyEdgeToEdge()
         setupBounceControls()
+        setupNotifyControls()
 
         btnOverlay.setOnClickListener { openOverlaySettings() }
         btnNotify.setOnClickListener { requestNotificationPermission() }
         btnToggle.setOnClickListener { togglePet() }
+        btnReset.setOnClickListener { doReset() }
 
         seekSize.max = 1000
         seekSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -120,10 +130,33 @@ class MainActivity : Activity() {
             Toast.makeText(this, R.string.size_saved, Toast.LENGTH_SHORT).show()
         }
 
-        chkAuto.setOnCheckedChangeListener { _, checked -> prefs.autoStart = checked }
 
         bindSizeControls()
         loadSkins()
+    }
+
+    // ---------------------------------------------------------------- 复位
+
+    /**
+     * 复位：大小与回弹恢复默认倍率，桌宠回到右边框中点。
+     *
+     * 服务没在跑时只提示 —— 用户点它是为了"出问题时找回桌宠"，
+     * 桌宠本来就不在，直接告诉他先开启。
+     */
+    private fun doReset() {
+        if (!prefs.running) {
+            Toast.makeText(this, R.string.reset_need_running, Toast.LENGTH_SHORT).show()
+            return
+        }
+        // 本地也先把 UI 同步过来（服务端会写同一份 Prefs）
+        prefs.sizeScale = 1f
+        prefs.bounceAmpScale = 1f
+        prefs.bounceTimeScale = 1f
+        bindSizeControls()
+        bindBounceControls()
+        clearInputFocus()
+        PetService.reset(this)
+        Toast.makeText(this, R.string.reset_done, Toast.LENGTH_SHORT).show()
     }
 
     override fun onResume() {
@@ -179,7 +212,6 @@ class MainActivity : Activity() {
         spinnerSkin.setSelection(idx, false)
         bindingSkin = false
 
-        chkAuto.isChecked = prefs.autoStart
 
         bindSizeControls()
     }
@@ -367,6 +399,46 @@ class MainActivity : Activity() {
     private fun fmtScale(v: Float): String {
         val tenths = (v * 10f).roundToInt()
         return "${tenths / 10}.${tenths % 10}"
+    }
+
+    // ---------------------------------------------------------------- 通知栏内容
+
+    /**
+     * 通知栏自定义内容：上限 40 字符，实时显示字数。
+     *
+     * 保存后通知服务重建常驻通知（ACTION_RELOAD 不够 —— 它不会重建通知，
+     * 所以这里显式调用 PetService.notifyChanged，它在服务侧走的是整条刷新路径；
+     * 通知正文在 startForegroundCompat 里读取，因此需要一次通知刷新）。
+     */
+    private fun setupNotifyControls() {
+        editNotify.setText(prefs.notifyText)
+        updateNotifyCount()
+
+        editNotify.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
+            override fun afterTextChanged(s: android.text.Editable?) = updateNotifyCount()
+        })
+
+        val applyNotify = {
+            prefs.notifyText = editNotify.text.toString()
+            editNotify.setText(prefs.notifyText)
+            updateNotifyCount()
+        }
+        editNotify.setOnEditorActionListener { _, _, _ ->
+            applyNotify(); clearInputFocus(); true
+        }
+        btnSaveNotify.setOnClickListener {
+            applyNotify()
+            clearInputFocus()
+            PetService.refreshNotification(this)
+            Toast.makeText(this, R.string.notify_saved, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun updateNotifyCount() {
+        val n = editNotify.text?.length ?: 0
+        txtNotifyCount.text = getString(R.string.notify_count, n, Prefs.NOTIFY_TEXT_MAX)
     }
 
     // ---------------------------------------------------------------- 大小调节

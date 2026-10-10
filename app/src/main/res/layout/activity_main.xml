@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  卡片式布局。每张卡片专注一件事：
+    ① 开关 + 权限
+    ② 形象切换 + 复位
+    ③ 外观（大小倍率）
+    ④ 松手回弹
+    ⑤ 通知栏自定义
+-->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/root"
     android:layout_width="match_parent"
@@ -12,92 +20,133 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingLeft="20dp"
-        android:paddingRight="20dp"
-        android:paddingTop="24dp"
-        android:paddingBottom="32dp">
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="28dp">
 
         <TextView
+            android:id="@+id/txtTitle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
             android:text="@string/app_name"
             android:textColor="@color/text_primary"
-            android:textSize="30sp"
+            android:textSize="24sp"
             android:textStyle="bold" />
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/subtitle"
-            android:textColor="@color/text_secondary"
-            android:textSize="14sp"
-            android:lineSpacingExtra="3dp" />
+        <!-- ① 开关与权限 -->
+        <LinearLayout style="@style/Card">
 
-        <!-- 切换形象：放在页面最上面 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:baselineAligned="false">
+
+                <Button
+                    android:id="@+id/btnToggle"
+                    style="@style/BigButton"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:layout_marginTop="0dp"
+                    android:text="@string/btn_start" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="14dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/txtOverlayStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+
+                    <Button
+                        android:id="@+id/btnOverlay"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:background="@drawable/btn_primary_bg"
+                        android:paddingTop="7dp"
+                        android:paddingBottom="7dp"
+                        android:textSize="13sp"
+                        android:textColor="@color/on_accent"
+                        android:stateListAnimator="@null"
+                        android:text="@string/perm_overlay_btn_off" />
+
+                    <TextView
+                        android:id="@+id/txtNotifyStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+
+                    <Button
+                        android:id="@+id/btnNotify"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:background="@drawable/btn_primary_bg"
+                        android:paddingTop="7dp"
+                        android:paddingBottom="7dp"
+                        android:textSize="13sp"
+                        android:textColor="@color/on_accent"
+                        android:stateListAnimator="@null"
+                        android:text="@string/perm_notify_btn_off" />
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- ② 形象与复位 -->
         <LinearLayout style="@style/Card">
 
             <TextView
                 style="@style/CardTitle"
                 android:text="@string/section_skin" />
 
-            <Spinner
-                android:id="@+id/spinnerSkin"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp" />
+                android:layout_marginTop="12dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <Spinner
+                    android:id="@+id/spinnerSkin"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1" />
+
+                <Button
+                    android:id="@+id/btnReset"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:background="@drawable/btn_primary_bg"
+                    android:paddingStart="22dp"
+                    android:paddingEnd="22dp"
+                    android:paddingTop="10dp"
+                    android:paddingBottom="10dp"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/on_accent"
+                    android:stateListAnimator="@null"
+                    android:text="@string/btn_reset" />
+            </LinearLayout>
 
             <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="@string/label_skin_hint"
-                android:textColor="@color/text_secondary"
-                android:textSize="13sp" />
-        </LinearLayout>
-
-        <!-- 权限 -->
-        <LinearLayout style="@style/Card">
-
-            <TextView
-                style="@style/CardTitle"
-                android:text="@string/section_perm" />
-
-            <TextView
-                android:id="@+id/txtOverlayStatus"
                 style="@style/StatusLine"
-                android:text="@string/perm_overlay_off" />
-
-            <Button
-                android:id="@+id/btnOverlay"
-                style="@style/PrimaryButton"
-                android:text="@string/perm_overlay_btn_off" />
-
-            <TextView
-                android:id="@+id/txtNotifyStatus"
-                style="@style/StatusLine"
-                android:text="@string/perm_notify_off" />
-
-            <Button
-                android:id="@+id/btnNotify"
-                style="@style/PrimaryButton"
-                android:text="@string/perm_notify_btn_off" />
+                android:text="@string/reset_hint" />
         </LinearLayout>
 
-        <!-- 开关 -->
-        <LinearLayout style="@style/Card">
-
-            <TextView
-                style="@style/CardTitle"
-                android:text="@string/section_switch" />
-
-            <Button
-                android:id="@+id/btnToggle"
-                style="@style/BigButton"
-                android:text="@string/btn_start" />
-        </LinearLayout>
-
-        <!-- 外观 -->
+        <!-- ③ 外观 -->
         <LinearLayout style="@style/Card">
 
             <TextView
@@ -149,18 +198,9 @@
                 style="@style/PrimaryButton"
                 android:layout_marginTop="14dp"
                 android:text="@string/save_apply" />
-
-            <CheckBox
-                android:id="@+id/chkAuto"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
-                android:text="@string/chk_autostart"
-                android:textColor="@color/text_primary"
-                android:textSize="15sp" />
         </LinearLayout>
 
-        <!-- 松手回弹调节 -->
+        <!-- ④ 松手回弹 -->
         <LinearLayout style="@style/Card">
 
             <TextView
@@ -168,19 +208,13 @@
                 android:text="@string/section_bounce" />
 
             <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="@string/bounce_hint"
-                android:textColor="@color/text_secondary"
-                android:textSize="13sp"
-                android:lineSpacingExtra="3dp" />
+                style="@style/StatusLine"
+                android:text="@string/bounce_hint" />
 
-            <!-- 幅度 -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
+                android:layout_marginTop="14dp"
                 android:text="@string/label_bounce_amp"
                 android:textColor="@color/text_secondary"
                 android:textSize="14sp" />
@@ -217,11 +251,10 @@
                     android:hint="@string/bounce_amp_input" />
             </LinearLayout>
 
-            <!-- 回落时长 -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
+                android:layout_marginTop="14dp"
                 android:text="@string/label_bounce_ms"
                 android:textColor="@color/text_secondary"
                 android:textSize="14sp" />
@@ -258,25 +291,54 @@
                     android:hint="@string/bounce_ms_input" />
             </LinearLayout>
 
-            <!-- 保存并立刻应用到正在运行的桌宠 -->
             <Button
                 android:id="@+id/btnSaveBounce"
                 style="@style/PrimaryButton"
-                android:layout_marginTop="16dp"
+                android:layout_marginTop="14dp"
                 android:text="@string/save_apply" />
         </LinearLayout>
 
-        <!-- 小提示 -->
+        <!-- ⑤ 通知栏自定义 -->
         <LinearLayout style="@style/Card">
 
             <TextView
+                style="@style/CardTitle"
+                android:text="@string/section_notify" />
+
+            <TextView
+                style="@style/StatusLine"
+                android:text="@string/notify_hint" />
+
+            <EditText
+                android:id="@+id/editNotify"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/tip"
+                android:layout_marginTop="12dp"
+                android:inputType="text"
+                android:imeOptions="actionDone"
+                android:maxLength="40"
+                android:maxLines="2"
+                android:textSize="15sp"
+                android:hint="@string/notify_input" />
+
+            <TextView
+                android:id="@+id/txtNotifyCount"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
                 android:textColor="@color/text_secondary"
-                android:textSize="13sp"
-                android:lineSpacingExtra="5dp" />
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btnSaveNotify"
+                style="@style/PrimaryButton"
+                android:layout_marginTop="10dp"
+                android:text="@string/save_apply" />
         </LinearLayout>
 
+        <TextView
+            style="@style/StatusLine"
+            android:layout_marginTop="18dp"
+            android:text="@string/tip" />
     </LinearLayout>
 </ScrollView>

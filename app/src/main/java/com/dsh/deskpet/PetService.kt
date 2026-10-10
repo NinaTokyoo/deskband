@@ -94,6 +94,14 @@ class PetService : Service(), PetView.Host {
                 reloadPet()
                 return START_STICKY
             }
+            ACTION_RESET -> {
+                resetPet()
+                return START_STICKY
+            }
+            ACTION_NOTIFY -> {
+                refreshNotificationOnly()
+                return START_STICKY
+            }
         }
 
         if (!Settings.canDrawOverlays(this)) {
@@ -126,6 +134,17 @@ class PetService : Service(), PetView.Host {
 
     // ---------------------------------------------------------------- 通知
 
+    /**
+     * 通知正文：优先用用户自定义内容，为空则回落到默认文案。
+     *
+     * 再 take 一次上限是防御性的 —— 万一历史存档里有超长串。
+     */
+    private fun notificationText(): String {
+        val custom = prefs.notifyText.trim()
+        return if (custom.isEmpty()) getString(R.string.notif_text)
+        else custom.take(Prefs.NOTIFY_TEXT_MAX)
+    }
+
     private fun startForegroundCompat() {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) {
@@ -155,7 +174,7 @@ class PetService : Service(), PetView.Host {
         val builder = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_pet_notify)
             .setContentTitle(getString(R.string.notif_title))
-            .setContentText(getString(R.string.notif_text))
+            .setContentText(notificationText())
             .setContentIntent(open)
             .setOngoing(true)
         if (Build.VERSION.SDK_INT >= 23) {
@@ -277,6 +296,49 @@ class PetService : Service(), PetView.Host {
         v.syncWindow()
     }
 
+    /**
+     * 复位：把一切恢复成"出厂状态"并出现在**右边框中点**。
+     *
+     *   - 大小回到默认倍率（1.0）
+     *   - 回弹幅度与时长回到默认倍率（1.0）
+     *   - 位置：右边框，垂直居中，旋转形态
+     *
+     * 用户点它是为了"出问题时一键回到能看见的状态"，
+     * 所以这里同时把尺寸和回弹参数也归位，而不只是挪位置。
+     */
+    private fun resetPet() {
+        prefs.sizeScale = 1f
+        prefs.bounceAmpScale = 1f
+        prefs.bounceTimeScale = 1f
+        prefs.forgetPosition()
+
+        if (petView == null) {
+            showPet()
+            return
+        }
+        val v = petView ?: return
+        // 角色不变则不用重建；变了就走重建流程
+        if (sprite?.dir != prefs.skin) {
+            removePet()
+            showPet()
+            return
+        }
+        v.sprite = sprite
+        v.setSizeFraction(prefs.sizeFraction)
+        v.resetToRightMid()
+    }
+
+    /**
+     * 只刷新常驻通知（用户改了通知栏自定义内容时调用）。
+     *
+     * 不能用 ACTION_RELOAD：那条路径会重建宠物视图、重新吸附定位，
+     * 为了改一行通知文字而让桌宠跳一下是不合适的。
+     */
+    private fun refreshNotificationOnly() {
+        if (!prefs.running) return
+        runCatching { startForegroundCompat() }
+    }
+
     private fun screenBounds(): Rect {
         val r = Rect()
         if (Build.VERSION.SDK_INT >= 30) {
@@ -355,6 +417,38 @@ class PetService : Service(), PetView.Host {
 
         const val ACTION_STOP = "com.dsh.deskpet.action.STOP"
         const val ACTION_RELOAD = "com.dsh.deskpet.action.RELOAD"
+        const val ACTION_RESET = "com.dsh.deskpet.action.RESET"
+        const val ACTION_NOTIFY = "com.dsh.deskpet.action.NOTIFY"
+
+        /** App 里改了通知栏自定义内容：只刷新通知，不动桌宠位置 */
+        fun refreshNotification(context: Context) {
+            if (!Prefs(context).running) return
+            val i = Intent(context, PetService::class.java).setAction(ACTION_NOTIFY)
+            try {
+                if (Build.VERSION.SDK_INT >= 26) {
+                    context.startForegroundService(i)
+                } else {
+                    context.startService(i)
+                }
+            } catch (e: Exception) {
+                // 忽略
+            }
+        }
+
+        /** App 里点"复位"：恢复默认大小与回弹，并出现在右边框中点 */
+        fun reset(context: Context) {
+            if (!Prefs(context).running) return
+            val i = Intent(context, PetService::class.java).setAction(ACTION_RESET)
+            try {
+                if (Build.VERSION.SDK_INT >= 26) {
+                    context.startForegroundService(i)
+                } else {
+                    context.startService(i)
+                }
+            } catch (e: Exception) {
+                // 忽略
+            }
+        }
 
         fun start(context: Context) {
             val i = Intent(context, PetService::class.java)

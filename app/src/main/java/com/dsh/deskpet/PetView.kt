@@ -843,6 +843,33 @@ class PetView(context: Context) : View(context) {
         syncWindow()
     }
 
+    /**
+     * 复位：回到**右边框中点**（旋转形态，垂直居中）。
+     *
+     * 尺寸与回弹参数由调用方先重置到默认倍率，这里只负责把姿态与位置归位。
+     */
+    fun resetToRightMid() {
+        val b = host?.bounds() ?: return
+        state = PetState.BORDER_R
+        frozen = false
+        rotAnimRunning = false
+        shownRotation = PetState.rotationForSnap(PetState.BORDER_R)
+        cacheSizes()
+        val left = (b.width() - trackW).toFloat()
+        val top = (b.height() - trackH) / 2f
+        anchorX = left + centerFromTrackX()
+        anchorY = top + centerFromTrackY()
+        dragOffsetX = 0f
+        dragOffsetY = 0f
+        cancelTween()
+        flip = 0f
+        flipFrom = 0f
+        flipTo = 0f
+        lastZone = PetState.ZONE_B
+        syncWindow()
+        host?.onSettled(state, left.roundToInt(), top.roundToInt())
+    }
+
     // ---------------------------------------------------------------- 触摸
 
     /**

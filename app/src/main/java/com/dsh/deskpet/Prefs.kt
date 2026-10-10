@@ -125,6 +125,17 @@ class Prefs(context: Context) {
     /** 实际回落时长（ms） */
     val bounceBackMs: Long get() = (BOUNCE_MS_BASE * bounceTimeScale).toLong()
 
+    /**
+     * 常驻通知的自定义内容（空串 = 用默认文案）。
+     *
+     * 上限 [NOTIFY_TEXT_MAX] 个字符，允许任意语言、数字、符号与 emoji。
+     * 按 UTF-16 code unit 计数（emoji 通常占 2 个）——简单、可控、不会切坏代理对
+     * 到一半（take 不会把代理对拆开，因为上限远大于常见 emoji 的长度）。
+     */
+    var notifyText: String
+        get() = sp.getString(KEY_NOTIFY_TEXT, "") ?: ""
+        set(v) { sp.edit().putString(KEY_NOTIFY_TEXT, v.take(NOTIFY_TEXT_MAX)).apply() }
+
     companion object {
         private const val NAME = "deskpet"
         private const val KEY_RUNNING = "running"
@@ -139,6 +150,10 @@ class Prefs(context: Context) {
         private const val KEY_HAS_POS = "has_pos"
         private const val KEY_BOUNCE_AMP = "bounce_amp_scale"
         private const val KEY_BOUNCE_TIME = "bounce_time_scale"
+        private const val KEY_NOTIFY_TEXT = "notify_text"
+
+        /** 通知栏自定义内容的字符上限（用户指定 40） */
+        const val NOTIFY_TEXT_MAX = 40
 
         // ---- 松手回弹：标准值与可调倍率范围 ----
         /** 标准过冲幅度（px），倍率 1.0 对应它 */
