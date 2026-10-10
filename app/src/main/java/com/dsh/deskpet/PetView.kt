@@ -592,8 +592,10 @@ class PetView(context: Context) : View(context) {
         snapSide: Boolean, snapBottom: Boolean,
         tW: Int, tH: Int
     ) {
-        // 回弹参数由用户在 App 里调（滑块 + 数字输入），每次吸附时现读
-        val amp = prefs.bouncePx
+        // 回弹参数由用户在 App 里调（滑块 + 数字输入），每次吸附时现读。
+        // 总开关关掉时 amp 直接按 0 处理 —— 于是走下面"没什么可弹的"分支，
+        // 只做位置补间，不再往外弹。
+        val amp = if (prefs.bounceEnabled) prefs.bouncePx else 0f
         val backMs = prefs.bounceBackMs
         val dx = targetCenterX - curCenterX()
         val dy = targetCenterY - curCenterY()

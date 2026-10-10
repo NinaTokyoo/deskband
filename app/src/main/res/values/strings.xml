@@ -38,8 +38,13 @@
     <string name="bounce_restored">回弹已恢复默认</string>
     <string name="chk_autostart">开机自动叫它出来</string>
 
-    <!-- ④ 松手回弹（介绍文字已按要求去掉） -->
-    <string name="section_bounce">松手回弹</string>
+    <!-- ④ 边框回弹（介绍文字已按要求去掉） -->
+    <string name="section_bounce">边框回弹</string>
+    <!-- 总开关：按钮上显示的是"点一下会发生什么" -->
+    <string name="bounce_on">启用</string>
+    <string name="bounce_off">停用</string>
+    <string name="bounce_disabled_hint">边框回弹已停用</string>
+    <string name="bounce_enabled_hint">边框回弹已启用</string>
     <string name="bounce_amp_label_value">幅度倍率　×%1$s　·　%2$d px</string>
     <string name="bounce_ms_label_value">时长倍率　×%1$s　·　%2$d ms</string>
     <string name="bounce_amp_input">倍率</string>

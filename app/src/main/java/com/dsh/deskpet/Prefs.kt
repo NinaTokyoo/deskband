@@ -103,19 +103,19 @@ class Prefs(context: Context) {
      * 用户要求"以现在的幅度为标准来调"，所以界面调的是倍率而不是绝对像素。
      */
     var bounceAmpScale: Float
-        get() = sp.getFloat(KEY_BOUNCE_AMP, 1f).coerceIn(SCALE_MIN, SCALE_MAX)
+        get() = sp.getFloat(KEY_BOUNCE_AMP, 1f).coerceIn(AMP_SCALE_MIN, AMP_SCALE_MAX)
         set(v) {
             sp.edit().putFloat(
-                KEY_BOUNCE_AMP, v.coerceIn(SCALE_MIN, SCALE_MAX)
+                KEY_BOUNCE_AMP, v.coerceIn(AMP_SCALE_MIN, AMP_SCALE_MAX)
             ).apply()
         }
 
     /** 回弹回落时长**倍率**（1.0 = [BOUNCE_MS_BASE] = 360ms） */
     var bounceTimeScale: Float
-        get() = sp.getFloat(KEY_BOUNCE_TIME, 1f).coerceIn(SCALE_MIN, SCALE_MAX)
+        get() = sp.getFloat(KEY_BOUNCE_TIME, 1f).coerceIn(TIME_SCALE_MIN, TIME_SCALE_MAX)
         set(v) {
             sp.edit().putFloat(
-                KEY_BOUNCE_TIME, v.coerceIn(SCALE_MIN, SCALE_MAX)
+                KEY_BOUNCE_TIME, v.coerceIn(TIME_SCALE_MIN, TIME_SCALE_MAX)
             ).apply()
         }
 
@@ -144,6 +144,13 @@ class Prefs(context: Context) {
         set(v) { sp.edit().putInt(KEY_ACCENT, v).apply() }
 
     /**
+     * 边框回弹总开关。关掉后吸附只做位置补间，不再往外弹一下。
+     */
+    var bounceEnabled: Boolean
+        get() = sp.getBoolean(KEY_BOUNCE_ON, true)
+        set(v) { sp.edit().putBoolean(KEY_BOUNCE_ON, v).apply() }
+
+    /**
      * 明暗模式：[AccentTheme.MODE_SYSTEM] / [MODE_LIGHT][AccentTheme.MODE_LIGHT]
      * / [AccentTheme.MODE_DARK]。
      */
@@ -168,6 +175,7 @@ class Prefs(context: Context) {
         private const val KEY_NOTIFY_TEXT = "notify_text"
         private const val KEY_ACCENT = "accent_color"
         private const val KEY_THEME_MODE = "theme_mode"
+        private const val KEY_BOUNCE_ON = "bounce_on"
 
         /** 通知栏自定义内容的字符上限（用户指定 40） */
         const val NOTIFY_TEXT_MAX = 40
@@ -179,9 +187,20 @@ class Prefs(context: Context) {
         /** 标准回落时长（ms），倍率 1.0 对应它 */
         const val BOUNCE_MS_BASE = 360f
 
-        /** 倍率范围：0.1 ~ 10 */
-        const val SCALE_MIN = 0.1f
-        const val SCALE_MAX = 10f
+        /**
+         * 回弹**幅度**倍率区间：0.5 ~ 100（用户要求，上限拉得很高是为了做夸张效果；
+         * 真弹出去时会被 PetView 的 BOUNCE_MIN_VISIBLE 夹住，不会真的飞出屏幕）。
+         */
+        const val AMP_SCALE_MIN = 0.5f
+        const val AMP_SCALE_MAX = 100f
+
+        /** 回弹**时长**倍率区间：0.1 ~ 10 */
+        const val TIME_SCALE_MIN = 0.1f
+        const val TIME_SCALE_MAX = 10f
+
+        /** 倍率范围（历史别名，测试与旧代码用） */
+        const val SCALE_MIN = TIME_SCALE_MIN
+        const val SCALE_MAX = TIME_SCALE_MAX
 
         /** 默认角色：素材目录名 */
         val DEFAULT_SKIN = PetSprite.FALLBACK

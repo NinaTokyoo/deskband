@@ -24,7 +24,6 @@ import android.widget.SeekBar
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
-import kotlin.math.log10
 import kotlin.math.roundToInt
 
 /** 控制台：授权、开关桌宠、调大小、换角色。 */
@@ -54,6 +53,7 @@ class MainActivity : Activity() {
     private lateinit var editBounceMs: EditText
     private lateinit var btnSaveBounce: Button
     private lateinit var btnResetBounce: Button
+    private lateinit var btnBounceToggle: Button
 
     // 通知栏自定义
     private lateinit var editNotify: EditText
@@ -112,6 +112,7 @@ class MainActivity : Activity() {
         editBounceMs = findViewById(R.id.editBounceMs)
         btnSaveBounce = findViewById(R.id.btnSaveBounce)
         btnResetBounce = findViewById(R.id.btnResetBounce)
+        btnBounceToggle = findViewById(R.id.btnBounceToggle)
         editNotify = findViewById(R.id.editNotify)
         txtNotifyCount = findViewById(R.id.txtNotifyCount)
         btnSaveNotify = findViewById(R.id.btnSaveNotify)
@@ -391,7 +392,7 @@ class MainActivity : Activity() {
         seekBounceAmp.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
-                prefs.bounceAmpScale = scaleOf(progress)
+                prefs.bounceAmpScale = scaleOf(progress, Prefs.AMP_SCALE_MIN, Prefs.AMP_SCALE_MAX)
                 bindBounceControls()
             }
             override fun onStartTrackingTouch(sb: SeekBar?) = Unit
@@ -400,7 +401,7 @@ class MainActivity : Activity() {
         seekBounceMs.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
-                prefs.bounceTimeScale = scaleOf(progress)
+                prefs.bounceTimeScale = scaleOf(progress, Prefs.TIME_SCALE_MIN, Prefs.TIME_SCALE_MAX)
                 bindBounceControls()
             }
             override fun onStartTrackingTouch(sb: SeekBar?) = Unit
@@ -409,11 +410,11 @@ class MainActivity : Activity() {
 
         // 数字输入：回车或失焦时生效（支持小数，如 2.5）
         val applyAmp = {
-            parseScale(editBounceAmp.text.toString())?.let { prefs.bounceAmpScale = it }
+            parseScale(editBounceAmp.text.toString(), Prefs.AMP_SCALE_MIN, Prefs.AMP_SCALE_MAX)?.let { prefs.bounceAmpScale = it }
             bindBounceControls()
         }
         val applyMs = {
-            parseScale(editBounceMs.text.toString())?.let { prefs.bounceTimeScale = it }
+            parseScale(editBounceMs.text.toString(), Prefs.TIME_SCALE_MIN, Prefs.TIME_SCALE_MAX)?.let { prefs.bounceTimeScale = it }
             bindBounceControls()
         }
         editBounceAmp.setOnEditorActionListener { _, _, _ -> applyAmp(); clearInputFocus(); true }
@@ -430,8 +431,8 @@ class MainActivity : Activity() {
         // 这个按钮真正的价值是：确保输入框里刚敲进去的值一定被提交
         // （有时键盘还没收起、焦点没变化，失焦回调还没跑）。
         btnSaveBounce.setOnClickListener {
-            parseScale(editBounceAmp.text.toString())?.let { prefs.bounceAmpScale = it }
-            parseScale(editBounceMs.text.toString())?.let { prefs.bounceTimeScale = it }
+            parseScale(editBounceAmp.text.toString(), Prefs.AMP_SCALE_MIN, Prefs.AMP_SCALE_MAX)?.let { prefs.bounceAmpScale = it }
+            parseScale(editBounceMs.text.toString(), Prefs.TIME_SCALE_MIN, Prefs.TIME_SCALE_MAX)?.let { prefs.bounceTimeScale = it }
             bindBounceControls()
             // 保存后收掉焦点与键盘，否则输入框会一直亮着下划线、光标闪个不停
             clearInputFocus()
@@ -447,7 +448,35 @@ class MainActivity : Activity() {
             Toast.makeText(this, R.string.bounce_restored, Toast.LENGTH_SHORT).show()
         }
 
+        // 边框回弹总开关：关掉后吸附只做位置补间，不再往外弹。
+        // 同时把该卡片里的滑块/输入框置灰禁用，避免"调了没反应"的困惑。
+        btnBounceToggle.setOnClickListener {
+            prefs.bounceEnabled = !prefs.bounceEnabled
+            bindBounceControls()
+            clearInputFocus()
+            Toast.makeText(
+                this,
+                if (prefs.bounceEnabled) R.string.bounce_enabled_hint
+                else R.string.bounce_disabled_hint,
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+
         bindBounceControls()
+    }
+
+    /** 把回弹区的控件状态同步到 Prefs（含总开关的启用/停用外观） */
+    private fun bindBounceEnabledState() {
+        val on = prefs.bounceEnabled
+        btnBounceToggle.text = getString(if (on) R.string.bounce_off else R.string.bounce_on)
+        seekBounceAmp.isEnabled = on
+        seekBounceMs.isEnabled = on
+        editBounceAmp.isEnabled = on
+        editBounceMs.isEnabled = on
+        btnResetBounce.isEnabled = on
+        // 数值文字同步变淡，和灰掉的控件保持一致（颜色仍由主题统一刷新）
+        txtBounceAmp.alpha = if (on) 1f else 0.45f
+        txtBounceMs.alpha = if (on) 1f else 0.45f
     }
 
     /**
@@ -456,18 +485,23 @@ class MainActivity : Activity() {
      * 用**对数刻度**：线性的话低倍率段只占很小一段行程，很难调；
      * 取对数后 1.0 正好落在滑条中间，两侧手感一致。
      */
-    private fun scaleOf(progress: Int, min: Float, max: Float): Float {
-        val lo = log10(min.toDouble())
-        val hi = log10(max.toDouble())
-        val t = progress.coerceIn(0, 1000) / 1000.0
-        return Math.pow(10.0, lo + (hi - lo) * t).toFloat()
-    }
+    /**
+     * 滑块进度(0..1000) <-> 倍率：**线性**按上下界取比例（用户要求）。
+     *
+     * 原来是取对数，好处是低倍率段也能调得动，但推进位置不直观。
+     * 现在改成线性：进度 = (值 - 下界) / (上界 - 下界)，所见即所得。
+     *
+     * ⚠️ 代价：边框回弹幅度区间是 0.5 ~ 100，默认值 1.0 的进度只有
+     * (1-0.5)/(100-0.5) ≈ 0.5%，滑块会贴在**最左端**。
+     * 也就是说"小倍率"这一段几乎占不到行程 —— 用户已知悉并选择线性。
+     */
+    private fun scaleOf(progress: Int, min: Float, max: Float): Float =
+        min + (max - min) * (progress.coerceIn(0, 1000) / 1000f)
 
     private fun progressOfScale(v: Float, min: Float, max: Float): Int {
-        val lo = log10(min.toDouble())
-        val hi = log10(max.toDouble())
-        val x = log10(v.coerceIn(min, max).toDouble())
-        return (((x - lo) / (hi - lo)) * 1000.0).roundToInt().coerceIn(0, 1000)
+        if (max <= min) return 0
+        val t = ((v.coerceIn(min, max) - min) / (max - min))
+        return (t * 1000f).roundToInt().coerceIn(0, 1000)
     }
 
     private fun scaleOf(progress: Int): Float =
@@ -787,8 +821,8 @@ class MainActivity : Activity() {
     private fun bindBounceControls() {
         val amp = prefs.bounceAmpScale
         val tms = prefs.bounceTimeScale
-        seekBounceAmp.progress = progressOfScale(amp)
-        seekBounceMs.progress = progressOfScale(tms)
+        seekBounceAmp.progress = progressOfScale(amp, Prefs.AMP_SCALE_MIN, Prefs.AMP_SCALE_MAX)
+        seekBounceMs.progress = progressOfScale(tms, Prefs.TIME_SCALE_MIN, Prefs.TIME_SCALE_MAX)
         editBounceAmp.setText(fmtScale(amp))
         editBounceMs.setText(fmtScale(tms))
         txtBounceAmp.text = getString(
@@ -797,6 +831,7 @@ class MainActivity : Activity() {
         txtBounceMs.text = getString(
             R.string.bounce_ms_label_value, fmtScale(tms), prefs.bounceBackMs
         )
+        bindBounceEnabledState()
     }
 
     /**

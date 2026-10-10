@@ -277,6 +277,12 @@
                     android:layout_weight="1"
                     android:text="@string/section_bounce" />
 
+                <!-- 边框回弹总开关：标签显示当前状态，点击切换 -->
+                <Button
+                    android:id="@+id/btnBounceToggle"
+                    style="@style/CardAction"
+                    android:text="@string/bounce_on" />
+
                 <Button
                     android:id="@+id/btnResetBounce"
                     style="@style/CardAction"
