@@ -174,8 +174,33 @@ class PetView(context: Context) : View(context) {
         // 约等于**对角线**，比 max(W,H) 大得多 —— 用 max 会在中间角度切掉。
         // 另外点击压缩会把横向撑大 (1+SQ_MAX) 倍，也要一起容纳。
         val diag = kotlin.math.hypot(cellW.toDouble(), cellH.toDouble()).toFloat()
-        val envW = maxOf(diag, cellW * (1f + SQ_MAX))
-        val envH = maxOf(diag, cellH * (1f + SQ_MAX))
+        var envW = maxOf(diag, cellW * (1f + SQ_MAX))
+        var envH = maxOf(diag, cellH * (1f + SQ_MAX))
+
+        // 窗口尺寸取**两个素材形态的并集**（角落素材 + 正立素材）。
+        //
+        // 于是拖拽中进/出 A 区时窗口尺寸**恒定不变** —— 不再触发
+        // updateViewLayout（WM 重新布局 + Surface 可能重分配），这是
+        // "拖到 A 区切换素材卡顿"的一大来源。
+        //
+        // 而且格子仍在包络里**居中**（见下面的 cellOffX/cellOffY），
+        // 包络中心与状态无关，所以**素材中心点在窗口内的位置也不变**：
+        // 换素材时人物原地不动，不会再出现"停住然后瞬移"。
+        //
+        // ⚠️ 只有**窗口**取并集。足迹盒 trackW/trackH 与吸附位置、
+        //    屏幕夹取仍必须用**当前状态**的尺寸，混用会重演贴边留缝的老 bug。
+        run {
+            val other = if (PetState.isZoneless(state)) PetState.CORNER_BR else PetState.BORDER_R
+            if (other != state) {
+                val co = PetState.scaledSize(
+                    s.naturalWidth(other), s.naturalHeight(other), screenH * sizeFrac
+                )
+                val d2 = kotlin.math.hypot(co[0].toDouble(), co[1].toDouble()).toFloat()
+                envW = maxOf(envW, d2, co[0] * (1f + SQ_MAX))
+                envH = maxOf(envH, d2, co[1] * (1f + SQ_MAX))
+            }
+        }
+
         bboxW = envW.toInt() + HOP_PAD_X * 2
         bboxH = envH.toInt() + topPad() + HOP_PAD_BOTTOM
         boxOffX = HOP_PAD_X
@@ -954,8 +979,21 @@ class PetView(context: Context) : View(context) {
         val bmp = runCatching { scaledBitmap(state) }.getOrNull() ?: return true
         val bx = (u * (bmp.width - 1)).toInt().coerceIn(0, bmp.width - 1)
         val by = (v * (bmp.height - 1)).toInt().coerceIn(0, bmp.height - 1)
-        return runCatching { ((bmp.getPixel(bx, by) ushr 24) and 0xFF) >= HIT_ALPHA_MIN }
+        val opaque = runCatching { ((bmp.getPixel(bx, by) ushr 24) and 0xFF) >= HIT_ALPHA_MIN }
             .getOrDefault(true)
+        if (opaque) return true
+
+        // 单像素透明时，**落在素材的 alpha 外接框里也算命中**。
+        //
+        // 原来只认"这一个像素不透明"，于是点在以下位置会被判为未命中，
+        // 事件直接穿透到下层窗口 —— 用户看到的现象就是
+        // "吸附到右下角后，点/拖素材却操作到下面的桌面或 App"：
+        //   · 发丝之间、头与身体之间的透明缝隙（角落素材尤其多）
+        //   · 抗锯齿造成的半透明边缘（alpha 低于阈值）
+        // 外接框远小于窗口（窗口还有对角线包络的富余量），
+        // 所以不会让整屏变得不可点。
+        val b = alphaBounds(bmp) ?: return false
+        return bx >= b[0] && bx < b[2] && by >= b[1] && by < b[3]
     }
 
     private fun bitmapFor(st: Int): Bitmap? {
