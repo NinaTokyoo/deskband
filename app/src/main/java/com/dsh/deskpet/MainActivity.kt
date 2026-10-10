@@ -42,6 +42,11 @@ class MainActivity : Activity() {
     private lateinit var editSize: EditText
     private lateinit var btnSaveSize: Button
     private lateinit var btnResetSize: Button
+    private lateinit var seekHit: SeekBar
+    private lateinit var txtHit: TextView
+    private lateinit var editHit: EditText
+    private lateinit var btnSaveHit: Button
+    private lateinit var btnResetHit: Button
     /**
      * 「当前形象」选择框（用户要求的新交互）。
      *
@@ -157,6 +162,11 @@ class MainActivity : Activity() {
         editSize = findViewById(R.id.editSize)
         btnSaveSize = findViewById(R.id.btnSaveSize)
         btnResetSize = findViewById(R.id.btnResetSize)
+        seekHit = findViewById(R.id.seekHit)
+        txtHit = findViewById(R.id.txtHit)
+        editHit = findViewById(R.id.editHit)
+        btnSaveHit = findViewById(R.id.btnSaveHit)
+        btnResetHit = findViewById(R.id.btnResetHit)
         boxSkin = findViewById(R.id.boxSkin)
         txtSkinName = findViewById(R.id.txtSkinName)
         icoSkinArrow = findViewById(R.id.icoSkinArrow)
@@ -266,6 +276,51 @@ class MainActivity : Activity() {
         }
 
         bindSizeControls()
+
+        // ---- 交互区域：调的是可交互范围的**边长倍率**（0.5~2，1.0 = 基准 0.8） ----
+        //
+        // 用**线性**映射，不是尺寸卡片那种对数：范围只有 0.5~2（4 倍跨度），
+        // 线性下滑块中点正好落在 1.0，最直观；对数映射是给 0.5~100 那种
+        // 宽区间用的（见 scaleOf 的注释）。
+        seekHit.max = 1000
+        seekHit.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                prefs.hitScale = hitScaleOf(progress)
+                bindHitControls()
+                // 交互区域在 ACTION_DOWN 时现读，不需要重建视图；
+                // 但通知服务一次让桌宠状态与界面保持一致，与尺寸卡片同款。
+                PetService.notifyChanged(this@MainActivity)
+            }
+
+            override fun onStartTrackingTouch(sb: SeekBar?) = Unit
+            override fun onStopTrackingTouch(sb: SeekBar?) = Unit
+        })
+
+        val applyHit = {
+            parseScale(editHit.text.toString(), Prefs.HIT_SCALE_MIN, Prefs.HIT_SCALE_MAX)
+                ?.let {
+                    prefs.hitScale = it
+                }
+            bindHitControls()
+        }
+        editHit.setOnEditorActionListener { _, _, _ -> applyHit(); clearInputFocus(); true }
+        editHit.setOnFocusChangeListener { _, has -> if (!has) applyHit() }
+
+        btnSaveHit.setOnClickListener {
+            parseScale(editHit.text.toString(), Prefs.HIT_SCALE_MIN, Prefs.HIT_SCALE_MAX)
+                ?.let { prefs.hitScale = it }
+            bindHitControls()
+            clearInputFocus()
+        }
+
+        btnResetHit.setOnClickListener {
+            prefs.hitScale = 1f
+            bindHitControls()
+            clearInputFocus()
+        }
+
+        bindHitControls()
         loadSkins()
     }
 
@@ -1387,6 +1442,26 @@ class MainActivity : Activity() {
 
     private fun progressOfSizeScale(v: Float): Int =
         progressOfScale(v, Prefs.SIZE_SCALE_MIN, Prefs.SIZE_SCALE_MAX)
+
+    /**
+     * 交互区域滑块的「进度 -> 倍率 / 倍率 -> 进度」。
+     *
+     * 用**线性**映射（[scaleOfLinear]）：区间只有 0.5~2，线性下 1.0 正好在
+     * 滑条中点、两侧手感一致。尺寸卡片那种对数映射是给 0.5~100 的宽区间用的。
+     */
+    private fun hitScaleOf(progress: Int): Float =
+        scaleOfLinear(progress, Prefs.HIT_SCALE_MIN, Prefs.HIT_SCALE_MAX)
+
+    private fun progressOfHitScale(v: Float): Int =
+        progressOfScaleLinear(v, Prefs.HIT_SCALE_MIN, Prefs.HIT_SCALE_MAX)
+
+    /** 把交互区域的当前值刷到滑块 / 文本框 / 摘要文字 */
+    private fun bindHitControls() {
+        val hs = prefs.hitScale
+        seekHit.progress = progressOfHitScale(hs)
+        editHit.setText(fmtScale(hs))
+        txtHit.text = getString(R.string.hit_label_value, fmtScale(hs))
+    }
 
     /** 把当前值刷到滑块 / 文本框 / 摘要文字 */
     private fun bindSizeControls() {

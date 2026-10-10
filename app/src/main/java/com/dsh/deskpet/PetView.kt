@@ -2012,7 +2012,7 @@ class PetView(context: Context) : View(context) {
         // "吸附至四个角落时的面积不要改动，只改动没有吸附到四个角落情况的"。
         // 角落素材透明缝隙最多，缩小后容易点不中/抓不住。
         val box = PetState.hitBox(
-            alphaBoundsCached(state, bmp), PetState.hitBoxScaleFor(state, HIT_BOX_SCALE)
+            alphaBoundsCached(state, bmp), hitBoxScale(state), state
         )
         return bx >= box[0] && bx < box[2] && by >= box[1] && by < box[3]
     }
@@ -2587,20 +2587,31 @@ class PetView(context: Context) : View(context) {
      */
     private fun easeOutCubic(t: Float): Float = PetState.easeInArrive(t)
 
+    /**
+     * 当前生效的**交互区域边长系数**（已按状态决定是否应用用户设置）。
+     *
+     * 用户用「交互区域」卡片调的是**倍率**（[Prefs.hitScale]，0.5~2，1.0 为基准），
+     * 作用于外接框的系数是 `[Prefs.HIT_BOX_BASE] * hitScale`：
+     *   1.0 -> 0.8、0.5 -> 0.4、2.0 -> 1.6。
+     *
+     * ⚠️ **吸附到四个角落时用户设置不生效**，固定用 1.0（整个 alpha 外接框）。
+     *    这是用户明确要求的（"吸附至四个角的时候调节不生效，按照当前版本的交互区域来"），
+     *    界面上也注明了。判断在 [PetState.hitBoxScaleFor] 里，别在这里再写一遍。
+     *
+     * 上限 1.6 比外接框本身还大：滑条拉满就是"在外接框基础上再放宽一圈"，
+     * 属于有意为之，所以 [PetState.hitBox] 里的 clamp 上限是 2 而不是 1。
+     *
+     * ⚠️ 从 prefs **现读**，不做字段缓存：这个值只在 ACTION_DOWN 时用一次，
+     *    不是每帧，省这一次读没有意义，反而要额外维护失效逻辑。
+     */
+    private fun hitBoxScale(state: Int): Float = PetState.hitBoxScaleFor(
+        state,
+        (Prefs.HIT_BOX_BASE * prefs.hitScale).coerceIn(Prefs.MIN_HIT, Prefs.MAX_HIT)
+    )
+
     companion object Geometry {
         private const val FRAME_MS = 16L
         private const val HIT_ALPHA_MIN = 16
-
-        /**
-         * 非角落状态的可互动面积 = 素材 alpha 外接框的 **75%**
-         * （以框中心为基准等比缩小，见 [PetState.hitBox]）。
-         *
-         * 用户要求："感觉可互动面积还是有点大，互动面积等比缩小到现在的 75%。"
-         * 只影响"透明像素靠外接框兜底"那一档：人物轮廓本身照旧可点。
-         *
-         * ⚠️ **四个角落不缩**（[PetState.hitBoxScaleFor] 对角落返回 1.0）。
-         */
-        private const val HIT_BOX_SCALE = 0.75f
         private const val SNAP_MS = 220f
 
         /** 收起（滑出）的时长：要"慢慢平移出去" */

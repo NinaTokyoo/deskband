@@ -449,9 +449,14 @@ class PetStateTest {
     }
 
     /**
-     * **四个角落的可互动面积不缩**（保持整框），其余状态缩到 75%。
+     * **四个角落的交互区域不缩**（保持整框），其余状态用传入的系数。
      *
-     * 用户要求："吸附至四个角落时的面积不要改动，只改动没有吸附到四个角落情况的"。
+     * 用户要求："吸附至四个角落时的面积不要改动，只改动没有吸附到四个角落情况的"，
+     * 后来又明确："吸附至四个角的时候调节不生效，按照当前版本的交互区域来"。
+     * 所以角落固定 1.0 —— 用户把滑条调到任何值都不影响角落。
+     *
+     * 注意 `hitBoxScaleFor` 现在**必须传 normal**（没有默认值了）：
+     * 具体的倍率由 Prefs.HIT_BOX_BASE * hitScale 算出来，纯逻辑层不该知道那个公式。
      */
     @Test
     fun only_non_corner_states_get_the_smaller_hit_box() {
@@ -461,17 +466,23 @@ class PetStateTest {
         )
         for (c in corners) {
             assertTrue("状态 $c 应该被认成角落", PetState.isCorner(c))
-            assertEquals("角落 $c 不许缩", 1f, PetState.hitBoxScaleFor(c), 0.0001f)
+            // 无论传什么 normal，角落都必须是 1.0（= 用户设置不生效）
+            for (normal in floatArrayOf(0.4f, 0.5f, 0.8f, 1.2f, 1.6f)) {
+                assertEquals(
+                    "角落 $c 不许缩（normal=$normal）",
+                    1f, PetState.hitBoxScaleFor(c, normal), 0.0001f
+                )
+            }
             // 角落用的框必须与原框逐值一致
             val b = intArrayOf(10, 20, 210, 220)
-            val box = PetState.hitBox(b, PetState.hitBoxScaleFor(c))
+            val box = PetState.hitBox(b, PetState.hitBoxScaleFor(c, 0.5f), c)
             assertEquals(10f, box[0], 0.001f)
             assertEquals(20f, box[1], 0.001f)
             assertEquals(210f, box[2], 0.001f)
             assertEquals(220f, box[3], 0.001f)
         }
 
-        // 非角落：贴边、正立变体、上边，全部缩到 75%
+        // 非角落：贴边、正立变体、上边，系数原样透传
         val others = intArrayOf(
             PetState.BORDER_R, PetState.BORDER_L,
             PetState.BORDER_R_UPRIGHT, PetState.BORDER_L_UPRIGHT,
@@ -479,51 +490,103 @@ class PetStateTest {
         )
         for (s in others) {
             assertFalse("状态 $s 不该被认成角落", PetState.isCorner(s))
-            assertEquals("$s 应该缩到 75%", 0.75f, PetState.hitBoxScaleFor(s), 0.0001f)
-            val box = PetState.hitBox(intArrayOf(10, 20, 210, 220), PetState.hitBoxScaleFor(s))
-            assertEquals(150f, box[2] - box[0], 0.001f)
+            assertEquals("$s 应原样透传系数", 0.8f, PetState.hitBoxScaleFor(s, 0.8f), 0.0001f)
+            val box = PetState.hitBox(intArrayOf(10, 20, 210, 220), 0.8f, s)
+            // 系数 0.8 -> 宽 200*0.8 = 160
+            assertEquals(160f, box[2] - box[0], 0.001f)
         }
     }
 
     /**
-     * 可互动面积 = 素材 alpha 外接框的 75%（中心不变、等比缩小）。
+     * 交互区域缩放时**吸附边不动，只挪其他三边**。
      *
-     * 用户要求："感觉可互动面积还是有点大，互动面积等比缩小到现在的 75%。"
+     * 用户要求："交互区域调节时还是保证交互区域的吸附边保持吸附，只挪动其他三边"。
+     *
+     * 为什么这条重要：贴右边框时用户最自然的点击位置就是屏幕右缘。
+     * 若按中心缩，框会从两侧一起往里收，屏幕右缘反而变成不可点区域 ——
+     * 表现就是"调小交互区域之后贴着边的地方点不动了"。
      */
     @Test
-    fun the_hit_box_shrinks_to_75_percent_around_its_centre() {
-        // 典型角落素材的外接框（缩放后的取样位图：288x270 -> 216x202 之类）
+    fun the_hit_box_anchors_the_attached_edge() {
         val b = intArrayOf(10, 20, 210, 220) // 200 x 200
-        val box = PetState.hitBox(b, 0.75f)
-        // 中心不变
-        assertEquals(110f, (box[0] + box[2]) / 2f, 0.001f)
-        assertEquals(120f, (box[1] + box[3]) / 2f, 0.001f)
-        // 宽高各是原来的 75%
-        assertEquals(150f, box[2] - box[0], 0.001f)
-        assertEquals(150f, box[3] - box[1], 0.001f)
-        // 原框的角落在新框之外（这正是"面积变小"的部分）
-        assertTrue(10f < box[0] && 20f < box[1])
-        assertTrue(210f > box[2] && 220f > box[3])
-        // 中心仍在框内
-        assertTrue(110f >= box[0] && 110f < box[2])
-        assertTrue(120f >= box[1] && 120f < box[3])
-        // 新框边缘内侧一点点：命中；外侧一点点：不命中
-        assertTrue(box[0] + 1f >= box[0] && box[0] + 1f < box[2])
-        assertFalse(box[0] - 1f >= box[0])
-        // scale = 1 时与原框一致
-        val same = PetState.hitBox(b, 1f)
-        assertEquals(10f, same[0], 0.001f)
-        assertEquals(20f, same[1], 0.001f)
-        assertEquals(210f, same[2], 0.001f)
-        assertEquals(220f, same[3], 0.001f)
-        // 非正方框同样等比（宽高比不变）
-        val r = PetState.hitBox(intArrayOf(0, 0, 400, 100), 0.75f)
-        assertEquals(300f, r[2] - r[0], 0.001f)
-        assertEquals(75f, r[3] - r[1], 0.001f)
-        // scale 夹在 [0.05, 1]：不会缩成 0，也不会放大
-        val clamped = PetState.hitBox(b, 5f)
-        assertEquals(200f, clamped[2] - clamped[0], 0.001f)
-        assertTrue(PetState.hitBox(b, 0f)[2] - PetState.hitBox(b, 0f)[0] > 0f)
+
+        // 贴右边框（BORDER_R）：框的**右边**保持 210 不动，左边往右挪
+        val right = PetState.hitBox(b, 0.5f, PetState.BORDER_R)
+        assertEquals("贴右边时右边不动", 210f, right[2], 0.001f)
+        assertEquals("宽缩到一半", 100f, right[2] - right[0], 0.001f)
+        assertEquals(110f, right[0], 0.001f)
+        // 上下也缩，且因为锚定的是右边，纵向按中心缩（attach 是右 -> 不动的是 x）
+        assertEquals(120f, (right[1] + right[3]) / 2f, 0.001f)
+        assertEquals(100f, right[3] - right[1], 0.001f)
+
+        // 贴左边框（BORDER_L）：框的**左边**保持 10 不动
+        val left = PetState.hitBox(b, 0.5f, PetState.BORDER_L)
+        assertEquals("贴左边时左边不动", 10f, left[0], 0.001f)
+        assertEquals(100f, left[2] - left[0], 0.001f)
+
+        // 贴上沿（EDGE_TOP_R）：框的**上边**保持 20 不动
+        val top = PetState.hitBox(b, 0.5f, PetState.EDGE_TOP_R)
+        assertEquals("贴上沿时上边不动", 20f, top[1], 0.001f)
+        assertEquals(100f, top[3] - top[1], 0.001f)
+
+        // 贴下沿（BORDER_R_UPRIGHT 走 VERT_BOTTOM）：框的**下边**保持 220 不动
+        val bottom = PetState.hitBox(b, 0.5f, PetState.BORDER_R_UPRIGHT)
+        assertEquals("贴下沿时下边不动", 220f, bottom[3], 0.001f)
+        assertEquals(100f, bottom[3] - bottom[1], 0.001f)
+
+        // 锚定后的框必须仍与**原框相交**（否则用户点不到宠物了）
+        for (st in intArrayOf(
+            PetState.BORDER_R, PetState.BORDER_L,
+            PetState.EDGE_TOP_R, PetState.BORDER_R_UPRIGHT
+        )) {
+            val box = PetState.hitBox(b, 0.5f, st)
+            assertTrue("状态 $st 的框不该完全跑出原框", box[0] < b[2] && box[2] > b[0])
+            assertTrue("状态 $st 的框不该完全跑出原框", box[1] < b[3] && box[3] > b[1])
+        }
+    }
+
+    /**
+     * 交互区域的边长缩放：宽高各乘 scale，**放大**也要支持（滑条上限 2 -> 系数 1.6）。
+     *
+     * 用户要求："以现在边长的 0.8 倍作为 1 倍，调节范围是 0.5~2"，
+     * 所以系数范围是 0.4 ~ 1.6，**会超过 1**（比 alpha 外接框还大）。
+     * 老实现把 clamp 上限写死在 1f，那样"调大"就完全没效果。
+     */
+    @Test
+    fun the_hit_box_scales_edge_length_and_allows_enlarging() {
+        val b = intArrayOf(10, 20, 210, 220) // 200 x 200
+
+        // scale = 1 时与原框一致（锚定也应当退化成恒等）
+        for (st in intArrayOf(PetState.BORDER_R, PetState.EDGE_TOP_R)) {
+            val same = PetState.hitBox(b, 1f, st)
+            assertEquals(10f, same[0], 0.001f)
+            assertEquals(20f, same[1], 0.001f)
+            assertEquals(210f, same[2], 0.001f)
+            assertEquals(220f, same[3], 0.001f)
+        }
+
+        // 非正方框同样按边长等比（宽高比不变）
+        val r = PetState.hitBox(intArrayOf(0, 0, 400, 100), 0.5f, PetState.BORDER_R)
+        assertEquals("贴右边：宽 400*0.5=200，右边仍在 400", 400f, r[2], 0.001f)
+        assertEquals(200f, r[2] - r[0], 0.001f)
+        assertEquals("高 100*0.5=50", 50f, r[3] - r[1], 0.001f)
+
+        // 放大：系数 1.6 -> 宽高各 320，且吸附边仍不动
+        val bigger = PetState.hitBox(b, 1.6f, PetState.BORDER_R)
+        assertEquals("放大时右边仍不动", 210f, bigger[2], 0.001f)
+        assertEquals(320f, bigger[2] - bigger[0], 0.001f)
+        assertEquals(320f, bigger[3] - bigger[1], 0.001f)
+        // 确实比原框大（这正是"交互区域调大"该有的效果）
+        assertTrue(bigger[0] < b[0])
+        assertTrue(bigger[1] < b[1])
+        assertTrue(bigger[3] > b[3])
+
+        // 下限保护：不会缩成 0
+        val tiny = PetState.hitBox(b, 0f, PetState.BORDER_R)
+        assertTrue(tiny[2] - tiny[0] > 0f)
+        // 上限保护：系数被 clamp 到 2
+        val clamped = PetState.hitBox(b, 5f, PetState.BORDER_R)
+        assertEquals(400f, clamped[2] - clamped[0], 0.001f)
     }
 
     /**
