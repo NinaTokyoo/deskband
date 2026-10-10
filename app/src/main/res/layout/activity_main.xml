@@ -132,13 +132,51 @@
                         style="@style/CardTitle"
                         android:text="@string/section_skin" />
 
-                    <Spinner
-                        android:id="@+id/spinnerSkin"
-                        android:layout_width="match_parent"
+                    <LinearLayout
+                    android:id="@+id/boxSkin"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="10dp"
+                    android:paddingTop="9dp"
+                    android:paddingBottom="9dp">
+
+                    <TextView
+                        android:id="@+id/txtSkinName"
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:layout_marginEnd="99dp"
-                        android:popupAnimationStyle="@style/SpinnerPopupAnim" />
+                        android:layout_weight="1"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        android:textSize="15sp" />
+
+                    <!-- ⚠️ 箭头要**避开右下角的人物素材**（素材 104dp 宽 + 1dp 边距，
+                         再留 8dp 间隙）。不给这个 marginEnd 的话箭头会被素材整个盖住 ——
+                         原来的 Spinner 就是靠 marginEnd=99dp 避让的，换成自绘框时漏掉了。 -->
+                    <ImageView
+                        android:id="@+id/icoSkinArrow"
+                        android:layout_width="14dp"
+                        android:layout_height="14dp"
+                        android:layout_marginStart="8dp"
+                        android:layout_marginEnd="113dp"
+                        android:src="@drawable/ic_triangle_down"
+                        android:clickable="false"
+                        android:focusable="false"
+                        android:importantForAccessibility="no" />
+                </LinearLayout>
+
+                <!-- 二级菜单：默认隐藏，点框展开。行与行之间的横线由代码加。
+                     同样避开右下角素材，免得菜单文字被压住。 -->
+                <LinearLayout
+                    android:id="@+id/skinMenu"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="113dp"
+                    android:orientation="vertical"
+                    android:visibility="gone" />
                 </LinearLayout>
 
                 <!-- 宽度要与上面 Spinner 的 marginEnd 配合：

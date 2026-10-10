@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  「当前形象」选择框右侧的下拉三角。
+
+  默认朝下（菜单关闭）；展开时由代码把 ImageView 旋转 180° 变成正立朝上
+  （用户要求："倒三角变成正立，选中后二级菜单消失，三角形再次倒立"）。
+  填充色由代码按当前强调色下发，所以这里写死一个占位色。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="14dp"
+    android:height="14dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M4,8 L20,8 L12,18 Z" />
+</vector>

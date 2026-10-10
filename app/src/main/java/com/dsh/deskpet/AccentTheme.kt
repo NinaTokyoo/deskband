@@ -36,6 +36,14 @@ object AccentTheme {
     /** 卡片容器在布局里标的 tag */
     const val TAG_CARD = "card"
 
+    /**
+     * 分隔横线（形象卡片里、二级菜单项之间）标的 tag。
+     *
+     * 线只有 1.5dp 高，纯色背景在深色底上几乎看不见，所以在 [apply] 里
+     * 按强调色统一下发。
+     */
+    const val TAG_ACCENT_LINE = "accentLine"
+
     // ------------------------------------------------------------ 取色
 
     /**
@@ -167,6 +175,10 @@ object AccentTheme {
                 v.tag == TAG_CARD ->
                     v.background = cardDrawable.constantState?.newDrawable()?.mutate()
 
+                // 分隔横线（形象卡片里、二级菜单项之间）：只有 1~2dp 高，
+                // 用纯色背景在深色底上几乎看不见，这里统一用强调色填。
+                v.tag == TAG_ACCENT_LINE -> v.setBackgroundColor(accent)
+
                 v is TextView -> when (v.id) {
                     // 只有标题吃强调色
                     R.id.txtTitle -> v.setTextColor(accent)
@@ -210,9 +222,30 @@ object AccentTheme {
     ): StateListDrawable = StateListDrawable().apply {
         val pressed = if (light) 0x1A000000 else 0x24FFFFFF
         val dim = Color.argb(90, Color.red(accent), Color.green(accent), Color.blue(accent))
-        addState(intArrayOf(android.R.attr.state_pressed), rounded(dm, pressed, accent, 12f))
-        addState(intArrayOf(-android.R.attr.state_enabled), rounded(dm, Color.TRANSPARENT, dim, 12f))
-        addState(intArrayOf(), rounded(dm, Color.TRANSPARENT, accent, 12f))
+        addState(intArrayOf(android.R.attr.state_pressed), rounded(dm, pressed, accent, 10f))
+        addState(intArrayOf(-android.R.attr.state_enabled), rounded(dm, Color.TRANSPARENT, dim, 10f))
+        addState(intArrayOf(), rounded(dm, Color.TRANSPARENT, accent, 10f))
+    }
+
+    /**
+     * 「当前形象」选择框的背景：描边用强调色、底色中性。
+     *
+     * 与卡片描边同一套观感，但半径小一些（10dp），让它看起来是"卡片里的一个控件"。
+     */
+    fun skinBoxBackground(ctx: Context, accent: Int, light: Boolean): GradientDrawable {
+        val dm = ctx.resources.displayMetrics
+        return rounded(dm, Palette(light).card, accent, 10f)
+    }
+
+    /** 选择框里的文字与三角的颜色（跟随明暗模式的中性色） */
+    fun skinBoxText(light: Boolean): Int = Palette(light).textPrimary
+
+    /** 二级菜单项之间的横线：压暗的强调色，深色底上也看得见 */
+    fun menuDivider(ctx: Context, accent: Int, light: Boolean): GradientDrawable {
+        val dm = ctx.resources.displayMetrics
+        val a = if (light) 70 else 90
+        val c = Color.argb(a, Color.red(accent), Color.green(accent), Color.blue(accent))
+        return rounded(dm, c, Color.TRANSPARENT, 2f)
     }
 
     /** 下拉列表弹窗背景：加一圈描边（用户要求），底色跟随明暗 */

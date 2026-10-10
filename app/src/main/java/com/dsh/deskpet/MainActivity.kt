@@ -42,7 +42,19 @@ class MainActivity : Activity() {
     private lateinit var editSize: EditText
     private lateinit var btnSaveSize: Button
     private lateinit var btnResetSize: Button
-    private lateinit var spinnerSkin: Spinner
+    /**
+     * 「当前形象」选择框（用户要求的新交互）。
+     *
+     * 原来是一个 Spinner（下拉箭头在框**外**、弹出的菜单浮在卡片上方）。
+     * 现在改为：名称与倒三角同一个描边框、点**整个框**展开二级菜单，
+     * 菜单向下撑开卡片、行与行之间用横线隔开，展开时三角翻成正立。
+     */
+    private lateinit var boxSkin: android.widget.LinearLayout
+    private lateinit var txtSkinName: TextView
+    private lateinit var icoSkinArrow: android.widget.ImageView
+
+    /** 二级菜单容器（默认 gone，点框展开） */
+    private lateinit var skinMenu: android.widget.LinearLayout
     private lateinit var btnReset: Button
     private lateinit var btnResetKeep: Button
 
@@ -95,14 +107,10 @@ class MainActivity : Activity() {
     /** 形象目录 -> 显示名，[loadSkins] 时一次算好 */
     private var skinNames: Map<String, String> = emptyMap()
 
-    /**
-     * 形象下拉框是否已经消化掉 AdapterView 的**初始回调**。
-     *
-     * 首次布局时它会自动回调 onItemSelected(0)，如果不挡掉，
-     * 每次启动都会把 prefs.skin 覆盖成列表第一项。
-     */
-    private var skinReady = false
-    private var bindingSkin = false
+    // ⚠️ 原来这里还有 skinReady / bindingSkin 两个标志，用来挡掉 Spinner 的
+    // 首次 onItemSelected(0) 回调（不挡的话每次启动都会把 prefs.skin 覆盖成
+    // 列表第一项）。改成自绘的「框 + 二级菜单」之后不再有 AdapterView，
+    // 这类"初始回调"问题从根上消失了，所以两个标志一并删掉。
 
     /** 通知权限是否已经弹过系统对话框（弹过之后再点就直接去设置页） */
     private var notifyAsked = false
@@ -141,7 +149,10 @@ class MainActivity : Activity() {
         editSize = findViewById(R.id.editSize)
         btnSaveSize = findViewById(R.id.btnSaveSize)
         btnResetSize = findViewById(R.id.btnResetSize)
-        spinnerSkin = findViewById(R.id.spinnerSkin)
+        boxSkin = findViewById(R.id.boxSkin)
+        txtSkinName = findViewById(R.id.txtSkinName)
+        icoSkinArrow = findViewById(R.id.icoSkinArrow)
+        skinMenu = findViewById(R.id.skinMenu)
         btnReset = findViewById(R.id.btnReset)
         btnResetKeep = findViewById(R.id.btnResetKeep)
         seekBounceAmp = findViewById(R.id.seekBounceAmp)
@@ -332,10 +343,10 @@ class MainActivity : Activity() {
         // 名字跟着下拉框走，与桌宠是否在运行无关。
         refreshSummonLabel()
 
-        bindingSkin = true
-        val idx = skins.indexOf(prefs.skin).coerceAtLeast(0)
-        spinnerSkin.setSelection(idx, false)
-        bindingSkin = false
+        // 形象选择框：显示当前角色名；点整框展开/收起二级菜单
+        refreshSkinBox()
+        boxSkin.setOnClickListener { toggleSkinMenu() }
+        buildSkinMenu()
 
         bindSizeControls()
         bindResetKeep()
@@ -450,39 +461,84 @@ class MainActivity : Activity() {
         // 名字表一次算好：之后按钮文案、通知标题都查它，不再重复解码 PNG
         skinNames = skins.indices.associate { skins[it] to labels[it] }
 
-        val adapter = ThemedAdapter(this, labels)
-        spinnerSkin.adapter = adapter
-        // 保存的形象若已不在素材里（比如换了包），退回第一个，避免下拉框空着
+        // 保存的形象若已不在素材里（比如换了包），退回第一个，避免框里空着
         if (prefs.skin !in skins) prefs.skin = skins.first()
-        val savedPos = skins.indexOf(prefs.skin).coerceAtLeast(0)
-        spinnerSkin.setSelection(savedPos, false)
-        // 下拉列表整体下移到控件下方，避免盖住卡片里已选中的名字（用户要求）。
-        // 高度要等布局完成才知道，所以 post 一次。
-        spinnerSkin.post {
-            val gap = (spinnerSkin.height * 0.15f).toInt()
-            spinnerSkin.dropDownVerticalOffset = spinnerSkin.height + gap
-        }
-        // ⚠️ 关键：AdapterView 会在**首次布局时自动回调一次 onItemSelected(position=0)**。
-        // 那时 bindingSkin 已经是 false，监听器就会把 prefs.skin 改写成列表第一项，
-        // 于是"每次重新打开都变回第一个角色"、上次的选择被覆盖。
-        // 这个 post 在首次布局之后才执行，用它把初始回调先消化掉。
-        spinnerSkin.post { skinReady = true }
-        spinnerSkin.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(
-                parent: AdapterView<*>?, view: View?, position: Int, id: Long
-            ) {
-                if (!skinReady || bindingSkin) return
-                val dir = skins.getOrNull(position) ?: return
-                if (dir == prefs.skin) return
-                prefs.skin = dir
-                // 换角色 -> 重新提取发色、立刻换肤；按钮名字与右下角预览同步更新
-                applyTheme()
-                refreshCornerPreview()
-                PetService.notifyChanged(this@MainActivity)
-            }
+        refreshSkinBox()
+        buildSkinMenu()
+    }
 
-            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+    // ---------------------------------------------------------------- 当前形象选择框
+
+    /** 框里显示当前角色名（名称与倒三角同在一个描边框内） */
+    private fun refreshSkinBox() {
+        txtSkinName.text = currentSkinName()
+    }
+
+    /**
+     * 重建二级菜单。
+     *
+     * 用户要求：菜单里列出**其余**人物（当前选中的那个不再列一遍），
+     * 行与行之间用横线隔开；选中后菜单消失、三角恢复倒立。
+     *
+     * ⚠️ 每次换角色 / 换明暗模式都要重建：横线的颜色与文字色都依赖当前强调色。
+     */
+    private fun buildSkinMenu() {
+        skinMenu.removeAllViews()
+        val others = skins.filter { it != prefs.skin }
+        if (others.isEmpty()) return
+        for ((i, dir) in others.withIndex()) {
+            if (i > 0) skinMenu.addView(makeSkinMenuDivider())
+            val row = layoutInflater.inflate(R.layout.item_skin_menu_row, skinMenu, false)
+                as TextView
+            row.text = skinNames[dir] ?: dir
+            row.setOnClickListener { selectSkin(dir) }
+            skinMenu.addView(row)
         }
+    }
+
+    /**
+     * 菜单项之间的横线。
+     *
+     * ⚠️ 线只有 1~2dp 高，纯色背景在深色底上几乎看不见（踩过）；这里打上
+     * [AccentTheme.TAG_ACCENT_LINE] 标记，由 [AccentTheme.apply] 用强调色
+     * 统一下发 —— 与卡片里其它分隔线同一套，明暗两种模式都清楚。
+     */
+    private fun makeSkinMenuDivider(): View = View(this).apply {
+        tag = AccentTheme.TAG_ACCENT_LINE
+        layoutParams = android.widget.LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            (resources.displayMetrics.density * 1.5f).toInt().coerceAtLeast(1)
+        )
+        // ⚠️ 这里**不要**自己 setBackgroundColor：线上色统一由
+        // AccentTheme.apply 按 TAG_ACCENT_LINE 下发（明暗模式与换角色都会重刷）。
+        // 自己设一次的话，首次展开时会被主题那趟覆盖成透明 —— 表现就是"线看不见"。
+    }
+
+    /** 点整框：展开 / 收起二级菜单，三角同步翻转 */
+    private fun toggleSkinMenu() {
+        val open = skinMenu.visibility != View.VISIBLE
+        if (open) {
+            buildSkinMenu()
+            // ⚠️ 菜单项是**新造的视图**，不在刚才那次 AccentTheme.apply 的遍历里，
+            // 所以这里必须补一次上色，否则分隔线是透明的（表现："线看不见"）。
+            AccentTheme.apply(this, findViewById(R.id.root), accent, lightMode)
+        }
+        skinMenu.visibility = if (open) View.VISIBLE else View.GONE
+        // 展开 -> 三角正立（旋转 180°）；收起 -> 恢复倒立
+        icoSkinArrow.animate().rotation(if (open) 180f else 0f).setDuration(140).start()
+    }
+
+    /** 选中某个角色：换肤 + 收起菜单 + 三角复位 */
+    private fun selectSkin(dir: String) {
+        skinMenu.visibility = View.GONE
+        icoSkinArrow.animate().rotation(0f).setDuration(140).start()
+        if (dir == prefs.skin) return
+        prefs.skin = dir
+        // 换角色 -> 重新提取发色、立刻换肤；按钮名字与右下角预览同步更新
+        refreshSkinBox()
+        applyTheme()
+        refreshCornerPreview()
+        PetService.notifyChanged(this)
     }
 
     // ---------------------------------------------------------------- 回弹调节
@@ -1014,16 +1070,24 @@ class MainActivity : Activity() {
         // 下拉弹窗也要跟着换底色与描边。
         // 注意 setter 是 setPopupBackgroundDrawable（getter 叫 popupBackground），
         // 所以这里不能用合成属性赋值。
-        val popup = AccentTheme.dropdownBackground(this, accent, lightMode)
-        spinnerSkin.setPopupBackgroundDrawable(popup.constantState?.newDrawable()?.mutate())
-        spinnerTheme.setPopupBackgroundDrawable(popup.constantState?.newDrawable()?.mutate())
+        spinnerTheme.setPopupBackgroundDrawable(
+            AccentTheme.dropdownBackground(this, accent, lightMode)
+                .constantState?.newDrawable()?.mutate()
+        )
+
+        // 形象选择框：描边跟随强调色，三角填充色也一起换
+        boxSkin.background = AccentTheme.skinBoxBackground(this, accent, lightMode)
+        icoSkinArrow.imageTintList =
+            android.content.res.ColorStateList.valueOf(AccentTheme.skinBoxText(lightMode))
+        // 菜单项的横线与文字色都依赖强调色 / 明暗模式，重建一次
+        buildSkinMenu()
+        refreshSkinBox()
 
         // 按钮上的文字里有形象名，名字要用强调色，所以每次都重建一次
         refreshSummonLabel()
 
         // 下拉框条目由适配器现造、不在视图树里，明暗切换后要主动让它重新取色，
         // 否则会留着上一次的文字色（浅色模式下会变成看不见的浅灰）。
-        (spinnerSkin.adapter as? ThemedAdapter)?.notifyDataSetChanged()
         (spinnerTheme.adapter as? ThemedAdapter)?.notifyDataSetChanged()
     }
 
