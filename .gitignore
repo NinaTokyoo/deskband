@@ -18,12 +18,10 @@ keystore/
 # 素材投放区：原图太大且可能要换，先不入库
 pet-assets/
 
-# 用于说明问题的对比图，体积大
-docs/asset-pair-check.png
-docs/orientation-preview.png
-docs/size-compare.png
-docs/border-orientation-final.png
-docs/left-mirror-check.png
-docs/rotation-decide.png
-docs/whitebg-demo.png
-docs/whitebg-halo-test.png
+# 开发过程截图：只用于本地验证，体积很大，不进公开仓库
+docs/
+
+# 角色素材。
+# ⚠️ 版权原因：角色形象属于《孤独摇滚》原作者，公开分发有侵权风险，
+#    因此不入库。自行准备方式见 README 的「素材」一节。
+app/src/main/assets/pet/
