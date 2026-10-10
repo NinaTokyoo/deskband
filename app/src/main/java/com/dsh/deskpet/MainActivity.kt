@@ -71,6 +71,14 @@ class MainActivity : Activity() {
 
     /** 形象目录 -> 显示名，[loadSkins] 时一次算好 */
     private var skinNames: Map<String, String> = emptyMap()
+
+    /**
+     * 形象下拉框是否已经消化掉 AdapterView 的**初始回调**。
+     *
+     * 首次布局时它会自动回调 onItemSelected(0)，如果不挡掉，
+     * 每次启动都会把 prefs.skin 覆盖成列表第一项。
+     */
+    private var skinReady = false
     private var bindingSkin = false
 
     /** 通知权限是否已经弹过系统对话框（弹过之后再点就直接去设置页） */
@@ -362,17 +370,26 @@ class MainActivity : Activity() {
 
         val adapter = ThemedAdapter(this, labels)
         spinnerSkin.adapter = adapter
+        // 保存的形象若已不在素材里（比如换了包），退回第一个，避免下拉框空着
+        if (prefs.skin !in skins) prefs.skin = skins.first()
+        val savedPos = skins.indexOf(prefs.skin).coerceAtLeast(0)
+        spinnerSkin.setSelection(savedPos, false)
         // 下拉列表整体下移到控件下方，避免盖住卡片里已选中的名字（用户要求）。
         // 高度要等布局完成才知道，所以 post 一次。
         spinnerSkin.post {
             val gap = (spinnerSkin.height * 0.15f).toInt()
             spinnerSkin.dropDownVerticalOffset = spinnerSkin.height + gap
         }
+        // ⚠️ 关键：AdapterView 会在**首次布局时自动回调一次 onItemSelected(position=0)**。
+        // 那时 bindingSkin 已经是 false，监听器就会把 prefs.skin 改写成列表第一项，
+        // 于是"每次重新打开都变回第一个角色"、上次的选择被覆盖。
+        // 这个 post 在首次布局之后才执行，用它把初始回调先消化掉。
+        spinnerSkin.post { skinReady = true }
         spinnerSkin.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
                 parent: AdapterView<*>?, view: View?, position: Int, id: Long
             ) {
-                if (bindingSkin) return
+                if (!skinReady || bindingSkin) return
                 val dir = skins.getOrNull(position) ?: return
                 if (dir == prefs.skin) return
                 prefs.skin = dir
