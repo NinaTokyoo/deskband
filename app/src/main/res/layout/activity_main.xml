@@ -153,10 +153,17 @@
 
         <!-- ② 形象：右下角实时显示当前角色的「右下角」素材。
              clipToOutline 让素材的右下角被卡片的圆角切掉（用户要求）。
-             素材不可交互：clickable/focusable 全关。 -->
+             素材不可交互：clickable/focusable 全关。
+
+             ⚠️ 这张卡片自己 padding=0，内边距挪到里面的内容层 ——
+             这样 FrameLayout 就占满整张卡片，素材用 layout_gravity=end|bottom
+             且**不需要负外边距**就能贴到卡片边框。
+             （试过负 marginEnd/-marginBottom，在 FrameLayout 里会被钳制，
+               实测素材右边仍差 13dp。） -->
         <LinearLayout
             style="@style/Card"
             android:tag="card"
+            android:padding="0dp"
             android:clipToOutline="true"
             android:layout_marginStart="16dp"
             android:layout_marginEnd="16dp">
@@ -168,7 +175,8 @@
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical">
+                    android:orientation="vertical"
+                    android:padding="13dp">
 
                     <TextView
                         style="@style/CardTitle"
@@ -178,18 +186,21 @@
                         android:id="@+id/spinnerSkin"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp" />
+                        android:layout_marginTop="12dp"
+                        android:layout_marginEnd="99dp"
+                        android:popupAnimationStyle="@style/SpinnerPopupAnim" />
                 </LinearLayout>
 
-                <!-- 负外边距抵消卡片内边距，让素材贴到卡片的右下边缘 -->
+                <!-- 宽度要与上面 Spinner 的 marginEnd 配合：
+                     marginEnd >= 图宽 + 8，否则会盖住 Spinner 右端的倒三角。
+                     scaleType 必须是 matrix —— setImageMatrix 只在 matrix 下生效，
+                     其它 scaleType 会忽略我们算好的矩阵（踩过：素材因此没贴紧）。 -->
                 <ImageView
                     android:id="@+id/imgCornerPreview"
-                    android:layout_width="128dp"
-                    android:layout_height="128dp"
+                    android:layout_width="104dp"
+                    android:layout_height="104dp"
                     android:layout_gravity="end|bottom"
-                    android:layout_marginEnd="-13dp"
-                    android:layout_marginBottom="-13dp"
-                    android:scaleType="fitEnd"
+                    android:scaleType="matrix"
                     android:clickable="false"
                     android:focusable="false"
                     android:importantForAccessibility="no" />
@@ -399,7 +410,8 @@
                 android:id="@+id/spinnerTheme"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp" />
+                android:layout_marginTop="12dp"
+                android:popupAnimationStyle="@style/SpinnerPopupAnim" />
         </LinearLayout>
     </LinearLayout>
 </ScrollView>

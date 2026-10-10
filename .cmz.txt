@@ -1,0 +1,36 @@
+修右下角素材贴合、倒三角消失、下拉飞入动画
+
+## 1) 右下角素材没贴紧边框（两处原因，都修了）
+
+原因 A：**setImageMatrix 只在 scaleType="matrix" 下生效**。
+之前写的是 fitEnd，ImageView 会用自己按 scaleType 算的矩阵，
+把我们算好的"按可见区域对齐"的矩阵直接忽略掉。
+-> 改成 android:scaleType="matrix"。
+
+原因 B：**FrameLayout 里负外边距会被钳制**。
+原来靠 layout_marginEnd/-Bottom = -13dp 去抵消卡片内边距，
+实测素材右边仍停在 padding box（1384-45.5=1338），没到边框。
+-> 改成把这张卡片的 padding 设为 0，内边距挪到里面的内容层，
+   这样 FrameLayout 占满整张卡片，ImageView 用 layout_gravity=end|bottom
+   且**不需要负外边距**就贴到边框。
+
+实测：imgCornerPreview R=1384，正好等于卡片边框位置；
+      素材右下角被卡片圆角切掉（用户确认允许）。
+      不对素材做任何裁切，只按 alpha 可见包围盒算缩放与位移。
+
+## 2) 切换人物的倒三角消失
+
+不是被主题改掉的，是**右下角那张预览图盖住了 Spinner 右端**。
+-> 给 spinnerSkin 加 layout_marginEnd=99dp（>= 图宽 104dp + 余量），
+   让 Spinner 右端（倒三角所在处）落在图片左边界之外。
+实测：spinnerSkin R=991，imgCornerPreview L=1020，不重叠；
+
+## 3) 下拉列表从右上角飞入
+
+默认 popup 动画带方向性位移。新增 style SpinnerPopupAnim，
+用 @android:anim/fade_in / fade_out 换成原地淡入淡出，没有方向位移。
+两个 Spinner 都设上 android:popupAnimationStyle。
+（注意：该属性只有 XML 形式，Spinner 没有 setPopupAnimationStyle 方法，
+  写成代码会编译不过。）
+
+25 个单测全绿。
