@@ -134,6 +134,11 @@
                 android:orientation="horizontal"
                 android:baselineAligned="false">
 
+                <Space
+                    android:layout_width="0dp"
+                    android:layout_height="1dp"
+                    android:layout_weight="1" />
+
                 <Button
                     android:id="@+id/btnReset"
                     style="@style/BigButton"
@@ -161,6 +166,11 @@
                     android:maxLines="1"
                     android:ellipsize="end"
                     android:text="@string/reset_keep_off" />
+
+                <Space
+                    android:layout_width="0dp"
+                    android:layout_height="1dp"
+                    android:layout_weight="1" />
             </LinearLayout>
         </LinearLayout>
 
