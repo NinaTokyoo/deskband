@@ -402,6 +402,7 @@ class PetView(context: Context) : View(context) {
         dragOffsetX = 0f
         dragOffsetY = 0f
         cancelTween()
+        clearPendingSnap()
         syncWindow()
         markRest(anchorX, anchorY)
     }
@@ -814,6 +815,25 @@ class PetView(context: Context) : View(context) {
     fun isSliding(): Boolean = sliding
 
     /**
+     * 兜底：保证宠物此刻停在屏幕内（只把越界的锚点拉回来，不重新吸附）。
+     *
+     * ⚠️ 服务层在"呼出时宠物已在、又没在滑动、也没记住静止点"这种极端情况下调用它。
+     * **绝不能改成 applySnap()**：那个会按状态重排到"标准位置"
+     * （贴右边框 = 右边框**底部**），正是用户反馈的
+     * "吸附在右边框多次快速点击呼入收起会瞬移到右下角"。
+     */
+    fun stayVisible() {
+        if (sliding) return
+        val b = host?.bounds() ?: return
+        val hw = trackW / 2f
+        val hh = trackH / 2f
+        anchorX = anchorX.coerceIn(hw, (b.width() - hw).coerceAtLeast(hw))
+        anchorY = anchorY.coerceIn(hh, (b.height() - hh).coerceAtLeast(hh))
+        markRest(anchorX, anchorY)
+        syncWindow()
+    }
+
+    /**
      * 退出方向：**按实际贴边情况**判断，不再只看状态。
      *
      * 规则：**贴底优先** -> 向下收；然后**贴上沿** -> 向上收；
@@ -871,6 +891,7 @@ class PetView(context: Context) : View(context) {
         // 原来是在这一刻把**当前 anchor** 记成静止点，可如果这一刻正在播回弹补间，
         // anchor 还在过冲点上 —— 连点时就会滑回过冲点、位置也就变了
         // （用户反馈："多次快速点击收起/呼入位置会发生变化"）。
+        clearPendingSnap()
         startSlide(anchorX, anchorY, to[0], to[1], onDone)
     }
 
@@ -936,6 +957,7 @@ class PetView(context: Context) : View(context) {
         // 这样如果呼出动画中途被收起打断，之后再次呼出时
         // reverseSlide() 才知道该滑回哪里 —— 否则会用上一次的过期位置。
         markRest(targetX, targetY)
+        clearPendingSnap()
         val from = offScreenAnchor(v[0], v[1])
         // ⚠️ 起点必须**严格**满足两点，否则会出现"斜着从角上飞进来"：
         //   1) 进场轴上一定在屏幕外（用 max/min 强制，不只是"加半个窗口"）
@@ -985,6 +1007,46 @@ class PetView(context: Context) : View(context) {
         // 回弹的第二段也必须一起取消：否则残留的 bouncePending 会在
         // 下一次补间结束时突然把宠物拉回一个过期的目标位置。
         bouncePending = false
+    }
+
+    /**
+     * 被触摸打断的吸附补间：记下它的**落点**，点完再补上。
+     *
+     * 场景：松手吸附的补间要 220ms 位移 + 360ms 回弹，总共约 0.6 秒。
+     * 这期间用户点一下宠物想互动 —— `ACTION_DOWN` 会把补间取消
+     * （"抓住了就停住"是对的），可如果只是**点一下**（没拖动），
+     * 补间就再也没人补完：宠物停在半路，要么跟屏幕边缘留一条缝、
+     * 要么越界半张脸卡在边上（用户反馈："点击互动或者吸附后也偶尔会跟屏幕边缘留有缝隙"）。
+     */
+    private var pendingSnapX = Float.NaN
+    private var pendingSnapY = Float.NaN
+
+    private fun holdSnapTarget() {
+        when {
+            bouncePending -> {
+                pendingSnapX = bounceToX
+                pendingSnapY = bounceToY
+            }
+            tweening -> {
+                pendingSnapX = tweenToX
+                pendingSnapY = tweenToY
+            }
+        }
+    }
+
+    private fun clearPendingSnap() {
+        pendingSnapX = Float.NaN
+        pendingSnapY = Float.NaN
+    }
+
+    /** 点完（或手势被打断）把没走完的吸附补间补上 —— 必须回到贴边落点，不允许停在半路 */
+    private fun resumePendingSnap() {
+        val tx = pendingSnapX
+        val ty = pendingSnapY
+        clearPendingSnap()
+        if (tx.isNaN() || ty.isNaN()) return
+        if (sliding) return
+        animateTo(tx, ty)
     }
 
     /** 平滑移动到目标位置；任何"宠物自己动"的地方都走这里 */
@@ -1351,6 +1413,7 @@ class PetView(context: Context) : View(context) {
         lastVert = PetState.vertForState(newState)
         alignFlipV(newState)
         cancelTween()
+        clearPendingSnap()
         markRest(anchorX, anchorY)
         syncWindow()
     }
@@ -1367,6 +1430,7 @@ class PetView(context: Context) : View(context) {
         dragOffsetX = 0f
         dragOffsetY = 0f
         cancelTween()
+        clearPendingSnap()
         // ⚠️ 兜底：把恢复出来的锚点夹进屏幕内。
         //
         // 保存位置可能本身就是屏幕外的坐标（收起时锚点在滑出路径上被存了下来，
@@ -1405,6 +1469,7 @@ class PetView(context: Context) : View(context) {
         dragOffsetX = 0f
         dragOffsetY = 0f
         cancelTween()
+        clearPendingSnap()
         flip = 0f
         flipFrom = 0f
         flipTo = 0f
@@ -1568,6 +1633,9 @@ class PetView(context: Context) : View(context) {
                 dragOffsetX = 0f
                 dragOffsetY = 0f
                 dragging = false
+                // 按下会取消在途的吸附补间（"抓住了就停住"）。先把落点记下来：
+                // 如果只是点一下，松手时要把它补完（见 [pendingSnapX]）。
+                holdSnapTarget()
                 cancelTween()
                 // 记下手指作用点在窗口内的位置 —— 旋转就绕它转
                 return true
@@ -1578,6 +1646,8 @@ class PetView(context: Context) : View(context) {
                 val dy = event.rawY - downRawY
                 if (!dragging && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
                     dragging = true
+                    // 真拖动了：以这次拖动为准，丢掉刚才记下的落点
+                    clearPendingSnap()
                     // 用户规则：**手指按在哪里，素材中心点就在哪里**。
                     // 不保留"手指到中心点的偏移"，直接在起拖那一刻把中心点对齐到按下位置。
                     anchorX = downRawX
@@ -1608,6 +1678,8 @@ class PetView(context: Context) : View(context) {
                     settle()
                 } else {
                     onTapped()
+                    // 点完把被打断的吸附补间补完，绝不停在半路（否则贴边会留缝）
+                    resumePendingSnap()
                 }
                 dragging = false
                 return true
@@ -1694,6 +1766,8 @@ class PetView(context: Context) : View(context) {
         anchorY = curCenterY()
         dragOffsetX = 0f
         dragOffsetY = 0f
+        // 这次吸附就是权威落点，丢掉任何"待补的补间"
+        clearPendingSnap()
 
         val x = curTrackLeft()
         val y = curTrackTop()

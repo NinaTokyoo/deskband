@@ -140,9 +140,12 @@ class PetService : Service(), PetView.Host {
                 if (v.isSliding()) {
                     v.reverseSlide()
                 } else if (!v.restoreRest()) {
-                    // 没记录过静止位置才退回"按当前位置重新吸附"
-                    v.applySnap(v.state)
-                    v.syncWindow()
+                    // 极端兜底：就停在原地（夹进屏幕保证可见）。
+                    //
+                    // ⚠️ 这里**绝对不能**用 applySnap()：它按状态重排到"标准位置"，
+                    // 而贴右边框的标准位置是右边框**底部** —— 那正是用户反馈的
+                    // "吸附在右边框多次快速点击呼入收起会瞬移到右下角"。
+                    v.stayVisible()
                 }
             }
         }
@@ -429,14 +432,17 @@ class PetService : Service(), PetView.Host {
         }
         val v = petView ?: return
         v.sprite = sprite
+        // setSizeFraction 已经"以吸附边为基准"缩放并夹进屏幕，这里不必再吸附一次
         v.setSizeFraction(prefs.sizeFraction)
-        // 尺寸/分区都变了：重新吸附定位，并把窗口尺寸同步过去。
+        if (prefs.hasPosition) {
+            // 用存档精确落位
+            v.restore(v.state, prefs.posLeft, prefs.posTop)
+        } else {
+            // 没有存档才退回"按状态的标准位置"（否则每次改大小都会先跳一下）
+            v.applySnap(v.state)
+        }
         // syncWindow 不能省 —— 否则宠物的新尺寸超出窗口，超出部分点不到
         // （用户实测踩过："调整大小之后明明点到并拖动但是没有反应"）。
-        v.applySnap(v.state)
-        if (prefs.hasPosition) {
-            v.restore(v.state, prefs.posLeft, prefs.posTop)
-        }
         v.syncWindow()
     }
 
