@@ -6,10 +6,12 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.BroadcastReceiver
+import android.content.ComponentCallbacks2
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
+import android.content.res.Configuration
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.drawable.Icon
@@ -17,6 +19,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
@@ -50,7 +53,49 @@ class PetService : Service(), PetView.Host {
     private var epoch = 0
     private var petParams: WindowManager.LayoutParams? = null
 
+    /**
+     * 屏幕是否点亮。
+     *
+     * ⚠️ 初值必须**真读一次** `PowerManager.isInteractive`，不能写死 true：
+     *    服务完全可能在息屏状态下被拉起（开机自启、sticky 重启），
+     *    写死 true 会让"息屏时不该跑动画"的判断反过来，
+     *    桌宠在熄屏状态下继续按帧重绘。
+     */
     private var screenOn = true
+
+    /**
+     * 屏幕旋转 / 显示尺寸变化。
+     *
+     * ⚠️ 这个回调**必须有**，否则贴边吸附的桌宠会整只消失：
+     *    窗口位置与尺寸是按当时的屏幕算的，而 `FLAG_LAYOUT_NO_LIMITS`
+     *    允许窗口停在屏幕外。竖屏贴在右边框 -> 横屏之后原来的 x 已经在屏幕外，
+     *    桌宠就看不见了，只有"复位"能救回来；更糟的是随后任何一次落位
+     *    都会把**夹取后的新坐标**写进存档，原位置被吃掉。
+     *
+     * ⚠️ 这里只能 `syncWindow()` + `stayVisible()`，**绝不能用 `applySnap()`**：
+     *    applySnap 会按状态重排到"标准位置"，而贴右边框的标准位置是
+     *    右边框**底部** —— 那正是用户反馈过的
+     *    "吸附在右边框多次快速点击呼入收起会瞬移到右下角"。
+     */
+    private val componentCallbacks = object : ComponentCallbacks2 {
+        override fun onConfigurationChanged(newConfig: Configuration) {
+            val v = petView ?: return
+            if (v.parent == null || !v.isAttachedToWindow) return
+            // 先按新的屏幕尺寸重算窗口，再把它拉回可见范围
+            v.syncWindow()
+            v.stayVisible()
+        }
+
+        // ⚠️ 用匿名 object 实现 ComponentCallbacks2 时，**两个方法都要写出来** ——
+        //    Kotlin 的 object 表达式不继承接口方法的默认实现（写了才知道）。
+        //    onLowMemory 在接口里已弃用，覆盖它会报 OVERRIDE_DEPRECATION
+        //    （注意不是 DEPRECATION，用那个消不掉）。
+        @Suppress("OVERRIDE_DEPRECATION")
+        override fun onLowMemory() = Unit
+
+        override fun onTrimMemory(level: Int) = Unit
+    }
+
     private var saveScheduled = false
 
     private val screenReceiver = object : BroadcastReceiver() {
@@ -80,6 +125,8 @@ class PetService : Service(), PetView.Host {
         alive = true
         wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         prefs = Prefs(this)
+        // 息屏状态下被拉起时不能当成亮屏（写死 true 会让动画在息屏时继续跑）
+        screenOn = (getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
         startForegroundCompat()
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON)
@@ -91,6 +138,9 @@ class PetService : Service(), PetView.Host {
             @Suppress("UnspecifiedRegisterReceiverFlag")
             registerReceiver(screenReceiver, filter)
         }
+        // 旋转 / 折叠屏展开 / 分辨率变化：必须重算窗口并拉回可见范围，
+        // 否则贴边的桌宠会跑到屏幕外整只消失（见 componentCallbacks 的说明）。
+        registerComponentCallbacks(componentCallbacks)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -120,7 +170,24 @@ class PetService : Service(), PetView.Host {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (petView == null) {
+        // ⚠️ 判据必须是「窗口**真的还在**」，不能只是 `petView != null`。
+        //
+        // petView 非空只说明我们**创建过**一个 PetView，不代表它的窗口还挂在
+        // WindowManager 上。以下情况会让引用非空而窗口已消失：
+        //   · 悬浮窗权限被撤销 / 被 ROM（MIUI、EMUI 等）在后台回收
+        //   · 窗口在首帧之前就被系统拆掉
+        //   · removeView 抛异常被 catch 吞掉，petView 置了 null 但窗口其实还在
+        //     （反向不一致）
+        // 一旦引用非空而窗口没了，点"呼出"会走下面的"已在场"分支：
+        // reverseSlide / restoreRest / stayVisible 全都在改一个 **已 detach 的
+        // View 的内部字段**，对屏幕毫无影响 —— 界面显示"收起"、
+        // 屏幕上什么都没有，只有"复位"才可能救回来。
+        // 这正是历史症状"点呼出没反应 / 显示已呼出但看不到桌宠"的复现通路。
+        val attached = petView?.let { it.parent != null && it.isAttachedToWindow } == true
+        if (!attached) {
+            // 引用还在但窗口没了 —— 先彻底清干净再重建，否则残留的 PetView
+            // 会一直挡着"窗口还在"的判断。
+            if (petView != null) removePet()
             showPet(animateIn = true)
         } else {
             // 宠物已经在（可能正在播收起动画）。这是**一次新的呼出请求**：
@@ -154,6 +221,11 @@ class PetService : Service(), PetView.Host {
 
     override fun onDestroy() {
         mainHandler.removeCallbacks(saveRunnable)
+        try {
+            unregisterComponentCallbacks(componentCallbacks)
+        } catch (e: Exception) {
+            // 忽略
+        }
         removePet()
         sprite?.evict()
         sprite = null
@@ -267,7 +339,14 @@ class PetService : Service(), PetView.Host {
             .setContentIntent(open)
             .setOngoing(true)
         if (Build.VERSION.SDK_INT >= 23) {
-            builder.setColor(0xFF2AA8E0.toInt())
+            // 跟随当前角色的强调色，与界面保持一致。
+            //
+            // 原来硬编码 0xFF2AA8E0 —— 它既不跟 prefs.accentColor，也不是
+            // AccentTheme.FALLBACK，属于"第三种真值"：换角色后通知栏的颜色
+            // 与 App 里的主题色对不上。
+            builder.setColor(
+                if (prefs.accentColor != 0) prefs.accentColor else AccentTheme.FALLBACK
+            )
         }
         try {
             builder.addAction(
@@ -294,7 +373,17 @@ class PetService : Service(), PetView.Host {
     private fun showPet(animateIn: Boolean = false) {
         // 作废所有在途的收起动画回调（见 slideOutThenStop 的说明）
         epoch++
-        val s = PetSprite.load(assets, prefs.skin)
+        // ⚠️ 角色没变就**复用已有的 sprite**，不要每次都重新解码。
+        //
+        // 收起走的只是 removePet()（只移除视图，sprite 字段与位图都还在），
+        // 而呼出/收起是本 App 最高频的交互 —— 无条件重新 load 的话，每次呼出都要
+        // 在主线程解码两张大图（约 11 MiB 分配 + 30~100ms）并丢弃旧位图，
+        // 内存曲线呈锯齿、呼出还掉帧。
+        //
+        // 用 isEvicted 而不是只判空：evict() 之后派生位图已被 recycle，
+        // 复用它是 "Canvas: trying to use a recycled bitmap" 崩溃。
+        val s = sprite?.takeIf { !it.isEvicted && it.dir == prefs.skin }
+            ?: PetSprite.load(assets, prefs.skin)
             ?: PetSprite.load(assets, PetSprite.FALLBACK)
             ?: PetSprite.listSkins(assets).firstOrNull()?.let { PetSprite.load(assets, it) }
             ?: run {
@@ -374,17 +463,25 @@ class PetService : Service(), PetView.Host {
             // 万一帧回调没跑起来（被暂停、或窗口在屏幕外时系统不给帧），
             // 宠物就会永远停在屏幕外 —— 绝不能出现"看不见但按钮显示已呼出"。
             //
-            // ⚠️ 必须带上**世代号**一起判断：这 900ms 里用户完全可能又点了收起/呼出。
+            // ⚠️ 必须带上**世代号**一起判断：这段超时时间里用户完全可能又点了收起/呼出。
             // 那时这次兜底会 forceSettleAt()，把**后来的收起动画**掐断
             // （forceSettleAt 会取消补间、丢弃 slideDone），
             // 于是"点了收起没反应、宠物留在屏幕上"——
             // 用户反馈："多次点击呼出收起的时候，有时候点击收起没有反应"。
+            //
+            // ⚠️⚠️ 超时值**必须按实际动画时长算**，不能用固定值。动画总时长是
+            //     Prefs.SUMMON_MS_BASE(560ms) x summonTimeScale，而倍率上限为 5
+            //     （Prefs.SUMMON_TIME_MAX）—— 最长 2800ms。原来写死 900L 时，
+            //     只要"呼出回弹"的总时长调到约 1.7 倍以上，看门狗就会先触发
+            //     forceSettleAt()：呼出动画被截断成"瞬间落位"，
+            //     slideHasPhase2 被清掉、回弹段整个丢失（用户看到"猛地定住"）。
             val myEpoch = epoch
+            val watchdogMs = (prefs.summonTotalMs * 1.2f + 150f).toLong()
             mainHandler.postDelayed({
                 if (petView === view && epoch == myEpoch && view.isSliding()) {
                     view.forceSettleAt(tx, ty)
                 }
-            }, 900L)
+            }, watchdogMs)
         }
 
         prefs.running = true
@@ -528,7 +625,13 @@ class PetService : Service(), PetView.Host {
      * 为了改一行通知文字而让桌宠跳一下是不合适的。
      */
     private fun refreshNotificationOnly() {
-        if (!prefs.running) return
+        // ⚠️ 闸门用 `alive`（服务是否活着），**不是** `prefs.running`（桌宠是否可见）。
+        //
+        // 收起桌宠时服务按设计仍然常驻、通知栏也还挂着（只是内容改成"已收起"）。
+        // 这时用户在 App 里换角色或改通知标题，如果这里被 `prefs.running` 挡住，
+        // 通知栏的标题就一直是**旧角色名**，要等下次呼出才刷新 ——
+        // 属于"改了没反应"。
+        if (!alive) return
         runCatching { startForegroundCompat() }
     }
 
@@ -561,18 +664,30 @@ class PetService : Service(), PetView.Host {
      * 这正是"不遮挡屏幕"的保证：窗口之外的触摸由系统直接派发给下层，
      * 我们连碰都碰不到，不需要任何 flag 技巧。
      */
-    override fun placeWindow(x: Int, y: Int, w: Int, h: Int) {
-        val v = petView ?: return
-        val p = petParams ?: return
-        if (p.x == x && p.y == y && p.width == w && p.height == h) return
+    override fun placeWindow(x: Int, y: Int, w: Int, h: Int): Boolean {
+        val v = petView ?: return false
+        val p = petParams ?: return false
+        if (p.x == x && p.y == y && p.width == w && p.height == h) return true
         p.x = x
         p.y = y
         p.width = w
         p.height = h
-        try {
+        return try {
             wm.updateViewLayout(v, p)
+            true
         } catch (e: Exception) {
-            // 窗口可能已被系统移除
+            // 窗口可能已被系统移除（权限被撤、被 ROM 回收）。
+            //
+            // ⚠️ 这里返回 false 而不是静默忽略：PetView 据此让窗口缓存失效并重试。
+            //    另外顺手做一次自愈 —— 窗口真的没了就把引用清掉，
+            //    否则"petView 非空但窗口已消失"会一直骗过 onStartCommand 里的
+            //    attach 判断（那正是"显示已呼出却看不到桌宠"的成因）。
+            if (v.parent == null || !v.isAttachedToWindow) {
+                petView = null
+                petParams = null
+                prefs.running = false
+            }
+            false
         }
     }
 
@@ -641,7 +756,10 @@ class PetService : Service(), PetView.Host {
 
         /** App 里改了通知栏自定义内容：只刷新通知，不动桌宠位置 */
         fun refreshNotification(context: Context) {
-            if (!Prefs(context).running) return
+            // ⚠️ 闸门是 `alive`（服务是否活着），不是 `running`（桌宠是否可见）。
+            //    收起后服务仍按设计常驻、通知栏也还挂着，这时改通知文案必须能生效，
+            //    否则要等下次呼出才刷新（"改了没反应"）。
+            if (!alive) return
             val i = Intent(context, PetService::class.java).setAction(ACTION_NOTIFY)
             try {
                 if (Build.VERSION.SDK_INT >= 26) {
@@ -700,7 +818,11 @@ class PetService : Service(), PetView.Host {
 
         /** 大小或角色变了，通知正在跑的服务刷新 */
         fun notifyChanged(context: Context) {
-            if (!Prefs(context).running) return
+            // 换角色 / 改大小后通知标题里的角色名要跟着变。
+            //
+            // ⚠️ 闸门同样是 `alive` 而不是 `running`：收起状态下换角色，
+            //    通知栏（此时显示"已收起"文案，但标题里带角色名）也要立刻更新。
+            if (!alive) return
             val i = Intent(context, PetService::class.java).setAction(ACTION_RELOAD)
             try {
                 if (Build.VERSION.SDK_INT >= 26) {

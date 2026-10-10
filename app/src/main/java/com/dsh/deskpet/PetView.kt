@@ -49,8 +49,15 @@ class PetView(context: Context) : View(context) {
     interface Host {
         fun bounds(): Rect
 
-        /** 把窗口移动到 [x],[y] 并按 [w],[h] 调整大小 */
-        fun placeWindow(x: Int, y: Int, w: Int, h: Int)
+        /**
+         * 把窗口移动到 [x],[y] 并按 [w],[h] 调整大小。
+         *
+         * @return 窗口参数**确实已经下发**为 true。
+         *   ⚠️ 失败时务必返回 false：PetView 只在成功后才更新窗口缓存，
+         *   否则一次 updateViewLayout 失败会让同坐标被永久跳过（见 [winPlaced]）。
+         *   注意"参数本来就已经是这些值"属于成功，要返回 true。
+         */
+        fun placeWindow(x: Int, y: Int, w: Int, h: Int): Boolean
 
         /** 拖动结束后回报状态与位置，供持久化 */
         fun onSettled(state: Int, left: Int, top: Int)
@@ -151,7 +158,9 @@ class PetView(context: Context) : View(context) {
      * 之前每帧都把 1024x875（或 1440x1352）的源图缩放绘制到 ~541x463，
      * 缩放采样是每帧最重的一项开销。
      */
-    private val scaledCache = HashMap<String, Bitmap>()
+    /** [alphaBoundsCached] 的单槽记忆化：最近一次查询的 state 与其外接框 */
+    private var hitBoundsState: Int? = null
+    private var hitBoundsRect: IntArray? = null
 
     /**
      * 旋转动画期间是否"冻结"尺寸。
@@ -798,6 +807,18 @@ class PetView(context: Context) : View(context) {
     private var lastWinX = Int.MIN_VALUE
 
     /**
+     * [lastWinX]/[lastWinY]/[lastWinW]/[lastWinH] 这四个缓存**是否可信**。
+     *
+     * ⚠️ 存在的理由：这四个值原来是"先写缓存、再调 [Host.placeWindow]"，
+     *    而 `updateViewLayout` 失败会被 [PetService] 静默吞掉。于是一次失败之后，
+     *    **相同坐标会被 [placeWindow] 开头的 early-return 永久挡住** ——
+     *    窗口再也不同步，表现是宠物画到窗口外、超出部分点不到。
+     *    现在改成"调用成功才更新缓存"；失败就把这个标志置 false，
+     *    下次同坐标仍然会重试。
+     */
+    private var winPlaced = false
+
+    /**
      * 窗口被"夹"回屏幕内造成的位移量（见 [placeWindow]）。
      *
      * 贴边/贴角时窗口会有一部分越出屏幕，而系统按 **窗口 frame ∩ 屏幕**
@@ -811,8 +832,21 @@ class PetView(context: Context) : View(context) {
     private var lastWinW = -1
     private var lastWinH = -1
 
+    /**
+     * 息屏时停表省电。
+     *
+     * ⚠️ 这个字段必须在 [ticker] **之前**声明：ticker.run() 开头要读它。
+     */
+    private var paused = false
+
     private val ticker = object : Runnable {
         override fun run() {
+            // 息屏期间不要推进任何动画：setPaused(true) 会摘掉帧回调，
+            // 但触摸等路径仍可能重新排一帧 —— 这里直接退出，
+            // 免得"息屏时动画偷偷往前跑"。
+            // 亮屏时 setPaused(false) 会重新排帧，动画从暂停处继续。
+            if (paused) return
+
             var need = false
             val now = SystemClock.uptimeMillis()
 
@@ -1753,17 +1787,29 @@ class PetView(context: Context) : View(context) {
         winShiftX = 0
         winShiftY = 0
 
-        if (x == lastWinX && y == lastWinY && bboxW == lastWinW && bboxH == lastWinH) return
-        lastWinX = x
-        lastWinY = y
-        lastWinW = bboxW
-        lastWinH = bboxH
-        host?.placeWindow(x, y, bboxW, bboxH)
+        if (winPlaced && x == lastWinX && y == lastWinY &&
+            bboxW == lastWinW && bboxH == lastWinH
+        ) {
+            return
+        }
+        // ⚠️ 只在**调用成功**之后才更新缓存。
+        // 原来是把这四个值先写好再调 host.placeWindow()，而 updateViewLayout
+        // 失败会被静默吞掉 —— 于是一次失败就把同坐标永久挡住，窗口再也不同步。
+        if (host?.placeWindow(x, y, bboxW, bboxH) == true) {
+            lastWinX = x
+            lastWinY = y
+            lastWinW = bboxW
+            lastWinH = bboxH
+            winPlaced = true
+        } else {
+            // 失败 -> 让缓存失效，下次同坐标还会重试
+            winPlaced = false
+        }
     }
 
     /** 把窗口尺寸同步过来（大小变了之后必须调用，否则宠物会超出窗口点不到） */
     fun syncWindow() {
-        lastWinW = -1
+        winPlaced = false
         cacheSizes()
         placeWindow()
         invalidate()
@@ -1933,8 +1979,14 @@ class PetView(context: Context) : View(context) {
         val v = cv / cellH
         if (u < 0f || u > 1f || v < 0f || v > 1f) return false
 
-        // 用预缩放位图做 alpha 取样：比全分辨率图小得多，getPixel 更快
-        val bmp = runCatching { scaledBitmap(state) }.getOrNull() ?: return true
+        // alpha 取样。
+        //
+        // ⚠️ 这里直接对**该状态的位图**采样，不要再去另存一份"预缩放副本"：
+        //    Bitmap.getPixel 是单像素读，**O(1)，与位图大小无关** ——
+        //    曾经为此维护过一个 scaledCache，收益为零，代价是每状态一份整尺寸
+        //    副本（大小拉满时 10 份 x 3.3 MiB ≈ 33 MiB）。u/v 是归一化坐标，
+        //    对全分辨率图采样与对缩放图采样结果一致。
+        val bmp = runCatching { bitmapFor(state) }.getOrNull() ?: return true
         val bx = (u * (bmp.width - 1)).toInt().coerceIn(0, bmp.width - 1)
         val by = (v * (bmp.height - 1)).toInt().coerceIn(0, bmp.height - 1)
         val opaque = runCatching { ((bmp.getPixel(bx, by) ushr 24) and 0xFF) >= HIT_ALPHA_MIN }
@@ -1959,8 +2011,9 @@ class PetView(context: Context) : View(context) {
         // ⚠️⚠️ **四个角落不缩**（`hitBoxScaleFor` 对角落返回 1.0）。用户要求：
         // "吸附至四个角落时的面积不要改动，只改动没有吸附到四个角落情况的"。
         // 角落素材透明缝隙最多，缩小后容易点不中/抓不住。
-        val bounds = alphaBounds(bmp) ?: return false
-        val box = PetState.hitBox(bounds, PetState.hitBoxScaleFor(state, HIT_BOX_SCALE))
+        val box = PetState.hitBox(
+            alphaBoundsCached(state, bmp), PetState.hitBoxScaleFor(state, HIT_BOX_SCALE)
+        )
         return bx >= box[0] && bx < box[2] && by >= box[1] && by < box[3]
     }
 
@@ -1972,7 +2025,7 @@ class PetView(context: Context) : View(context) {
      *   · [PetState.flipVFor] —— 上边组（上角 / 贴上沿）上下翻转
      *
      * 绝不能用"当前离上沿近不近"这类**运行时标志**来选翻转：
-     * artCenterCache / scaledCache 都以 state 为键，翻转一旦不由状态唯一决定，
+     * artCenterCache / hitBounds 都以 state 为键，翻转一旦不由状态唯一决定，
      * 缓存就会串味 —— 素材中心点算错（表现是位置自己变了）、
      * 命中判定与实际画面不一致。
      *
@@ -1986,32 +2039,37 @@ class PetView(context: Context) : View(context) {
     }
 
     /**
-     * 取**已缩放到格子尺寸**的位图（每帧 1:1 贴图用）。
+     * 命中判定用的 alpha 外接框，按 state 记忆化。
      *
-     * 注意这里用**未旋转**的格子尺寸 —— 旋转是画布变换，不改变格子宽高，
-     * 所以比例永远不变。
+     * [alphaBounds] 要逐行 `getPixels` 扫全图（约几 ms），而 hitsPet 每次
+     * ACTION_DOWN 都会走到这里 —— 原来的写法是每次都重扫，而 [artCenterOf]
+     * 早就缓存了同一份结果。这里只记**最近一个 state**：命中判定连续多次
+     * 用的是同一个 state，单槽记忆化足够，且不引入新的生命周期风险
+     * （位图一变就靠 [clearScaledCache] 清掉）。
      */
-    private fun scaledBitmap(st: Int): Bitmap? {
-        val s = sprite ?: return null
-        val key = st.toString() + "x" + cellW + "x" + cellH
-        scaledCache[key]?.let { if (!it.isRecycled) return it }
-        val src = bitmapFor(st) ?: return null
-        val out = runCatching {
-            Bitmap.createScaledBitmap(src, cellW.coerceAtLeast(1), cellH.coerceAtLeast(1), true)
-        }.getOrNull() ?: return src
-        // 尺寸切换不频繁，缓存不会无限增长；超了就先清掉重来
-        if (scaledCache.size > 12) {
-            for (b in scaledCache.values) if (!b.isRecycled && b !== out) b.recycle()
-            scaledCache.clear()
+    private fun alphaBoundsCached(st: Int, bmp: Bitmap): IntArray {
+        if (hitBoundsState == st) {
+            val cached = hitBoundsRect
+            if (cached != null) return cached
         }
-        scaledCache[key] = out
-        return out
+        // alphaBounds 返回 [left, top, right, bottom]；全透明时退回整张图
+        val r = alphaBounds(bmp) ?: intArrayOf(0, 0, bmp.width, bmp.height)
+        hitBoundsState = st
+        hitBoundsRect = r
+        return r
     }
 
+    /**
+     * 换素材 / 换尺寸时清掉按 state 派生出来的缓存。
+     *
+     * ⚠️ 这里**不再回收位图** —— 之前会 recycle `scaledCache` 里的缩放副本，
+     * 那个缓存已经删掉了（见 hitsPet 里的说明）。现在只清索引，
+     * 位图的生命周期统一由 [PetSprite] 与 [PetService] 管。
+     */
     private fun clearScaledCache() {
-        for (b in scaledCache.values) if (!b.isRecycled) b.recycle()
-        scaledCache.clear()
         artCenterCache.clear()
+        hitBoundsState = null
+        hitBoundsRect = null
     }
 
     private fun hopOffset(): Float {
@@ -2455,11 +2513,12 @@ class PetView(context: Context) : View(context) {
 
         // 用**原图 + src/dst 矩形**绘制，让 GPU 去做缩放。
         //
-        // 原来走 scaledBitmap(state)：Bitmap.createScaledBitmap 在 CPU 上重采样
-        // 并**分配一块新位图**，缓存 key 含 cellW/cellH，所以进 A 区
-        // （素材纵横比变化 -> cellW 变）就会 cache miss，于是在拖拽的绘制里
-        // 同步做一次大图重采样 —— 用户反馈的"拖到 A 区切换素材明显卡顿"就是它。
-        // 反复 miss 还会反复分配大块内存，带来 GC 压力。
+        // 曾经这里是先 Bitmap.createScaledBitmap 出"格子尺寸副本"再画：
+        // 那个调用在 CPU 上重采样并**分配一块新位图**，缓存 key 含 cellW/cellH，
+        // 所以进 A 区（素材纵横比变化 -> cellW 变）就会 cache miss，于是在拖拽的
+        // 绘制里同步做一次大图重采样 —— 用户反馈的"拖到 A 区切换素材明显卡顿"
+        // 就是它；反复 miss 还反复分配大块内存。那个缩放缓存后来整块删掉了
+        // （连命中判定也不再需要它，见 hitsPet 的说明）。
         //
         // drawBitmap(bmp, src, dst, paint) 由 GPU 采样，paint 已带
         // FILTER_BITMAP_FLAG，质量一致，但**不再创建任何位图**。
@@ -2469,7 +2528,7 @@ class PetView(context: Context) : View(context) {
         // 那批位图会被回收，而窗口往往还会再走一帧 traversal ——
         // 直接画就会抛 "Canvas: trying to use a recycled bitmap"，
         // 整个进程崩溃（用户看到的"点收起把 APP 关了"）。
-        // 改用原图之前用的 scaledBitmap 自带这个检查，换过来时漏掉了。
+        // 早先那个缩放副本自带这个检查，改成画原图时漏掉过，别再把判断删了。
         val bmp = bitmapFor(state)?.takeIf { !it.isRecycled } ?: run {
             canvas.restoreToCount(save)
             return
@@ -2483,13 +2542,25 @@ class PetView(context: Context) : View(context) {
         canvas.restoreToCount(save)
     }
 
-    /** 息屏时停表省电 */
-    private var paused = false
-
     fun setPaused(p: Boolean) {
         if (paused == p) return
         paused = p
-        if (p) choreographer.removeFrameCallback(frameCallback) else invalidate()
+        if (p) {
+            choreographer.removeFrameCallback(frameCallback)
+        } else {
+            // ⚠️ 亮屏时**必须重新排帧**，不能只 invalidate() 一次。
+            //
+            // 息屏摘掉了 Choreographer 回调，而 ticker 才是所有动画的驱动源。
+            // 只 invalidate 的话 ticker 再也不会跑：
+            //   · 滑出动画（收起）永远停在半路 -> sliding 一直为 true，
+            //     而 removePet() 在滑出完成回调里，于是**桌宠卡在屏幕上收不掉**
+            //   · 呼入 / 旋转 / 翻转 / 压缩 同样卡在中间态
+            // 要等下一次触摸才恢复。呼出看门狗只覆盖 slide-in，救不了收起这条。
+            //
+            // 无条件排一帧即可：ticker 自己会在没有动画且不呼吸时停止排帧。
+            invalidate()
+            scheduleFrame()
+        }
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {

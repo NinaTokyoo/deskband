@@ -40,8 +40,21 @@ class PetSprite private constructor(
     private val uprightSrc: Bitmap
 ) {
 
-    /** 缓存：key = state*4 + (mirror?2:0) + (flipV?1:0) */
+    /**
+     * 派生位图缓存。
+     *
+     * ⚠️ 键是「**素材种类** + mirror + flipV」，**不是 state**。用 state 当键有两个
+     * 毛病（性能审查报告指出的）：
+     *   1. 内容相同的状态会各存一份整尺寸副本 —— `BORDER_L` 与
+     *      `BORDER_L_UPRIGHT` 都是 upright + 镜像，却存了两份 3.4 MiB。
+     *   2. 键空间随状态数膨胀，最坏 44 份 ≈ 36 MiB 派生位图。
+     * 素材种类只有 corner / upright 两种，于是组合最多 2x2x2 = 8 份。
+     */
     private val cache = HashMap<Int, Bitmap>()
+
+    /** 缓存键：素材种类占最高位，镜像 / 翻转各占 1 位 —— 与内容一一对应 */
+    private fun cacheKey(corner: Boolean, mirror: Boolean, flipV: Boolean): Int =
+        (if (corner) 4 else 0) or (if (mirror) 2 else 0) or (if (flipV) 1 else 0)
 
     /**
      * 取要绘制的位图（**不含旋转**，旋转在绘制时用 Canvas 做）。
@@ -55,13 +68,26 @@ class PetSprite private constructor(
      *               （等价于旋转 180°）；旋转躺倒的侧边形态不翻。
      */
     fun bitmap(state: Int, mirror: Boolean, flipV: Boolean = false): Bitmap {
-        val key = state * 4 + (if (mirror) 2 else 0) + (if (flipV) 1 else 0)
-        cache[key]?.let { return it }
-        val src = if (PetState.usesCornerArt(state)) cornerSrc else uprightSrc
+        val corner = PetState.usesCornerArt(state)
+        val key = cacheKey(corner, mirror, flipV)
+        cache[key]?.let { if (!it.isRecycled) return it }
+        val src = if (corner) cornerSrc else uprightSrc
         val bmp = transform(src, mirror, flipV)
-        cache[key] = bmp
+        // 不做任何变换时 transform 直接返回源图本身，**不能放进 cache** ——
+        // 否则 evict() 会把源图一起回收（见 evict 的注释）
+        if (bmp !== src) cache[key] = bmp
         return bmp
     }
+
+    /**
+     * 是否已被 [evict] 回收过。
+     *
+     * ⚠️ [PetService.showPet] 靠它判断"能不能复用这个 sprite"：evict 之后派生位图
+     * 已被 recycle，再拿来画就是 "Canvas: trying to use a recycled bitmap" 崩溃。
+     * 所以被 evict 过的 sprite 必须整体作废、重新 load。
+     */
+    var isEvicted: Boolean = false
+        private set
 
     /** 该状态用的素材原始宽（正立） */
     fun naturalWidth(state: Int): Int =
@@ -71,13 +97,33 @@ class PetSprite private constructor(
     fun naturalHeight(state: Int): Int =
         if (PetState.usesCornerArt(state)) cornerH else uprightH
 
+    /**
+     * 回收所有**派生**位图（镜像 / 翻转副本）。
+     *
+     * ⚠️ 源图 [cornerSrc] / [uprightSrc] **不在这里回收**。它们同样是"本对象持有、
+     * 别人只借用"的位图，但回收时机由 [PetService] 在销毁时统一决定，而且
+     * [PetView] 的绘制路径可能正拿着它们（那边有 isRecycled 兜底，但没必要去踩）。
+     * 只要 [bitmap] 不把源图放进 cache，这里就碰不到源图 —— 两处要一起维护。
+     */
     fun evict() {
-        for (b in cache.values) if (!b.isRecycled) b.recycle()
+        for (b in cache.values) {
+            if (!b.isRecycled && b !== cornerSrc && b !== uprightSrc) b.recycle()
+        }
         cache.clear()
+        isEvicted = true
     }
 
     companion object {
         const val ROOT = "pet"
+
+        /**
+         * 解码时较长边的目标像素上限（见 [decode]）。
+         *
+         * 1280 的来由：桌宠高度 = 屏幕高 x SIZE_BASE(0.08) x sizeScale，
+         * 放大上限 SIZE_SCALE_MAX = 5，1440x3084 的屏上给足余量约 1234 px。
+         * 所以在正常倍率范围内不会因降采样而看出模糊，把大小拉满也够用。
+         */
+        const val DECODE_MAX_PX = 1280
 
         /** 素材缺失时的兜底角色 */
         const val FALLBACK = "后藤一里"
@@ -117,15 +163,46 @@ class PetSprite private constructor(
             }
         }
 
+        /**
+         * 解码素材。
+         *
+         * ⚠️ **必须降采样**。素材原图很大（实测 corner.png 1440x1352，ARGB_8888
+         * 占 7.4 MiB），而桌宠在屏幕上只画到约 247 px 高（缩放 18%）——
+         * 原尺寸解码等于白占约 30 倍内存。而且 [transform] 生成的镜像 / 翻转
+         * 副本也是同分辨率，会把这个浪费一起放大。
+         *
+         * 目标尺寸见 [DECODE_MAX_PX]。先只读 bounds 再解码：inSampleSize 只能取
+         * 2 的幂，得先知道原尺寸才能算出"最接近又不小于目标"的那一档。
+         * 解码要开两次流 —— 这是仓库里的 asset，重复打开没有代价。
+         */
         private fun decode(assets: AssetManager, path: String): Bitmap? = try {
+            val probe = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             assets.open(path).use { input ->
-                BitmapFactory.decodeStream(
-                    input, null,
-                    BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 }
-                )
+                BitmapFactory.decodeStream(input, null, probe)
+            }
+            val opts = BitmapFactory.Options().apply {
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+                inSampleSize = sampleSizeFor(probe.outWidth, probe.outHeight)
+            }
+            assets.open(path).use { input ->
+                BitmapFactory.decodeStream(input, null, opts)
             }
         } catch (e: Exception) {
             null
+        }
+
+        /**
+         * 算 2 的幂的 inSampleSize，使解码后的**较长边**最接近但不小于 [DECODE_MAX_PX]。
+         *
+         * 用较长边而不是高：素材有横有竖（corner 是 1440x1352，upright 是
+         * 1024x875），按较长边判能保证两个方向都不低于目标。
+         */
+        private fun sampleSizeFor(w: Int, h: Int): Int {
+            if (w <= 0 || h <= 0) return 1
+            val longest = maxOf(w, h)
+            var n = 1
+            while (longest / (n * 2) >= DECODE_MAX_PX) n *= 2
+            return n
         }
 
         /**
