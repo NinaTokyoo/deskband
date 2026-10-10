@@ -1766,4 +1766,27 @@ class PetStateTest {
         assertEquals("山田凉 正在陪伴你",
             PetState.titleForDisplay(tpl, "山田凉", TITLE_DEFAULT))
     }
+
+    /**
+     * 正文留空时的取值：直接用当前标题的**模板**，解析后应与标题一致。
+     *
+     * 这条对应实机抓到的 bug：通知里标题解析了、正文没解析，
+     * 结果正文原样显示了 {name}。
+     */
+    @Test
+    fun body_blank_copies_title_template_and_resolves_the_same() {
+        val name = "后藤一里"
+        // 标题留空 -> 模板；正文留空 -> 取标题模板
+        val filled = PetState.fillNotifyTexts("", "", name, TITLE_DEFAULT)
+        assertEquals("{name} 正在陪伴你", filled.title)
+        assertEquals("后藤一里 正在陪伴你", filled.body)
+
+        // 服务端解析正文时用的也是 titleForDisplay，两边必须一致
+        val storedBody = PetState.titleForStore(filled.body, name)
+        assertEquals("{name} 正在陪伴你", storedBody)
+        assertEquals(
+            PetState.titleForDisplay(filled.title, name, TITLE_DEFAULT),
+            PetState.titleForDisplay(storedBody, name, TITLE_DEFAULT)
+        )
+    }
 }

@@ -205,17 +205,33 @@ class PetService : Service(), PetView.Host {
     }
 
     /**
-     * 通知正文：优先用用户自定义内容，为空则回落到默认文案。
+     * 通知正文。
      *
-     * 再 take 一次上限是防御性的 —— 万一历史存档里有超长串。
+     * 规则（用户要求）：
+     *   · 已收起（服务仍在跑但没显示宠物）-> 固定提示，说明当前状态
+     *   · 正文留空 -> **直接复制当前标题**（解析后的文字），与标题保持一致
+     *   · 否则用自定义正文
+     *
+     * ⚠️ 存的可能是**模板**（含 {name}），所以这里必须解析一遍再显示。
+     *    漏掉这一步的表现就是通知正文原样显示「{name} 正在陪伴你」——
+     *    界面那边解析了、服务这边没解析，实测踩过（用户截图抓到的）。
+     *
+     * take 一次上限是防御性的 —— 万一历史存档里有超长串。
      */
     private fun notificationText(): String {
-        // 已收起（服务仍在跑，只是没有显示宠物）时给一句明确的提示，
-        // 否则常驻通知会一直说"正在陪着你"，与实际状态不符。
         if (!prefs.running) return getString(R.string.notif_text_collapsed)
+
+        val name = sprite?.displayName
         val custom = prefs.notifyText.trim()
-        return if (custom.isEmpty()) getString(R.string.notif_text)
-        else custom.take(Prefs.NOTIFY_TEXT_MAX)
+        val raw = if (custom.isEmpty()) {
+            // 正文留空 -> 用当前标题（模板），下一行统一解析
+            prefs.notifyTitle
+        } else {
+            custom
+        }
+        return PetState
+            .titleForDisplay(raw, name, Prefs.NOTIFY_TITLE_DEFAULT)
+            .take(Prefs.NOTIFY_TEXT_MAX)
     }
 
     private fun startForegroundCompat() {

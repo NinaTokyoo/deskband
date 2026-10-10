@@ -1018,7 +1018,8 @@ class MainActivity : Activity() {
             //    不同步这一步的话，存下来的就是写死的名字，换角色后标题不会跟着变
             //    （这正是方案 2 原本的 bug）。
             prefs.notifyTitle = PetState.titleForStore(filled.title, name)
-            // 正文是按解析后的标题回填的，但存模板才有意义，所以同样反向换一次
+            // 正文也存模板（同样反向换一次），这样通知里能跟着角色一起变；
+            // 留空时 PetState.fillNotifyTexts 已经把它填成当前标题了。
             prefs.notifyText = PetState.titleForStore(filled.body, name)
             // 回写一次：setter 会按上限截断；显示时统一解析 {name}
             refreshNotifyFields()
