@@ -172,27 +172,25 @@
         <!-- ③ 外观 -->
         <LinearLayout style="@style/Card">
 
-            <TextView
-                style="@style/CardTitle"
-                android:text="@string/section_look" />
+            <LinearLayout style="@style/CardTitleRow">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
-                android:text="@string/label_size"
-                android:textColor="@color/text_secondary"
-                android:textSize="14sp" />
+                <TextView
+                    style="@style/CardTitle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:text="@string/section_look" />
 
-            <SeekBar
-                android:id="@+id/seekSize"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp" />
+                <Button
+                    android:id="@+id/btnResetSize"
+                    style="@style/CardAction"
+                    android:text="@string/restore_default" />
+            </LinearLayout>
 
+            <!-- 标签 + 当前值 + 输入框挤在同一行，滑条紧随其下（提高密度） -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
                 android:orientation="horizontal"
                 android:gravity="center_vertical">
 
@@ -201,13 +199,16 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
+                    android:maxLines="1"
+                    android:ellipsize="end"
                     android:textColor="@color/text_secondary"
                     android:textSize="13sp" />
 
                 <EditText
                     android:id="@+id/editSize"
-                    android:layout_width="92dp"
+                    android:layout_width="76dp"
                     android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
                     android:inputType="numberDecimal"
                     android:imeOptions="actionDone"
                     android:maxLength="5"
@@ -216,37 +217,39 @@
                     android:hint="@string/size_input" />
             </LinearLayout>
 
+            <SeekBar
+                android:id="@+id/seekSize"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+
             <Button
                 android:id="@+id/btnSaveSize"
                 style="@style/PrimaryButton"
-                android:layout_marginTop="14dp"
                 android:text="@string/save_apply" />
         </LinearLayout>
 
         <!-- ④ 松手回弹 -->
         <LinearLayout style="@style/Card">
 
-            <TextView
-                style="@style/CardTitle"
-                android:text="@string/section_bounce" />
+            <LinearLayout style="@style/CardTitleRow">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
-                android:text="@string/label_bounce_amp"
-                android:textColor="@color/text_secondary"
-                android:textSize="14sp" />
+                <TextView
+                    style="@style/CardTitle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:text="@string/section_bounce" />
 
-            <SeekBar
-                android:id="@+id/seekBounceAmp"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp" />
+                <Button
+                    android:id="@+id/btnResetBounce"
+                    style="@style/CardAction"
+                    android:text="@string/restore_default" />
+            </LinearLayout>
 
+            <!-- 幅度：标签+值+输入框一行，滑条紧随 -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
                 android:orientation="horizontal"
                 android:gravity="center_vertical">
 
@@ -255,13 +258,16 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
+                    android:maxLines="1"
+                    android:ellipsize="end"
                     android:textColor="@color/text_secondary"
                     android:textSize="13sp" />
 
                 <EditText
                     android:id="@+id/editBounceAmp"
-                    android:layout_width="92dp"
+                    android:layout_width="76dp"
                     android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
                     android:inputType="numberDecimal"
                     android:imeOptions="actionDone"
                     android:maxLength="5"
@@ -270,23 +276,16 @@
                     android:hint="@string/bounce_amp_input" />
             </LinearLayout>
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
-                android:text="@string/label_bounce_ms"
-                android:textColor="@color/text_secondary"
-                android:textSize="14sp" />
-
             <SeekBar
-                android:id="@+id/seekBounceMs"
+                android:id="@+id/seekBounceAmp"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp" />
+                android:layout_height="wrap_content" />
 
+            <!-- 时长 -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
                 android:orientation="horizontal"
                 android:gravity="center_vertical">
 
@@ -295,13 +294,16 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
+                    android:maxLines="1"
+                    android:ellipsize="end"
                     android:textColor="@color/text_secondary"
                     android:textSize="13sp" />
 
                 <EditText
                     android:id="@+id/editBounceMs"
-                    android:layout_width="92dp"
+                    android:layout_width="76dp"
                     android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
                     android:inputType="numberDecimal"
                     android:imeOptions="actionDone"
                     android:maxLength="5"
@@ -310,10 +312,14 @@
                     android:hint="@string/bounce_ms_input" />
             </LinearLayout>
 
+            <SeekBar
+                android:id="@+id/seekBounceMs"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+
             <Button
                 android:id="@+id/btnSaveBounce"
                 style="@style/PrimaryButton"
-                android:layout_marginTop="14dp"
                 android:text="@string/save_apply" />
         </LinearLayout>
 

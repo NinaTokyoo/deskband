@@ -9,21 +9,47 @@
         <item name="android:windowLightStatusBar">false</item>
     </style>
 
+    <!-- 提高信息密度：内边距 16->13，卡片间距 14->10 -->
     <style name="Card">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:orientation">vertical</item>
         <item name="android:background">@drawable/card_bg</item>
-        <item name="android:padding">16dp</item>
-        <item name="android:layout_marginTop">14dp</item>
+        <item name="android:padding">13dp</item>
+        <item name="android:layout_marginTop">10dp</item>
     </style>
 
     <style name="CardTitle">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:textColor">@color/text_primary</item>
-        <item name="android:textSize">17sp</item>
+        <item name="android:textSize">16sp</item>
         <item name="android:textStyle">bold</item>
+    </style>
+
+    <!-- 卡片标题栏：标题占满左侧，动作品在右侧 -->
+    <style name="CardTitleRow">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+    </style>
+
+    <!-- 标题右侧的小动作按钮（幽灵样式，不抢标题重心） -->
+    <style name="CardAction">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginStart">10dp</item>
+        <item name="android:background">@drawable/btn_ghost_bg</item>
+        <item name="android:textColor">@color/accent</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:paddingStart">12dp</item>
+        <item name="android:paddingEnd">12dp</item>
+        <item name="android:paddingTop">7dp</item>
+        <item name="android:paddingBottom">7dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">0dp</item>
+        <item name="android:stateListAnimator">@null</item>
     </style>
 
     <style name="StatusLine">
@@ -38,13 +64,13 @@
     <style name="PrimaryButton">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_marginTop">10dp</item>
+        <item name="android:layout_marginTop">12dp</item>
         <item name="android:background">@drawable/btn_primary_bg</item>
         <item name="android:textColor">@color/on_accent</item>
         <item name="android:textSize">16sp</item>
         <item name="android:textStyle">bold</item>
-        <item name="android:paddingTop">13dp</item>
-        <item name="android:paddingBottom">13dp</item>
+        <item name="android:paddingTop">11dp</item>
+        <item name="android:paddingBottom">11dp</item>
         <item name="android:stateListAnimator">@null</item>
     </style>
 

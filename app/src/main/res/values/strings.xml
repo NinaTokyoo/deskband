@@ -25,21 +25,22 @@
 
     <!-- ③ 外观 -->
     <string name="section_look">外观大小</string>
-    <string name="label_size">大小倍率</string>
-    <string name="size_value">当前占屏幕高度 %2$d%%　（×%1$s）</string>
+    <!-- 标签与当前值合并成一行，提高信息密度 -->
+    <string name="size_label_value">大小倍率　×%1$s　·　占屏高 %2$d%%</string>
     <string name="size_input">倍率</string>
     <string name="size_saved">大小已保存</string>
 
     <!-- 两张/三张卡片的保存按钮共用同一文案 -->
     <string name="save_apply">保存并应用</string>
+    <string name="restore_default">恢复默认值</string>
+    <string name="size_restored">大小已恢复默认</string>
+    <string name="bounce_restored">回弹已恢复默认</string>
     <string name="chk_autostart">开机自动叫它出来</string>
 
     <!-- ④ 松手回弹（介绍文字已按要求去掉） -->
     <string name="section_bounce">松手回弹</string>
-    <string name="label_bounce_amp">幅度倍率</string>
-    <string name="label_bounce_ms">时长倍率</string>
-    <string name="bounce_amp_value">×%1$s　（%2$d px）</string>
-    <string name="bounce_ms_value">×%1$s　（%2$d ms）</string>
+    <string name="bounce_amp_label_value">幅度倍率　×%1$s　·　%2$d px</string>
+    <string name="bounce_ms_label_value">时长倍率　×%1$s　·　%2$d ms</string>
     <string name="bounce_amp_input">倍率</string>
     <string name="bounce_ms_input">倍率</string>
     <string name="bounce_saved">回弹设置已保存</string>

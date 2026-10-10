@@ -37,6 +37,7 @@ class MainActivity : Activity() {
     private lateinit var txtSize: TextView
     private lateinit var editSize: EditText
     private lateinit var btnSaveSize: Button
+    private lateinit var btnResetSize: Button
     private lateinit var spinnerSkin: Spinner
     private lateinit var btnReset: Button
 
@@ -48,6 +49,7 @@ class MainActivity : Activity() {
     private lateinit var editBounceAmp: EditText
     private lateinit var editBounceMs: EditText
     private lateinit var btnSaveBounce: Button
+    private lateinit var btnResetBounce: Button
 
     // 通知栏自定义
     private lateinit var editNotify: EditText
@@ -83,6 +85,7 @@ class MainActivity : Activity() {
         txtSize = findViewById(R.id.txtSize)
         editSize = findViewById(R.id.editSize)
         btnSaveSize = findViewById(R.id.btnSaveSize)
+        btnResetSize = findViewById(R.id.btnResetSize)
         spinnerSkin = findViewById(R.id.spinnerSkin)
         btnReset = findViewById(R.id.btnReset)
         seekBounceAmp = findViewById(R.id.seekBounceAmp)
@@ -92,6 +95,7 @@ class MainActivity : Activity() {
         editBounceAmp = findViewById(R.id.editBounceAmp)
         editBounceMs = findViewById(R.id.editBounceMs)
         btnSaveBounce = findViewById(R.id.btnSaveBounce)
+        btnResetBounce = findViewById(R.id.btnResetBounce)
         editNotify = findViewById(R.id.editNotify)
         txtNotifyCount = findViewById(R.id.txtNotifyCount)
         btnSaveNotify = findViewById(R.id.btnSaveNotify)
@@ -142,6 +146,14 @@ class MainActivity : Activity() {
             Toast.makeText(this, R.string.size_saved, Toast.LENGTH_SHORT).show()
         }
 
+        // 恢复默认值：大小会改变窗口尺寸，必须通知服务
+        btnResetSize.setOnClickListener {
+            prefs.sizeScale = 1f
+            bindSizeControls()
+            clearInputFocus()
+            PetService.notifyChanged(this)
+            Toast.makeText(this, R.string.size_restored, Toast.LENGTH_SHORT).show()
+        }
 
         bindSizeControls()
         loadSkins()
@@ -404,6 +416,15 @@ class MainActivity : Activity() {
             Toast.makeText(this, R.string.bounce_saved, Toast.LENGTH_SHORT).show()
         }
 
+        // 恢复默认值：回弹参数是吸附时现读的，不需要通知服务
+        btnResetBounce.setOnClickListener {
+            prefs.bounceAmpScale = 1f
+            prefs.bounceTimeScale = 1f
+            bindBounceControls()
+            clearInputFocus()
+            Toast.makeText(this, R.string.bounce_restored, Toast.LENGTH_SHORT).show()
+        }
+
         bindBounceControls()
     }
 
@@ -513,7 +534,7 @@ class MainActivity : Activity() {
         seekSize.progress = progressOfSizeScale(sc)
         editSize.setText(fmtScale(sc))
         txtSize.text = getString(
-            R.string.size_value, fmtScale(sc), (frac * 100f).roundToInt()
+            R.string.size_label_value, fmtScale(sc), (frac * 100f).roundToInt()
         )
     }
 
@@ -526,10 +547,10 @@ class MainActivity : Activity() {
         editBounceAmp.setText(fmtScale(amp))
         editBounceMs.setText(fmtScale(tms))
         txtBounceAmp.text = getString(
-            R.string.bounce_amp_value, fmtScale(amp), prefs.bouncePx.roundToInt()
+            R.string.bounce_amp_label_value, fmtScale(amp), prefs.bouncePx.roundToInt()
         )
         txtBounceMs.text = getString(
-            R.string.bounce_ms_value, fmtScale(tms), prefs.bounceBackMs
+            R.string.bounce_ms_label_value, fmtScale(tms), prefs.bounceBackMs
         )
     }
 

@@ -1,0 +1,41 @@
+加"恢复默认值"按钮；优化卡片与文字排版提高信息密度
+
+## 1) 标题右侧的"恢复默认值"
+
+外观大小、松手回弹两张卡片的标题改成标题栏：
+  [卡片标题（占满左侧）]              [恢复默认值]
+标题栏用新样式 CardTitleRow，按钮用新样式 CardAction
+（幽灵按钮：透明底 + 描边 + accent 文字，见新增 drawable/btn_ghost_bg.xml，
+ 比实心主按钮轻，不抢标题视觉重心）。
+
+行为：
+  外观 -> sizeScale = 1.0，bind，**通知服务**（大小会改变窗口尺寸）+ Toast
+  回弹 -> 两个倍率 = 1.0，bind，**不通知**（吸附时现读，无需重启/重定位）+ Toast
+两者都会 clearInputFocus()。
+
+## 2) 信息密度优化
+
+原来每个参数占三行：标签行 / 滑条行 / 值+输入框行。
+现在压成两行：**[标签 + 当前值 + 输入框] 一行** / **滑条一行**。
+每张卡片省掉一整行，外观省 1 行、回弹省 2 行。
+
+字符串相应合并（标签与值同串，少一个 TextView）：
+  size_label_value        "大小倍率　×1.0　·　占屏高 8%"
+  bounce_amp_label_value  "幅度倍率　×1.0　·　36 px"
+  bounce_ms_label_value   "时长倍率　×1.0　·　360 ms"
+这些标签同样 maxLines=1 + ellipsize，值再长也不会换行。
+
+间距整体收紧：
+  Card       padding 16->13dp，卡片间距 14->10dp
+  CardTitle  17->16sp
+  PrimaryButton paddingTop/Bottom 13->11dp，marginTop 10->12dp
+  数字输入框宽度 92->76dp（1.0 这种内容用不到那么宽）
+  滑条不再单独设 marginTop（由上方行的 marginTop 控制节奏）
+
+## 3) 过程中修掉的问题
+
+替换布局区块时把 seekBounceMs 的 SeekBar 漏在替换范围外，导致
+Kotlin 侧 Unresolved reference 'seekBounceMs' —— 已补回。
+校验：布局 id 无重复，3 个滑条与 2 个恢复按钮都在位。
+
+25 个单测全绿。
