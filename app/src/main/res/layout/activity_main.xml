@@ -144,8 +144,9 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="0dp"
-                    android:paddingStart="26dp"
-                    android:paddingEnd="26dp"
+                    android:paddingStart="13dp"
+                    android:paddingEnd="13dp"
+                    android:minWidth="0dp"
                     android:maxLines="1"
                     android:text="@string/btn_reset" />
 
@@ -160,8 +161,9 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:layout_marginTop="0dp"
-                    android:paddingStart="26dp"
-                    android:paddingEnd="26dp"
+                    android:paddingStart="13dp"
+                    android:paddingEnd="13dp"
+                    android:minWidth="0dp"
                     android:maxLines="1"
                     android:ellipsize="end"
                     android:text="@string/reset_keep_off" />

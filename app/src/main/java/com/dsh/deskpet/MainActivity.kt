@@ -238,7 +238,6 @@ class MainActivity : Activity() {
         bindBounceControls()
         clearInputFocus()
         PetService.reset(this)
-        Toast.makeText(this, R.string.reset_done, Toast.LENGTH_SHORT).show()
     }
 
     override fun onResume() {
