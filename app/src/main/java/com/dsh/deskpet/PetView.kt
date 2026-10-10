@@ -549,6 +549,9 @@ class PetView(context: Context) : View(context) {
 
     private fun cancelTween() {
         tweening = false
+        // 回弹的第二段也必须一起取消：否则残留的 bouncePending 会在
+        // 下一次补间结束时突然把宠物拉回一个过期的目标位置。
+        bouncePending = false
     }
 
     /** 平滑移动到目标位置；任何"宠物自己动"的地方都走这里 */
@@ -576,12 +579,18 @@ class PetView(context: Context) : View(context) {
     /**
      * 松手吸附（带回弹）：先冲到"过冲点"，再回落到贴边位置。
      *
-     * 过冲方向 = 吸附的移动方向（见 [bouncePending] 的说明），
-     * 幅度固定 [BOUNCE_PX]。若某个轴本来就在贴边位置（移动量≈0），该轴不弹。
+     * 过冲方向 = 吸附的移动方向（见 [bouncePending] 的说明），幅度取用户设定。
+     * 若某个轴本来就在贴边位置（移动量≈0），该轴不弹。
+     *
+     * ⚠️ **过冲点必须夹取**：回弹幅度可被用户调到很大（36px × 最多 5 倍 = 180px），
+     * 而宠物本身可能只有 200 多像素宽 —— 不夹的话会被推出屏幕大半，
+     * 加上回洛时长也能调到很长，看起来就是"卡进边框里几乎消失"。
+     * 这里保证过冲期间至少 [BOUNCE_MIN_VISIBLE] 可见。
      */
     private fun snapWithBounce(
         targetCenterX: Float, targetCenterY: Float,
-        snapSide: Boolean, snapBottom: Boolean
+        snapSide: Boolean, snapBottom: Boolean,
+        tW: Int, tH: Int
     ) {
         // 回弹参数由用户在 App 里调（滑块 + 数字输入），每次吸附时现读
         val amp = prefs.bouncePx
@@ -606,10 +615,26 @@ class PetView(context: Context) : View(context) {
             return
         }
 
+        // 过冲点：换回足迹坐标后夹一次，绝不让它跑出屏幕大半
+        val b = host?.bounds()
+        var overCenterX = targetCenterX + ox
+        var overCenterY = targetCenterY + oy
+        if (b != null) {
+            val cl = PetState.clampToScreen(
+                overCenterX - centerFromTrackXSized(tW),
+                overCenterY - centerFromTrackYSized(tH),
+                tW.toFloat(), tH.toFloat(),
+                b.width().toFloat(), b.height().toFloat(),
+                BOUNCE_MIN_VISIBLE
+            )
+            overCenterX = cl[0] + centerFromTrackXSized(tW)
+            overCenterY = cl[1] + centerFromTrackYSized(tH)
+        }
+
         bounceToX = targetCenterX
         bounceToY = targetCenterY
         bouncePending = true
-        animateTo(targetCenterX + ox, targetCenterY + oy)
+        animateTo(overCenterX, overCenterY)
     }
 
     /**
@@ -1143,7 +1168,7 @@ class PetView(context: Context) : View(context) {
             // 状态与尺寸已在此处理，别再让补间结束时的 applyPendingState 重做一遍
             pendingState = null
             // 边转边靠；末尾带回弹
-            snapWithBounce(targetCenterX, targetCenterY, snapSide, snapBottom)
+            snapWithBounce(targetCenterX, targetCenterY, snapSide, snapBottom, tW, tH)
             placeWindow()
             invalidate()
             host?.onSettled(want, c[0].roundToInt(), c[1].roundToInt())
@@ -1156,7 +1181,7 @@ class PetView(context: Context) : View(context) {
             bouncePending = false
             applyPendingState()
         } else {
-            snapWithBounce(targetCenterX, targetCenterY, snapSide, snapBottom)
+            snapWithBounce(targetCenterX, targetCenterY, snapSide, snapBottom, tW, tH)
         }
 
         placeWindow()
@@ -1291,6 +1316,13 @@ class PetView(context: Context) : View(context) {
         private const val ROT_MS = 180f
 
         /** 回弹过冲幅度与回落时长的默认值在 Prefs 里（用户可调），这里不再重复定义 */
+
+        /**
+         * 回弹过冲期间**至少**保留多少可见比例。
+         *
+         * 防止幅度调大后被推出屏幕大半，看着像"卡进边框里消失了"。
+         */
+        const val BOUNCE_MIN_VISIBLE = 0.75f
         private const val HOP_MS = 380f
         private const val HOP_FRACTION = 0.08f
 

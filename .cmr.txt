@@ -1,0 +1,47 @@
+修"卡进边框几乎消失"；修大小输入框保存后仍聚焦；C 区合并进 E 区
+
+## 1) 拖到左右边框有概率"卡进边框几乎消失"
+
+根因：**回弹的过冲位置没有做任何夹取**。
+
+snapWithBounce 直接把 targetCenter + 过冲量 交给 animateTo，
+而过冲量是 36px × 用户倍率（最多 5 倍 = 180px）。
+宠物本身可能只有 200 多像素宽 -> 过冲时被推出屏幕大半；
+回落时长又能调到 1800ms，看起来就是"卡进边框里消失了"。
+
+修法：
+  - 过冲点换回足迹坐标后用 clampToScreen 夹一次，
+    新增 BOUNCE_MIN_VISIBLE = 0.75，保证过冲期间至少 75% 可见
+    （既保留"往外弹一下"的观感，又不会真的跑出屏幕）
+  - cancelTween() 现在也清 bouncePending：
+    否则拖动打断第一段后，残留标记会在下一次补间结束时
+    把宠物拉向一个过期的目标位置
+
+## 2) 大小输入框保存后仍聚焦（蓝下划线 + 光标闪烁）
+
+clearInputFocus() 里有两个 bug：
+  a. **漏了 editSize** —— 这个函数写在 editSize 存在之前，
+     所以大小那个框从来没被清过焦点（正是用户反馈的现象）
+  b. **顺序错了** —— 先 clearFocus() 会让 currentFocus 变成 null，
+     之后 hideSoftInputFromWindow(null, 0) 是空操作，键盘根本没关
+
+修法：先取 windowToken 再清焦点，并且三个输入框全部 clearFocus()。
+
+## 3) C 区合并进 E 区
+
+zoneOf / zoneWithHysteresis 里删掉 `if (db <= currentAH) return ZONE_C`，
+底部那条带现在一律是 E —— 与 E 完全同一套逻辑（贴更近的那条边）。
+
+观感不变的部分：在底部附近，"更近的边"自然就是底边。
+真正变化的部分：靠近底部**又**靠近侧边时，会正确地贴侧边并旋转，
+不再被 C 强行拉到底边。
+
+ZONE_C 常量与 stateForZone/snapEdgesForZone 里的 C 分支保留
+（历史值与测试引用），但 zoneOf 不会再返回它。
+测试相应更新：把"底部带是 C"改为"底部带是 E"，
+并新增 zone_C_is_gone_it_was_merged_into_E —— 穷举一组 (db, dr, 左右半屏)
+断言任何组合都不会再返回 ZONE_C。
+
+README 的分区表同步更新。
+
+25 个单测全绿。

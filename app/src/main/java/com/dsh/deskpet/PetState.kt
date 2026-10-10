@@ -127,12 +127,17 @@ object PetState {
     /**
      * 落在哪个区。
      *
-     * 先判 A，再判 C、B —— 顺序保证 A 不会被两条带抢走。
+     * 先判 A（角落），再判 B（贴侧边），其余都是 E。
+     *
+     * ⚠️ 原来的 **C 区（贴底边带）已按要求合并进 E 区**，与 E 完全同一套逻辑：
+     * 松手时贴"更近的那条边" —— 在底部附近自然就是贴底边，所以观感不变，
+     * 但靠近底部又靠近侧边时会正确地贴侧边并旋转，不再被 C 强行拉到底边。
+     * [ZONE_C] 常量保留（历史值与测试引用），但**不会再被返回**。
+     *
      * 左右半屏用同一套逻辑，只是 dr 的基准边不同。
      */
     fun zoneOf(db: Float, dr: Float, leftHalf: Boolean): Int {
         if (db <= currentAH && dr <= currentAW) return ZONE_A
-        if (db <= currentAH) return ZONE_C
         if (dr <= currentAW) return ZONE_B
         return ZONE_E
     }
@@ -169,9 +174,8 @@ object PetState {
         centerDist: Float = dr,
         bandPx: Float = currentAW
     ): Int {
-        // A / C 的判定不涉及这个抖动，直接算
+        // A（角落）不涉及这个抖动，直接算；C 已并入 E，不再单判
         if (db <= currentAH && dr <= currentAW) return ZONE_A
-        if (db <= currentAH) return ZONE_C
 
         val inB: Boolean
         if (prev == ZONE_B) {

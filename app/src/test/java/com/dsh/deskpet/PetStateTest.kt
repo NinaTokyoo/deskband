@@ -36,20 +36,37 @@ class PetStateTest {
         assertEquals(PetState.ZONE_A, PetState.zoneOf(365f, 200f, false))
         // 底边超出 aH、但横向还在 aW 内 -> 归 B（侧边带）
         assertEquals(PetState.ZONE_B, PetState.zoneOf(366f, 200f, false))
-        // 横向超出 aW、但底边还在 aH 内 -> 归 C（下侧带）
-        assertEquals(PetState.ZONE_C, PetState.zoneOf(200f, 201f, false))
+        // 横向超出 aW、底边还在 aH 内 -> C 已并入 E，所以是 E
+        assertEquals(PetState.ZONE_E, PetState.zoneOf(200f, 201f, false))
         // 两边都超出 -> E
         assertEquals(PetState.ZONE_E, PetState.zoneOf(366f, 201f, false))
     }
 
     @Test
-    fun zone_C_is_the_bottom_band_outside_A() {
+    fun zone_C_is_gone_it_was_merged_into_E() {
         PetState.setZoneSize(200f, 365f)
-        // 离底 <= aH 但横向已出 A -> C
-        assertEquals(PetState.ZONE_C, PetState.zoneOf(200f, 201f, false))
-        assertEquals(PetState.ZONE_C, PetState.zoneOf(365f, 500f, false))
-        // 超出 aH、横向也超出 aW -> E
-        assertEquals(PetState.ZONE_E, PetState.zoneOf(366f, 500f, false))
+        // 底部那条带（排除 A 之后）现在一律是 E，与 E 完全同一套逻辑
+        assertEquals(PetState.ZONE_E, PetState.zoneOf(300f, 500f, false))
+        assertEquals(PetState.ZONE_E, PetState.zoneOf(0f, 500f, false))
+        assertEquals(PetState.ZONE_E, PetState.zoneOf(365f, 900f, false))
+        // 任何位置都不应再返回 ZONE_C
+        for (db in intArrayOf(0, 100, 300, 365, 500, 1500)) {
+            for (dr in intArrayOf(0, 100, 200, 300, 900, 1400)) {
+                for (left in booleanArrayOf(false, true)) {
+                    assertFalse(
+                        "db=$db dr=$dr left=$left 不应再判为 C 区",
+                        PetState.zoneOf(db.toFloat(), dr.toFloat(), left) == PetState.ZONE_C
+                    )
+                    assertFalse(
+                        "db=$db dr=$dr left=$left 不应再判为 C 区（带滞回）",
+                        PetState.zoneWithHysteresis(
+                            db.toFloat(), dr.toFloat(), left, PetState.ZONE_E,
+                            dr.toFloat(), 470f
+                        ) == PetState.ZONE_C
+                    )
+                }
+            }
+        }
     }
 
     @Test
@@ -88,7 +105,7 @@ class PetStateTest {
     }
 
     @Test
-    fun A_size_is_settable_and_B_C_follow_it() {
+    fun A_size_is_settable_and_B_follows_it() {
         // A 小的时候，(300, 300) 在 A 之外、也不在带子里 -> E
         PetState.setZoneSize(200f, 200f)
         assertEquals(200f, PetState.currentAW, 0.01f)
@@ -99,8 +116,8 @@ class PetStateTest {
         PetState.setZoneSize(400f, 400f)
         assertEquals(PetState.ZONE_A, PetState.zoneOf(300f, 300f, false))
 
-        // 放大后，底边仍在 aH 内但横向超出 -> C（C 带跟着 A 变宽）
-        assertEquals(PetState.ZONE_C, PetState.zoneOf(300f, 900f, false))
+        // 放大后，横向超出 -> C 已并入 E，所以是 E
+        assertEquals(PetState.ZONE_E, PetState.zoneOf(300f, 900f, false))
 
         // 缩小到 100 -> 又回到 E
         PetState.setZoneSize(100f, 100f)

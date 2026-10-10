@@ -409,12 +409,20 @@ class MainActivity : Activity() {
      * 收掉输入焦点：清焦点 + 隐藏软键盘。
      *
      * 不清的话，点完"保存并应用"输入框仍处于聚焦态 ——
-     * 表现为蓝色下划线和一直闪的光标（用户反馈的正是这个）。
+     * 表现为蓝色下划线和一直闪的光标。
+     *
+     * ⚠️ 两个坑：
+     *   1. 三个输入框都要清（曾经漏掉 editSize，导致大小那个框一直亮着）
+     *   2. 必须先取 windowToken 再 clearFocus —— clearFocus() 之后
+     *      currentFocus 会变成 null，那时再取就拿到 null，
+     *      hideSoftInputFromWindow(null, 0) 是空操作，键盘根本不会关。
      */
     private fun clearInputFocus() {
+        val token = (currentFocus ?: editSize).windowToken
+        editSize.clearFocus()
         editBounceAmp.clearFocus()
         editBounceMs.clearFocus()
         val imm = getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager
-        imm?.hideSoftInputFromWindow(currentFocus?.windowToken, 0)
+        imm?.hideSoftInputFromWindow(token, 0)
     }
 }
