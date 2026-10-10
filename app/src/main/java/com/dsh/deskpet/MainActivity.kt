@@ -153,12 +153,6 @@ class MainActivity : Activity() {
         btnResetKeep.setOnClickListener {
             prefs.resetKeepSettings = !prefs.resetKeepSettings
             bindResetKeep()
-            Toast.makeText(
-                this,
-                if (prefs.resetKeepSettings) R.string.reset_keep_toast_on
-                else R.string.reset_keep_toast_off,
-                Toast.LENGTH_SHORT
-            ).show()
         }
 
         seekSize.max = 1000
@@ -195,7 +189,6 @@ class MainActivity : Activity() {
                 }
             bindSizeControls()
             clearInputFocus()
-            Toast.makeText(this, R.string.size_saved, Toast.LENGTH_SHORT).show()
         }
 
         // 恢复默认值：大小会改变窗口尺寸，必须通知服务
@@ -204,7 +197,6 @@ class MainActivity : Activity() {
             bindSizeControls()
             clearInputFocus()
             PetService.notifyChanged(this)
-            Toast.makeText(this, R.string.size_restored, Toast.LENGTH_SHORT).show()
         }
 
         bindSizeControls()
@@ -500,7 +492,6 @@ class MainActivity : Activity() {
             bindBounceControls()
             // 保存后收掉焦点与键盘，否则输入框会一直亮着下划线、光标闪个不停
             clearInputFocus()
-            Toast.makeText(this, R.string.bounce_saved, Toast.LENGTH_SHORT).show()
         }
 
         // 恢复默认值：回弹参数是吸附时现读的，不需要通知服务
@@ -509,7 +500,6 @@ class MainActivity : Activity() {
             prefs.bounceTimeScale = 1f
             bindBounceControls()
             clearInputFocus()
-            Toast.makeText(this, R.string.bounce_restored, Toast.LENGTH_SHORT).show()
         }
 
         // 边框回弹总开关：关掉后吸附只做位置补间，不再往外弹。
@@ -518,12 +508,6 @@ class MainActivity : Activity() {
             prefs.bounceEnabled = !prefs.bounceEnabled
             bindBounceControls()
             clearInputFocus()
-            Toast.makeText(
-                this,
-                if (prefs.bounceEnabled) R.string.bounce_enabled_hint
-                else R.string.bounce_disabled_hint,
-                Toast.LENGTH_SHORT
-            ).show()
         }
 
         bindBounceControls()
@@ -641,7 +625,6 @@ class MainActivity : Activity() {
             applyNotify()
             clearInputFocus()
             PetService.refreshNotification(this)
-            Toast.makeText(this, R.string.notify_saved, Toast.LENGTH_SHORT).show()
         }
     }
 
