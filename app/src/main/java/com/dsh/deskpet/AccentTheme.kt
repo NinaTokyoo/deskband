@@ -228,25 +228,50 @@ object AccentTheme {
     }
 
     /**
-     * 「当前形象」选择框的背景：描边用强调色、底色中性。
+     * 「当前形象」选择框的背景。
      *
-     * 与卡片描边同一套观感，但半径小一些（10dp），让它看起来是"卡片里的一个控件"。
+     * @param connected true = 下面接着二级菜单，此时**只有上面两角是圆的**
+     *        （下方直角，与菜单严丝合缝连成"一整块"，用户要求展开的部分
+     *        也要被描边包住）；false = 菜单收起，四个角都圆。
      */
-    fun skinBoxBackground(ctx: Context, accent: Int, light: Boolean): GradientDrawable {
+    fun skinBoxBackground(
+        ctx: Context, accent: Int, light: Boolean, connected: Boolean
+    ): GradientDrawable {
         val dm = ctx.resources.displayMetrics
-        return rounded(dm, Palette(light).card, accent, 10f)
+        val d = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(Palette(light).card)
+            setStroke(dp(dm, 1.5f).toInt().coerceAtLeast(1), accent)
+        }
+        val r = dp(dm, 10f)
+        d.cornerRadii = if (connected) {
+            floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
+        } else {
+            floatArrayOf(r, r, r, r, r, r, r, r)
+        }
+        return d
+    }
+
+    /**
+     * 二级菜单容器的背景：**只有下面两个角是圆的**，上边与名称框对齐相接。
+     *
+     * ⚠️ 用负的 topMargin（见 MainActivity 里 inflate 时的 marginTop=-1）把两道
+     * 描边叠成一道，视觉上就是"一个框"，而不是"两个框摞在一起"。
+     */
+    fun skinMenuBackground(ctx: Context, accent: Int, light: Boolean): GradientDrawable {
+        val dm = ctx.resources.displayMetrics
+        val d = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(Palette(light).card)
+            setStroke(dp(dm, 1.5f).toInt().coerceAtLeast(1), accent)
+        }
+        val r = dp(dm, 10f)
+        d.cornerRadii = floatArrayOf(0f, 0f, 0f, 0f, r, r, r, r)
+        return d
     }
 
     /** 选择框里的文字与三角的颜色（跟随明暗模式的中性色） */
     fun skinBoxText(light: Boolean): Int = Palette(light).textPrimary
-
-    /** 二级菜单项之间的横线：压暗的强调色，深色底上也看得见 */
-    fun menuDivider(ctx: Context, accent: Int, light: Boolean): GradientDrawable {
-        val dm = ctx.resources.displayMetrics
-        val a = if (light) 70 else 90
-        val c = Color.argb(a, Color.red(accent), Color.green(accent), Color.blue(accent))
-        return rounded(dm, c, Color.TRANSPARENT, 2f)
-    }
 
     /** 下拉列表弹窗背景：加一圈描边（用户要求），底色跟随明暗 */
     fun dropdownBackground(ctx: Context, accent: Int, light: Boolean): GradientDrawable {

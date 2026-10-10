@@ -55,6 +55,9 @@ class MainActivity : Activity() {
 
     /** 二级菜单容器（默认 gone，点框展开） */
     private lateinit var skinMenu: android.widget.LinearLayout
+
+    /** 二级菜单的外层（负责 2/3 宽度的留白，见布局注释） */
+    private lateinit var skinMenuWrap: android.widget.LinearLayout
     private lateinit var btnReset: Button
     private lateinit var btnResetKeep: Button
 
@@ -152,6 +155,7 @@ class MainActivity : Activity() {
         boxSkin = findViewById(R.id.boxSkin)
         txtSkinName = findViewById(R.id.txtSkinName)
         icoSkinArrow = findViewById(R.id.icoSkinArrow)
+        skinMenuWrap = findViewById(R.id.skinMenuWrap)
         skinMenu = findViewById(R.id.skinMenu)
         btnReset = findViewById(R.id.btnReset)
         btnResetKeep = findViewById(R.id.btnResetKeep)
@@ -485,52 +489,62 @@ class MainActivity : Activity() {
     private fun buildSkinMenu() {
         skinMenu.removeAllViews()
         val others = skins.filter { it != prefs.skin }
+        android.util.Log.i("SkMenu", "buildSkinMenu: skins=${skins.size} cur=${prefs.skin} others=${others.size}")
         if (others.isEmpty()) return
         for ((i, dir) in others.withIndex()) {
-            if (i > 0) skinMenu.addView(makeSkinMenuDivider())
+            if (i > 0) {
+                val d = makeSkinMenuDivider()
+                skinMenu.addView(d)
+                android.util.Log.i("SkMenu", "  divider #$i tag=${d.tag} lp=${d.layoutParams?.height}")
+            }
             val row = layoutInflater.inflate(R.layout.item_skin_menu_row, skinMenu, false)
                 as TextView
             row.text = skinNames[dir] ?: dir
             row.setOnClickListener { selectSkin(dir) }
             skinMenu.addView(row)
         }
+        android.util.Log.i("SkMenu", "  menu children=${skinMenu.childCount}")
     }
 
     /**
      * 菜单项之间的横线。
      *
-     * ⚠️ 线只有 1~2dp 高，纯色背景在深色底上几乎看不见（踩过）；这里打上
-     * [AccentTheme.TAG_ACCENT_LINE] 标记，由 [AccentTheme.apply] 用强调色
-     * 统一下发 —— 与卡片里其它分隔线同一套，明暗两种模式都清楚。
+     * ⚠️ 颜色**在这里直接给**，不要只打 tag 等 AccentTheme.apply 来刷：
+     * 菜单项是展开瞬间新造的视图，主题那趟遍历与它的创建时序很容易错开，
+     * 实测就会出现"视图树里有这个 View、但没画出来"。
+     * `accent` 是当前强调色，换角色 / 切明暗时 buildSkinMenu() 会重建，
+     * 所以直接给色也始终是新的。
      */
     private fun makeSkinMenuDivider(): View = View(this).apply {
-        tag = AccentTheme.TAG_ACCENT_LINE
+        setBackgroundColor(accent)
         layoutParams = android.widget.LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             (resources.displayMetrics.density * 1.5f).toInt().coerceAtLeast(1)
         )
-        // ⚠️ 这里**不要**自己 setBackgroundColor：线上色统一由
-        // AccentTheme.apply 按 TAG_ACCENT_LINE 下发（明暗模式与换角色都会重刷）。
-        // 自己设一次的话，首次展开时会被主题那趟覆盖成透明 —— 表现就是"线看不见"。
     }
 
     /** 点整框：展开 / 收起二级菜单，三角同步翻转 */
     private fun toggleSkinMenu() {
-        val open = skinMenu.visibility != View.VISIBLE
-        if (open) {
-            buildSkinMenu()
-            // ⚠️ 菜单项是**新造的视图**，不在刚才那次 AccentTheme.apply 的遍历里，
-            // 所以这里必须补一次上色，否则分隔线是透明的（表现："线看不见"）。
-            AccentTheme.apply(this, findViewById(R.id.root), accent, lightMode)
-        }
-        skinMenu.visibility = if (open) View.VISIBLE else View.GONE
+        val open = skinMenuWrap.visibility != View.VISIBLE
+        if (open) buildSkinMenu()
+        skinMenuWrap.visibility = if (open) View.VISIBLE else View.GONE
+        // ⚠️ 菜单展开时先收起右下角人物：菜单是**满宽**的，人物停在原位会被
+        // 菜单最后几行和横线压住（用户明确要求"不要与人物发生重叠"）。
+        // 用 GONE 而不是 INVISIBLE —— INVISIBLE 仍占 104dp 高度，
+        // 菜单下面会留一条空白带。收起菜单后立刻恢复。
+        imgCornerPreview.visibility = if (open) View.GONE else View.VISIBLE
         // 展开 -> 三角正立（旋转 180°）；收起 -> 恢复倒立
         icoSkinArrow.animate().rotation(if (open) 180f else 0f).setDuration(140).start()
+        // ⚠️ 必须重刷一次主题，而且要在 visibility 改完之后：
+        //   · 菜单项是**刚新造**的视图，不在上一次 AccentTheme.apply 的遍历里，
+        //     不补这次的话分隔线是透明的（表现："线看不见"）；
+        //   · 名称框的圆角要跟着开合变（展开 -> 下方两角直角，与菜单连成一整块）。
+        applyTheme()
     }
 
     /** 选中某个角色：换肤 + 收起菜单 + 三角复位 */
     private fun selectSkin(dir: String) {
-        skinMenu.visibility = View.GONE
+        skinMenuWrap.visibility = View.GONE
         icoSkinArrow.animate().rotation(0f).setDuration(140).start()
         if (dir == prefs.skin) return
         prefs.skin = dir
@@ -1075,8 +1089,13 @@ class MainActivity : Activity() {
                 .constantState?.newDrawable()?.mutate()
         )
 
-        // 形象选择框：描边跟随强调色，三角填充色也一起换
-        boxSkin.background = AccentTheme.skinBoxBackground(this, accent, lightMode)
+        // 形象选择框：描边跟随强调色，三角填充色也一起换。
+        // connected = 菜单是否展开：展开时框的下方两角变直角，与菜单连成一整块。
+        val menuOpen = skinMenuWrap.visibility == View.VISIBLE
+        boxSkin.background =
+            AccentTheme.skinBoxBackground(this, accent, lightMode, connected = menuOpen)
+        // 二级菜单**整个区域**也要被描边包住（用户明确要求：展开的部分不能没有框）
+        skinMenu.background = AccentTheme.skinMenuBackground(this, accent, lightMode)
         icoSkinArrow.imageTintList =
             android.content.res.ColorStateList.valueOf(AccentTheme.skinBoxText(lightMode))
         // 菜单项的横线与文字色都依赖强调色 / 明暗模式，重建一次
