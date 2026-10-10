@@ -228,6 +228,16 @@ object AccentTheme {
     }
 
     /**
+     * 镂空按钮外观的公开版本（代码里动态产生的按钮用）。
+     *
+     * 页面上的静态按钮由 [apply] 统一上背景；但这个函数是给"自己接管选中态"的
+     * 按钮用的 —— 比如外观模式那三个按钮：未选中的要保持镂空、选中的要换成
+     * 实心强调色，都得在 [apply] 之后再覆盖一次。
+     */
+    fun ghostSelectorFor(ctx: Context, accent: Int, light: Boolean): StateListDrawable =
+        ghostSelector(ctx.resources.displayMetrics, accent, light)
+
+    /**
      * 「当前形象」选择框的背景。
      *
      * @param connected true = 下面接着二级菜单，此时**只有上面两角是圆的**
@@ -270,12 +280,8 @@ object AccentTheme {
         return d
     }
 
+
     /** 选择框里的文字与三角的颜色（跟随明暗模式的中性色） */
     fun skinBoxText(light: Boolean): Int = Palette(light).textPrimary
 
-    /** 下拉列表弹窗背景：加一圈描边（用户要求），底色跟随明暗 */
-    fun dropdownBackground(ctx: Context, accent: Int, light: Boolean): GradientDrawable {
-        val dm = ctx.resources.displayMetrics
-        return rounded(dm, if (light) 0xFFFFFFFF.toInt() else 0xFF1B212A.toInt(), accent, 14f)
-    }
 }

@@ -60,15 +60,7 @@
         <item name="android:lineSpacingExtra">2dp</item>
     </style>
 
-    <!--
-      下拉列表弹窗动画：默认那套会让列表从右上角"飞入"（用户反馈），
-      这里换成原地淡入淡出 —— 视觉上就是垂直展开出现，没有方向性位移。
-    -->
-    <style name="SpinnerPopupAnim">
-        <item name="android:windowEnterAnimation">@android:anim/fade_in</item>
-        <item name="android:windowExitAnimation">@android:anim/fade_out</item>
-    </style>
-
+    
     <!--
       按钮统一走"镂空"样式：背景（描边 + 文字色）由 AccentTheme 按当前角色发色
       动态下发，所以这里**不设 android:background**，只定尺寸与排版。

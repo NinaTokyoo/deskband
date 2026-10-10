@@ -102,8 +102,14 @@ class MainActivity : Activity() {
     /** 切换形象卡片右下角的素材预览（不可交互） */
     private lateinit var imgCornerPreview: android.widget.ImageView
 
-    /** 明暗模式选择 */
-    private lateinit var spinnerTheme: Spinner
+    /**
+     * 明暗模式：三个按钮（跟随系统 / 浅色 / 深色），选中的那个高亮。
+     *
+     * 原来是 Spinner，用户要求改成一行三个按钮。
+     */
+    private lateinit var btnThemeSystem: Button
+    private lateinit var btnThemeLight: Button
+    private lateinit var btnThemeDark: Button
 
     private var skins: List<String> = emptyList()
 
@@ -117,9 +123,6 @@ class MainActivity : Activity() {
 
     /** 通知权限是否已经弹过系统对话框（弹过之后再点就直接去设置页） */
     private var notifyAsked = false
-
-    /** 回填明暗模式下拉框时抑制回调 */
-    private var bindingTheme = false
 
     /** 当前强调色（由角色发色推出） */
     private var accent = AccentTheme.FALLBACK
@@ -190,7 +193,9 @@ class MainActivity : Activity() {
         txtNotifyCount = findViewById(R.id.txtNotifyCount)
         btnSaveNotify = findViewById(R.id.btnSaveNotify)
         imgCornerPreview = findViewById(R.id.imgCornerPreview)
-        spinnerTheme = findViewById(R.id.spinnerTheme)
+        btnThemeSystem = findViewById(R.id.btnThemeSystem)
+        btnThemeLight = findViewById(R.id.btnThemeLight)
+        btnThemeDark = findViewById(R.id.btnThemeDark)
 
         applyEdgeToEdge()
         setupSummonControls()
@@ -199,7 +204,7 @@ class MainActivity : Activity() {
         setupNotifyControls()
         applyTheme()
         refreshCornerPreview()
-        setupThemeSpinner()
+        setupThemeButtons()
         fitTitleToWidth()
         warmUpSkins()
 
@@ -1115,14 +1120,6 @@ class MainActivity : Activity() {
 
         AccentTheme.apply(this, findViewById(R.id.root), accent, lightMode)
 
-        // 下拉弹窗也要跟着换底色与描边。
-        // 注意 setter 是 setPopupBackgroundDrawable（getter 叫 popupBackground），
-        // 所以这里不能用合成属性赋值。
-        spinnerTheme.setPopupBackgroundDrawable(
-            AccentTheme.dropdownBackground(this, accent, lightMode)
-                .constantState?.newDrawable()?.mutate()
-        )
-
         // 形象选择框：描边跟随强调色，三角填充色也一起换。
         // connected = 菜单是否展开：展开时框的下方两角变直角，与菜单连成一整块。
         val menuOpen = skinMenuWrap.visibility == View.VISIBLE
@@ -1139,9 +1136,9 @@ class MainActivity : Activity() {
         // 按钮上的文字里有形象名，名字要用强调色，所以每次都重建一次
         refreshSummonLabel()
 
-        // 下拉框条目由适配器现造、不在视图树里，明暗切换后要主动让它重新取色，
-        // 否则会留着上一次的文字色（浅色模式下会变成看不见的浅灰）。
-        (spinnerTheme.adapter as? ThemedAdapter)?.notifyDataSetChanged()
+        // ⚠️ 必须放在 AccentTheme.apply 之后：三个按钮的镂空样式是那一趟发的，
+        // 选中态要覆盖它才看得出来。
+        refreshThemeButtons()
     }
 
     /**
@@ -1167,34 +1164,6 @@ class MainActivity : Activity() {
         btnToggle.text = sp
     }
 
-    /**
-     * 下拉框用的适配器：**自己给条目上文字色**。
-     *
-     * Spinner 的条目视图是适配器现造的，不在视图树里，
-     * AccentTheme 遍历时看不到它们 —— 所以必须在这里按明暗模式着色，
-     * 否则浅色模式下条目会是几乎看不见的浅灰。
-     */
-    private inner class ThemedAdapter(
-        ctx: Context, items: List<String>
-    ) : ArrayAdapter<String>(ctx, android.R.layout.simple_spinner_item, items) {
-
-        init {
-            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        }
-
-        private fun tint(v: View): View {
-            (v as? TextView)?.setTextColor(
-                if (lightMode) android.graphics.Color.BLACK else android.graphics.Color.WHITE
-            )
-            return v
-        }
-
-        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View =
-            tint(super.getView(position, convertView, parent))
-
-        override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View =
-            tint(super.getDropDownView(position, convertView, parent))
-    }
 
     /**
      * 切换形象卡片右下角的预览图：当前角色的「右下角」素材。
@@ -1270,34 +1239,51 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------------- 明暗模式
 
     /**
-     * 明暗模式下拉框：跟随系统 / 浅色 / 深色。
+     * 明暗模式：一行三个按钮，点哪个立刻生效。
      *
      * 选中后立刻 applyTheme()，是"就地重绘"，不重建 Activity。
+     * ⚠️ 按钮的选中态**不能**在这里自己设背景就完事：applyTheme() 里
+     *    AccentTheme.apply 会把所有按钮刷成镂空样式，所以统一由
+     *    refreshThemeButtons() 在 apply 之后覆盖。
      */
-    private fun setupThemeSpinner() {
-        val labels = listOf(
-            getString(R.string.theme_system),
-            getString(R.string.theme_light),
-            getString(R.string.theme_dark)
-        )
-        val adapter = ThemedAdapter(this, labels)
-        spinnerTheme.adapter = adapter
+    private fun setupThemeButtons() {
+        btnThemeSystem.setOnClickListener { pickThemeMode(AccentTheme.MODE_SYSTEM) }
+        btnThemeLight.setOnClickListener { pickThemeMode(AccentTheme.MODE_LIGHT) }
+        btnThemeDark.setOnClickListener { pickThemeMode(AccentTheme.MODE_DARK) }
+        refreshThemeButtons()
+    }
 
-        bindingTheme = true
-        spinnerTheme.setSelection(prefs.themeMode.coerceIn(0, 2), false)
-        bindingTheme = false
+    /** 选中某个明暗模式；已经选中的再点一次不做无谓重绘 */
+    private fun pickThemeMode(mode: Int) {
+        if (prefs.themeMode == mode) return
+        prefs.themeMode = mode
+        applyTheme()
+        refreshCornerPreview()
+    }
 
-        spinnerTheme.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(
-                parent: AdapterView<*>?, view: View?, position: Int, id: Long
-            ) {
-                if (bindingTheme) return
-                prefs.themeMode = position
-                applyTheme()
-                refreshCornerPreview()
-            }
-
-            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+    /**
+     * 刷新三个按钮的选中态。
+     *
+     * 用户确认的方案：**选中 = 主题色文字 + 镂空**，未选中 = 常规前景色文字 +
+     * 镂空。两者背景完全一样（都由 [AccentTheme.ghostSelectorFor] 下发），
+     * 只靠文字色区分 —— 所以这里只改文字色，不碰背景形状。
+     *
+     * ⚠️ 但背景仍然要显式下发一次：applyTheme() 里 AccentTheme.apply 会把按钮
+     *    统一刷成镂空样式，而本函数在它之后跑，必须保证不会留下上一次的实心底
+     *    （改版前选中态是实心强调色，若不清就会残留）。
+     */
+    private fun refreshThemeButtons() {
+        if (!::btnThemeSystem.isInitialized) return
+        val cur = prefs.themeMode
+        for ((mode, b) in listOf(
+            AccentTheme.MODE_SYSTEM to btnThemeSystem,
+            AccentTheme.MODE_LIGHT to btnThemeLight,
+            AccentTheme.MODE_DARK to btnThemeDark
+        )) {
+            b.background = AccentTheme.ghostSelectorFor(this, accent, lightMode)
+            b.setTextColor(
+                if (mode == cur) accent else AccentTheme.skinBoxText(lightMode)
+            )
         }
     }
 

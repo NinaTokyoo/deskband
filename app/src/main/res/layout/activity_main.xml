@@ -212,9 +212,7 @@
                     </LinearLayout>
                 </LinearLayout>
 
-                <!-- 宽度要与上面 Spinner 的 marginEnd 配合：
-                     marginEnd >= 图宽 + 8，否则会盖住 Spinner 右端的倒三角。
-                     scaleType 必须是 matrix —— setImageMatrix 只在 matrix 下生效，
+                <!-- scaleType 必须是 matrix —— setImageMatrix 只在 matrix 下生效，
                      其它 scaleType 会忽略我们算好的矩阵（踩过：素材因此没贴紧）。
 
                      右边距/底边距 = 0.75dp = 卡片描边宽 1.5dp 的一半。
@@ -640,12 +638,47 @@
                 style="@style/CardTitle"
                 android:text="@string/section_theme" />
 
-            <Spinner
-                android:id="@+id/spinnerTheme"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:popupAnimationStyle="@style/SpinnerPopupAnim" />
+            <!-- 外观模式：一行三个按钮（用户要求），样式与其它按钮统一 ——
+                     镂空描边由 AccentTheme 下发；**选中**的那个换成实心强调色，
+                     否则三个按钮一模一样、看不出当前选的是哪个。 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="horizontal"
+                    android:baselineAligned="false">
+
+                    <Button
+                        android:id="@+id/btnThemeSystem"
+                        style="@style/CardAction"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="0dp"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        android:text="@string/theme_system" />
+
+                    <Button
+                        android:id="@+id/btnThemeLight"
+                        style="@style/CardAction"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        android:text="@string/theme_light" />
+
+                    <Button
+                        android:id="@+id/btnThemeDark"
+                        style="@style/CardAction"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        android:text="@string/theme_dark" />
+                </LinearLayout>
         </LinearLayout>
 
         <LinearLayout style="@style/Card" android:tag="card" android:layout_marginStart="12dp" android:layout_marginEnd="12dp">
