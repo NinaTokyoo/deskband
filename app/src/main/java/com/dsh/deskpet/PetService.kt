@@ -536,7 +536,19 @@ class PetService : Service(), PetView.Host {
 
         fun stop(context: Context) {
             try {
-                context.stopService(Intent(context, PetService::class.java))
+                // ⚠️ 必须发 ACTION_STOP intent，**不能**用 context.stopService()。
+                //
+                // stopService() 会立刻销毁服务、直接走 onDestroy，
+                // 根本不经过 onStartCommand 的 ACTION_STOP 分支 ——
+                // 于是 slideOutThenStop() 永远不会被调用，收起动画也就不存在
+                // （用户反馈"收回还是没有动画"）。ACTION_STOP 分支里会先播
+                // 滑出动画、滑完再 stopSelf()。
+                val i = Intent(context, PetService::class.java).setAction(ACTION_STOP)
+                if (Build.VERSION.SDK_INT >= 26) {
+                    context.startForegroundService(i)
+                } else {
+                    context.startService(i)
+                }
             } catch (e: Exception) {
                 // 忽略
             }

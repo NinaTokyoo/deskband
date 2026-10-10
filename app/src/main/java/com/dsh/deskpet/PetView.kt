@@ -581,20 +581,27 @@ class PetView(context: Context) : View(context) {
             // 呼出/收起滑动：smoothstep，两头慢，观感是"慢慢平移"
             if (sliding) {
                 val t = ((now - slideStart).toFloat() / slideMs).coerceIn(0f, 1f)
-                val e = t * t * (3f - 2f * t)
+                // 第一段（进出屏幕）用 smoothstep，两头慢 —— "慢慢平移"；
+                // 第二段（回弹收回）用 easeOutCubic，起步快、末段缓 —— "啪"一下。
+                val e = if (slidePhase2Running) easeOutCubic(t) else t * t * (3f - 2f * t)
                 anchorX = slideFromX + (slideToX - slideFromX) * e
                 anchorY = slideFromY + (slideToY - slideFromY) * e
                 if (t >= 1f) {
                     if (slideHasPhase2) {
-                        // 第一段（冲到过冲点）结束 -> 平滑收回最终落点。
-                        // 第二段用回弹时长，量级和边框回弹一致，观感统一。
+                        // 第一段（冲到过冲点）结束 -> 收回最终落点。
+                        //
+                        // 第二段用**专用的短时长**，不复用 bounceBackMs：
+                        // 那是边框回弹的"慢慢缩回"用时（默认 360ms），
+                        // 拿来收呼出回弹会变成慢吞吞地挪回去，观感不自然。
+                        // 回弹要"啪"一下，所以短 + easeOutCubic（起步快、末段缓）。
                         slideHasPhase2 = false
+                        slidePhase2Running = true
                         slideFromX = slideToX
                         slideFromY = slideToY
                         slideToX = slideEndX
                         slideToY = slideEndY
                         slideStart = now
-                        slideMs = prefs.bounceBackMs.toFloat().coerceAtLeast(80f)
+                        slideMs = SLIDE_SETTLE_MS
                         need = true
                     } else {
                         anchorX = slideToX
@@ -641,6 +648,9 @@ class PetView(context: Context) : View(context) {
     private var slideEndX = 0f
     private var slideEndY = 0f
     private var slideHasPhase2 = false
+
+    /** 是否正处于"回弹收回"那一段（决定用哪条缓动曲线） */
+    private var slidePhase2Running = false
 
     /** 当前锚点（素材中心屏幕坐标）—— 呼出动画要拿它当滑入目标 */
     fun anchorXNow(): Float = anchorX
@@ -731,6 +741,7 @@ class PetView(context: Context) : View(context) {
         slideEndX = endX
         slideEndY = endY
         slideHasPhase2 = (endX != toX || endY != toY)
+        slidePhase2Running = false
         slideStart = SystemClock.uptimeMillis()
         slideMs = SLIDE_MS
         slideDone = onDone
@@ -1628,6 +1639,9 @@ class PetView(context: Context) : View(context) {
 
         /** 呼出/收起滑出滑入的时长（"慢慢平移"，比吸附慢得多） */
         private const val SLIDE_MS = 420f
+
+        /** 呼出回弹第二段（收回落点）的时长：要"啪"一下，不能慢 */
+        private const val SLIDE_SETTLE_MS = 150f
         private const val FLIP_MS = 260f
         private const val ROT_MS = 180f
 
