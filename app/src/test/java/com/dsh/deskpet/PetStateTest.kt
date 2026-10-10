@@ -617,6 +617,42 @@ class PetStateTest {
         assertEquals(-1f, v[1], 0.001f)
     }
 
+    /**
+     * 点击/长按压缩的支点：**只有贴底边 / 左下角 / 右下角**才"底边不动、只压上边"。
+     *
+     * 用户要求："现在只针对吸附在底边和左右下角的情况进行修改点击动画：
+     * 现在是点击上下同时向中间压缩，修改为底边不动仅上边向下压缩。"
+     */
+    @Test
+    fun only_the_bottom_group_squashes_from_the_bottom_edge() {
+        // 底边（两个正立形态）+ 左右下角 —— 这三种情况脚踩在屏幕下沿，压缩时脚不能动
+        assertTrue(PetState.squashFromBottom(PetState.BORDER_R_UPRIGHT))
+        assertTrue(PetState.squashFromBottom(PetState.BORDER_L_UPRIGHT))
+        assertTrue(PetState.squashFromBottom(PetState.CORNER_BR))
+        assertTrue(PetState.squashFromBottom(PetState.CORNER_BL))
+
+        // 侧边躺倒（VERT_NONE）与上边组（VERT_TOP）保持原样：绕素材中心压
+        assertFalse(PetState.squashFromBottom(PetState.BORDER_R))
+        assertFalse(PetState.squashFromBottom(PetState.BORDER_L))
+        assertFalse(PetState.squashFromBottom(PetState.CORNER_TR))
+        assertFalse(PetState.squashFromBottom(PetState.CORNER_TL))
+        assertFalse(PetState.squashFromBottom(PetState.EDGE_TOP_R))
+        assertFalse(PetState.squashFromBottom(PetState.EDGE_TOP_L))
+
+        // 与垂直基准严格一致：判据就是 vertForState == VERT_BOTTOM
+        for (s in intArrayOf(
+            PetState.CORNER_BR, PetState.CORNER_BL, PetState.BORDER_R, PetState.BORDER_L,
+            PetState.BORDER_R_UPRIGHT, PetState.BORDER_L_UPRIGHT,
+            PetState.CORNER_TR, PetState.CORNER_TL, PetState.EDGE_TOP_R, PetState.EDGE_TOP_L
+        )) {
+            assertEquals(
+                "状态 $s 的支点判据与垂直基准不一致",
+                PetState.vertForState(s) == PetState.VERT_BOTTOM,
+                PetState.squashFromBottom(s)
+            )
+        }
+    }
+
     @Test
     fun attached_states_are_recognised_for_drag_damping() {
         // 吸附状态起步才加阻尼

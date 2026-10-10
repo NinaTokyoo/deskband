@@ -644,6 +644,20 @@ object PetState {
         if (isCorner(state)) 1f else normal
 
     /**
+     * 点击/长按压缩时，是否**以底边为支点**（底边不动，只把上边压下来）。
+     *
+     * 只对"吸附在**底边** / **左下角** / **右下角**"这三种情况生效 ——
+     * 也就是垂直基准为 [VERT_BOTTOM] 的状态：贴底边的两个正立形态
+     * （[BORDER_R_UPRIGHT] / [BORDER_L_UPRIGHT]）与两个下角（[CORNER_BR] / [CORNER_BL]）。
+     *
+     * 它们本来就是"脚踩在屏幕下沿"的姿态，压缩时脚不动才自然；
+     * 若仍像原来那样上下同时向中间压，脚会离地、看起来像悬空缩了一下。
+     *
+     * 侧边（[VERT_NONE]，躺倒）与上边组（[VERT_TOP]，倒挂）保持原样：绕素材中心压。
+     */
+    fun squashFromBottom(state: Int): Boolean = vertForState(state) == VERT_BOTTOM
+
+    /**
      * 收起时往哪条边滑出去：**取最近的那条边**（纯函数，便于单测）。
      *
      * 关键点：这个函数**永远返回一个方向**，没有"都不贴边就返回某种兜底"的分支。

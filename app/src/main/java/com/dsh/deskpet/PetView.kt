@@ -188,10 +188,10 @@ class PetView(context: Context) : View(context) {
         //
         // 关键：W×H 矩形绕中心转 θ 时外接框是 (W|cosθ|+H|sinθ|)，45° 附近
         // 约等于**对角线**，比 max(W,H) 大得多 —— 用 max 会在中间角度切掉。
-        // 另外点击压缩会把横向撑大 (1+SQ_MAX) 倍，也要一起容纳。
+        // 另外点击/长按压缩会把横向撑大 (1+SQ_ENV_MAX) 倍，也要一起容纳。
         val diag = kotlin.math.hypot(cellW.toDouble(), cellH.toDouble()).toFloat()
-        var envW = maxOf(diag, cellW * (1f + SQ_MAX))
-        var envH = maxOf(diag, cellH * (1f + SQ_MAX))
+        var envW = maxOf(diag, cellW * (1f + SQ_ENV_MAX))
+        var envH = maxOf(diag, cellH * (1f + SQ_ENV_MAX))
 
         // 窗口尺寸取**两个素材形态的并集**（角落素材 + 正立素材）。
         //
@@ -212,8 +212,8 @@ class PetView(context: Context) : View(context) {
                     s.naturalWidth(other), s.naturalHeight(other), screenH * sizeFrac
                 )
                 val d2 = kotlin.math.hypot(co[0].toDouble(), co[1].toDouble()).toFloat()
-                envW = maxOf(envW, d2, co[0] * (1f + SQ_MAX))
-                envH = maxOf(envH, d2, co[1] * (1f + SQ_MAX))
+                envW = maxOf(envW, d2, co[0] * (1f + SQ_ENV_MAX))
+                envH = maxOf(envH, d2, co[1] * (1f + SQ_ENV_MAX))
             }
         }
 
@@ -500,6 +500,27 @@ class PetView(context: Context) : View(context) {
     private var hopStart = 0L
 
     /**
+     * 长按压缩：**按住不放就一直往下压**，最深 [PRESS_MAX_SQ]（50%），松手回弹。
+     *
+     * 只对"吸附在底边 / 左下角 / 右下角"这三种情况启用（见
+     * [PetState.squashFromBottom]）—— 它们的支点是**底边**：底边不动、只压上边。
+     * 其余状态（侧边躺倒、上边倒挂）保持原来的"绕素材中心压"。
+     *
+     * 三点约定（用户确认过）：
+     *   · 一按下就立刻开始压（没有"长按判定"的等待），短按也会先压一点点；
+     *   · 短按松手 -> **接着播原来的点击动画**（继续压到 [SQ_MAX]、弹起、落回），
+     *     衔接方式是把点击动画的时钟往前拨（见 [startHopFrom]），所以不会跳变；
+     *   · 长按（已经压得比 [SQ_MAX] 更深）松手 -> 只回弹，不弹起、也不触发点击互动。
+     */
+    private var pressing = false
+    private var pressStart = 0L
+
+    /** 松手回弹：从 [releaseFrom] 弹回 0 */
+    private var releasing = false
+    private var releaseStart = 0L
+    private var releaseFrom = 0f
+
+    /**
      * 点击反馈：**先压扁再弹起**，而且压缩方向始终与人物头朝向一致。
      *
      *   贴底边 / 角落（头朝上）-> 先上下压扁，再向上弹起
@@ -523,6 +544,57 @@ class PetView(context: Context) : View(context) {
         if (t < 0.3f) return 0f
         val u = (t - 0.3f) / 0.7f
         return cellH * HOP_FRACTION * sin(u * Math.PI).toFloat()
+    }
+
+    /** 长按压缩量：按住越久压得越深，到 [PRESS_FULL_MS] 压满 [PRESS_MAX_SQ] */
+    private fun pressSquash(): Float {
+        val held = (SystemClock.uptimeMillis() - pressStart).toFloat()
+        val u = (held / PRESS_FULL_MS).coerceIn(0f, 1f)
+        return PRESS_MAX_SQ * PetState.easeInArrive(u)
+    }
+
+    /** 这一帧实际要画的压缩量（0 = 不压） */
+    private fun currentSquash(): Float = when {
+        hopping -> squashAt(hopPhase())
+        pressing -> pressSquash()
+        releasing -> releaseFrom * PetState.springBack(
+            ((SystemClock.uptimeMillis() - releaseStart).toFloat() / PRESS_RELEASE_MS)
+                .coerceIn(0f, 1f),
+            // 用更"软"的摆动系数：回弹只轻微过冲一下（最多约 16% 的拉伸），
+            // 不会把人物拉得又高又瘦
+            1f
+        )
+        else -> 0f
+    }
+
+    /**
+     * 压缩的**支点 Y**（与 [onDraw] 里 `canvas.scale` 的支点严格一致）。
+     *
+     * 贴底边 / 左下角 / 右下角时是**素材底边**（底边不动，只把上边压下来），
+     * 其余状态仍是素材中心。
+     */
+    private fun squashPivotY(headAlongY: Boolean): Float =
+        if (headAlongY && PetState.squashFromBottom(state)) cellLocalY() + cellH else pivotY()
+
+    /** 松手回弹：从当前压缩量弹回 0 */
+    private fun startSquashRelease(from: Float) {
+        if (from <= 0.001f) {
+            releasing = false
+            return
+        }
+        releaseFrom = from
+        releaseStart = SystemClock.uptimeMillis()
+        releasing = true
+        choreographer.removeFrameCallback(frameCallback)
+        scheduleFrame()
+    }
+
+    /** 拖动开始时作废长按压缩；[smooth] 为真时让压缩量平滑收回（不闪） */
+    private fun cancelPress(smooth: Boolean) {
+        if (!pressing) return
+        val d = pressSquash()
+        pressing = false
+        if (smooth) startSquashRelease(d) else releasing = false
     }
 
     /** 吸附时的位移补间：避免"瞬移" */
@@ -750,6 +822,15 @@ class PetView(context: Context) : View(context) {
             if (hopping) {
                 val t = ((now - hopStart).toFloat() / HOP_MS).coerceIn(0f, 1f)
                 if (t >= 1f) hopping = false
+                need = true
+            }
+            if (pressing) {
+                // 按住时压缩量还在长；压满之后就不用再重绘了（省帧）
+                if (now - pressStart < PRESS_FULL_MS.toLong()) need = true
+            }
+            if (releasing) {
+                val t = ((now - releaseStart).toFloat() / PRESS_RELEASE_MS).coerceIn(0f, 1f)
+                if (t >= 1f) releasing = false
                 need = true
             }
             // 只有真的有动画时才重绘。
@@ -1646,16 +1727,19 @@ class PetView(context: Context) : View(context) {
         var dx = localX - cx
         var dy = localY - cy
 
-        // 反掉点击动画的压扁与弹起（与 onDraw 里的变换严格对应）
-        val t = hopPhase()
-        if (t >= 0f) {
-            val sq = squashAt(t)
+        // 反掉点击/长按动画的压扁与弹起（与 onDraw 里的变换严格对应）
+        val sq = currentSquash()
+        if (sq > 0.0001f || hopping) {
             val headAlongY = abs(displayRotation()) < 45f
             val sx = if (headAlongY) 1f + sq else 1f - sq
             val sy = if (headAlongY) 1f - sq else 1f + sq
-            dy /= sy
-            dx /= sx
-            val push = jumpAt(t)
+            // ⚠️ 支点可能是素材**底边**（贴底边/下角时），不是中心 ——
+            // 先相对支点反缩放，再换算回"相对素材中心"的偏移
+            // （后面的旋转、换格子坐标都以素材中心为参考）。
+            val py = squashPivotY(headAlongY)
+            dx = (localX - cx) / sx
+            dy = (localY - py) / sy + (py - cy)
+            val push = if (hopping) jumpAt(hopPhase()) else 0f
             val rot = displayRotation()
             if (headAlongY) {
                 // 与 onDraw 里的 canvas.translate 严格互逆：
@@ -1796,6 +1880,14 @@ class PetView(context: Context) : View(context) {
                 // 如果只是点一下，松手时要把它补完（见 [pendingSnapX]）。
                 holdSnapTarget()
                 cancelTween()
+                // 长按压缩：**一按下就开始压**（用户确认的节奏）。压多深由按住时间决定；
+                // 松手时按"压到多深"分流：浅的接着播点击动画，深的只回弹。
+                hopping = false
+                releasing = false
+                pressing = true
+                pressStart = SystemClock.uptimeMillis()
+                choreographer.removeFrameCallback(frameCallback)
+                scheduleFrame()
                 // 记下手指作用点在窗口内的位置 —— 旋转就绕它转
                 return true
             }
@@ -1807,6 +1899,8 @@ class PetView(context: Context) : View(context) {
                     dragging = true
                     // 真拖动了：以这次拖动为准，丢掉刚才记下的落点
                     clearPendingSnap()
+                    // 拖动优先：长按压缩作废，压缩量平滑收回（不闪）
+                    cancelPress(smooth = true)
                     // 用户规则：**手指按在哪里，素材中心点就在哪里**。
                     // 不保留"手指到中心点的偏移"，直接在起拖那一刻把中心点对齐到按下位置。
                     anchorX = downRawX
@@ -1834,9 +1928,21 @@ class PetView(context: Context) : View(context) {
                     anchorY = curCenterY()
                     dragOffsetX = 0f
                     dragOffsetY = 0f
+                    cancelPress(smooth = true)
                     settle()
                 } else {
-                    onTapped()
+                    // 松手分流（用户确认过）：
+                    //   · 还没压到 [SQ_MAX]（相当于"点一下"）-> 接着播点击动画
+                    //     （压缩量继续走完、再弹起落回），动画时钟按当前压缩量往前拨，
+                    //     衔接不跳变，并触发点击互动；
+                    //   · 已经压得更深（长按）-> 只回弹，不弹起、**不触发点击互动**。
+                    val held = if (pressing) pressSquash() else 0f
+                    pressing = false
+                    if (held <= SQ_MAX) {
+                        onTapped(held)
+                    } else {
+                        startSquashRelease(held)
+                    }
                     // 点完把被打断的吸附补间补完，绝不停在半路（否则贴边会留缝）
                     resumePendingSnap()
                 }
@@ -2097,9 +2203,17 @@ class PetView(context: Context) : View(context) {
         invalidate()
     }
 
-    private fun onTapped() {
+    /**
+     * 点击（轻跳）：**压扁 → 弹起 → 落回**，并通知服务（服务侧只做视觉反馈）。
+     *
+     * @param fromSquash 松手那一刻已经压下去的量。长按压缩是"一按下就开始压"，
+     *   所以点击动画必须**从这个量接着走**才不跳变 —— 做法是把动画时钟往前拨：
+     *   点击动画第一段本来就是"从 0 压到 [SQ_MAX]"。
+     */
+    private fun onTapped(fromSquash: Float) {
+        val t0 = if (SQ_MAX > 0f) (0.3f * (fromSquash / SQ_MAX)).coerceIn(0f, 0.3f) else 0f
         hopping = true
-        hopStart = SystemClock.uptimeMillis()
+        hopStart = SystemClock.uptimeMillis() - (t0 * HOP_MS).toLong()
         choreographer.removeFrameCallback(frameCallback)
         scheduleFrame()
         host?.onTapped()
@@ -2132,19 +2246,21 @@ class PetView(context: Context) : View(context) {
         // 旋转绕格子中心；只改变换、不动格子尺寸 -> 比例不变
         if (abs(rot) > 0.01f) canvas.rotate(rot, cx, cy)
 
-        // 点击反馈：在人物自己的坐标系里压扁（压的方向跟着头朝向）
-        val t = hopPhase()
-        if (t >= 0f) {
-            val sq = squashAt(t)      // 0 = 不压, SQ_MAX = 压得最扁
+        // 点击/长按反馈：在人物自己的坐标系里压扁（压的方向跟着头朝向）
+        val sq = currentSquash()
+        if (sq > 0.0001f || hopping) {
             // 沿"头轴"压扁。贴底/角落时头轴是 y，贴侧边（转 90°）时头轴是 x。
             val headAlongY = abs(rot) < 45f
             val sx = if (headAlongY) 1f + sq else 1f - sq
             val sy = if (headAlongY) 1f - sq else 1f + sq
-            canvas.scale(sx, sy, cx, cy)
+            // ⚠️ 支点：贴底边 / 左下角 / 右下角时**底边不动**（只压上边），
+            // 其余状态仍绕素材中心 —— 与 hitsPet 里的逆变换必须一致。
+            canvas.scale(sx, sy, cx, squashPivotY(headAlongY))
             // 压扁之后向头的方向弹起：头朝上就往上，头朝左就往左。
             // 上边组是倒挂的（头朝下），所以它**向下**弹 —— 与"始终朝屏幕内侧弹"
             // 是同一件事：弹起方向永远背离吸附的那条边。
-            val push = jumpAt(t)
+            // 只有"点一下"才弹；长按是压住不放，松手只回弹。
+            val push = if (hopping) jumpAt(hopPhase()) else 0f
             val dx = if (headAlongY) 0f else -push * (if (rot > 0f) 1f else -1f)
             val dy = if (!headAlongY) 0f else if (PetState.isTop(state)) push else -push
             canvas.translate(dx, dy)
@@ -2277,6 +2393,28 @@ class PetView(context: Context) : View(context) {
         /** 点击时最大压缩比例（0.22 = 压掉 22% 的厚度） */
         private const val SQ_MAX = 0.22f
 
+        /**
+         * 长按能压到的最深比例：**50%**（用户要求"最大压缩至 50%"）。
+         *
+         * ⚠️ 窗口包络必须按这个值留余量（见 [SQ_ENV_MAX]）：压扁时横向会同步
+         * 撑大 (1+sq) 倍，压到一半就是 1.5 倍宽 —— 包络不够就会被窗口裁掉。
+         */
+        private const val PRESS_MAX_SQ = 0.5f
+
+        /** 长按压满（到 [PRESS_MAX_SQ]）所需时间：按住越久压得越深 */
+        private const val PRESS_FULL_MS = 1100f
+
+        /** 松手回弹时长 */
+        private const val PRESS_RELEASE_MS = 300f
+
+        /**
+         * 窗口包络里预留的**最大压缩比例**。
+         *
+         * `cacheSizes()` 与 `windowRectFor()` 都用它 —— 两处必须完全一致，
+         * 否则呼出时窗口初始尺寸与随后算出来的不一样，会闪一下。
+         */
+        private const val SQ_ENV_MAX = PRESS_MAX_SQ
+
         /** 窗口给"轻跳"和四角旋转留的余量，避免边缘被切 */
         const val HOP_PAD_X = 8
 
@@ -2328,8 +2466,8 @@ class PetView(context: Context) : View(context) {
 
             // 与 cacheSizes 用同一套包络公式（含并集），保证不裁切、且尺寸一致
             val diag = kotlin.math.hypot(cell[0].toDouble(), cell[1].toDouble()).toFloat()
-            var envW = maxOf(diag, cell[0] * (1f + SQ_MAX))
-            var envH = maxOf(diag, cell[1] * (1f + SQ_MAX))
+            var envW = maxOf(diag, cell[0] * (1f + SQ_ENV_MAX))
+            var envH = maxOf(diag, cell[1] * (1f + SQ_ENV_MAX))
             run {
                 val other = if (PetState.isZoneless(state)) PetState.CORNER_BR else PetState.BORDER_R
                 if (other != state) {
@@ -2337,8 +2475,8 @@ class PetView(context: Context) : View(context) {
                         s.naturalWidth(other), s.naturalHeight(other), screenH * sizeFrac
                     )
                     val d2 = kotlin.math.hypot(co[0].toDouble(), co[1].toDouble()).toFloat()
-                    envW = maxOf(envW, d2, co[0] * (1f + SQ_MAX))
-                    envH = maxOf(envH, d2, co[1] * (1f + SQ_MAX))
+                    envW = maxOf(envW, d2, co[0] * (1f + SQ_ENV_MAX))
+                    envH = maxOf(envH, d2, co[1] * (1f + SQ_ENV_MAX))
                 }
             }
             val pad = (cell[1] * HOP_FRACTION).toInt() + HOP_PAD_MIN
