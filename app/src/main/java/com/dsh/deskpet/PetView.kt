@@ -660,6 +660,10 @@ class PetView(context: Context) : View(context) {
     fun anchorXNow(): Float = anchorX
     fun anchorYNow(): Float = anchorY
 
+    /** 静止位置（素材中心屏幕坐标）—— 收起被打断时要滑回这里 */
+    fun restX(): Float = slideRestX
+    fun restY(): Float = slideRestY
+
     /** 动画期间不接受触摸，避免"正飞出去又被拖回来" */
     fun isSliding(): Boolean = sliding
 
@@ -730,6 +734,11 @@ class PetView(context: Context) : View(context) {
     fun slideIn(targetX: Float, targetY: Float) {
         // 同样允许接管在途动画（例如呼出动画没播完就又被呼出一次）
         val v = exitVector()
+        // ⚠️ 先把**目标点**记为静止点，再开始滑。
+        // 这样如果呼出动画中途被收起打断，之后再次呼出时
+        // reverseSlide() 才知道该滑回哪里 —— 否则会用上一次的过期位置。
+        slideRestX = targetX
+        slideRestY = targetY
         val from = offScreenAnchor(v[0], v[1])
         anchorX = from[0]
         anchorY = from[1]

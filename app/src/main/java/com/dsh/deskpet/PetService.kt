@@ -134,6 +134,7 @@ class PetService : Service(), PetView.Host {
             // （用户反馈"呼出→收起→再呼出，人物消失"）。
             // applySnap() 会按当前状态重新算一个合法的贴边位置，直接拉回来。
             epoch++
+            prefs.running = true
             val v = petView
             if (v != null) {
                 if (v.isSliding()) {
@@ -356,6 +357,16 @@ class PetService : Service(), PetView.Host {
         val my = ++epoch
         v.slideOut {
             if (my != epoch) return@slideOut
+            // ⚠️ onStartCommand 是**异步**的：动画只有 420ms，收起回调可能
+            // 抢在 START intent 送达之前执行。所以这里不能只靠 epoch 判断，
+            // 必须看 prefs.running —— 它是 Activity 在点击那一刻**同步**写好的，
+            // 不受 intent 送达时机影响。
+            // 若已变回 true，说明用户在这 420ms 内又点了呼出：
+            // 这次收起作废，把宠物原路滑回来（不能删，否则人物消失）。
+            if (prefs.running) {
+                v.slideIn(v.restX(), v.restY())
+                return@slideOut
+            }
             removePet()
             stopSelf()
         }
