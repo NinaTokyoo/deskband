@@ -235,27 +235,10 @@ class PetView(context: Context) : View(context) {
         footOffX = (bboxW - HOP_PAD_X * 2 - trackW) / 2
         footOffY = (bboxH - topPad() - bottomPad() - trackH) / 2
 
-        // 素材中心点：按 alpha 外接框算，结果**按状态缓存**。
-        // alphaBounds 要整张位图逐行扫描，而 cacheSizes 在状态切换时会被反复调用，
-        // 每次重扫就是掉帧的一个来源。
-        var u = 0.5f
-        var v = 0.5f
-        artCenterCache[state]?.let {
-            u = it[0]
-            v = it[1]
-        } ?: run {
-            val bmp = runCatching { bitmapFor(state) }.getOrNull()
-            if (bmp != null) {
-                val b = alphaBounds(bmp)
-                if (b != null && b[2] > b[0] && b[3] > b[1]) {
-                    u = (b[0] + b[2]) / 2f / bmp.width
-                    v = (b[1] + b[3]) / 2f / bmp.height
-                }
-            }
-            artCenterCache[state] = floatArrayOf(u, v)
-        }
-        artU = u
-        artV = v
+        // 素材中心点：按 alpha 外接框算，结果**按状态缓存**（见 [artCenterOf]）。
+        val uv = artCenterOf(state)
+        artU = uv[0]
+        artV = uv[1]
 
         // 未冻结时记录"当前足迹对应的朝向"，供下一次冻结使用
         if (!frozen) curSizeRot = PetState.rotationForSnap(state)
@@ -354,6 +337,69 @@ class PetView(context: Context) : View(context) {
      */
     private fun cacheSizesKeepingCenter() {
         cacheSizes()
+    }
+
+    /**
+     * 某个状态对应的**格子**尺寸（未旋转，按素材自身比例缩放）。
+     *
+     * ⚠️ 角落素材与正立素材的格子宽度**不一样**（约 263 vs 289），
+     * 所以凡是"按目标状态算落点"的地方都必须用这个，不能用当前状态的
+     * [cellW]/[cellH] —— 差半个差值 ≈ 13px，表现就是吸附后贴边留缝（或越界）。
+     */
+    private fun cellOf(st: Int): IntArray {
+        val s = sprite ?: return intArrayOf(cellW, cellH)
+        val screenH = (host?.bounds()?.height() ?: 1080).toFloat()
+        return PetState.scaledSize(s.naturalWidth(st), s.naturalHeight(st), screenH * sizeFrac)
+    }
+
+    /** 某个状态旋转后的**足迹**（宽高可能互换） */
+    private fun footprintOf(st: Int): IntArray {
+        val cell = cellOf(st)
+        val q = ((PetState.rotationForSnap(st) % 360f) + 360f) % 360f
+        return if (q == 90f || q == 270f) intArrayOf(cell[1], cell[0]) else cell
+    }
+
+    /**
+     * 某状态下**素材中心点**在**足迹**里的偏移（相对足迹左上角）。
+     *
+     * 未旋转：就是 `(u·格宽, v·格高)`。
+     * 旋转 90°：足迹是格子转过来的外接框，偏移分别退化成
+     * `(格高·(1−v), 格宽·u)`（+90°）与 `(格高·v, 格宽·(1−u))`（−90°）；
+     * 素材中心接近格子中心时两者都≈足迹中心。
+     */
+    private fun centerOffsetInTrack(st: Int): FloatArray {
+        val cell = cellOf(st)
+        val uv = artCenterOf(st)
+        val q = ((PetState.rotationForSnap(st) % 360f) + 360f) % 360f
+        return when (q) {
+            90f -> floatArrayOf(cell[1] * (1f - uv[1]), cell[0] * uv[0])
+            270f -> floatArrayOf(cell[1] * uv[1], cell[0] * (1f - uv[0]))
+            else -> floatArrayOf(cell[0] * uv[0], cell[1] * uv[1])
+        }
+    }
+
+    /**
+     * 素材中心点在某状态位图里的相对位置（0..1），**按状态缓存**。
+     *
+     * 按 alpha 外接框算，而不是简单取一半 —— 格子是矩形，人物不一定居中，
+     * 只有按真实像素范围取中心，旋转时才是"绕人物自己转"。
+     * alphaBounds 要整张位图逐行扫描，所以结果必须缓存。
+     */
+    private fun artCenterOf(st: Int): FloatArray {
+        artCenterCache[st]?.let { return it }
+        var u = 0.5f
+        var v = 0.5f
+        val bmp = runCatching { bitmapFor(st) }.getOrNull()
+        if (bmp != null) {
+            val b = alphaBounds(bmp)
+            if (b != null && b[2] > b[0] && b[3] > b[1]) {
+                u = (b[0] + b[2]) / 2f / bmp.width
+                v = (b[1] + b[3]) / 2f / bmp.height
+            }
+        }
+        val out = floatArrayOf(u, v)
+        artCenterCache[st] = out
+        return out
     }
 
     fun setSizeFraction(f: Float) {
@@ -1089,7 +1135,8 @@ class PetView(context: Context) : View(context) {
     private fun snapWithBounce(
         targetCenterX: Float, targetCenterY: Float,
         snapSide: Boolean, snapVert: Boolean,
-        tW: Int, tH: Int
+        tW: Int, tH: Int,
+        offX: Float, offY: Float
     ) {
         // 回弹参数由用户在 App 里调（滑块 + 数字输入），每次吸附时现读。
         // 总开关关掉时 amp 直接按 0 处理 —— 于是走下面"没什么可弹的"分支，
@@ -1135,14 +1182,14 @@ class PetView(context: Context) : View(context) {
             val floorX = (1f - abs(ox) / dimX).coerceAtLeast(BOUNCE_MIN_VISIBLE)
             val floorY = (1f - abs(oy) / dimY).coerceAtLeast(BOUNCE_MIN_VISIBLE)
             val cl = PetState.clampToScreen(
-                overCenterX - centerFromTrackXSized(tW),
-                overCenterY - centerFromTrackYSized(tH),
+                overCenterX - offX,
+                overCenterY - offY,
                 dimX, dimY,
                 b.width().toFloat(), b.height().toFloat(),
                 minOf(floorX, floorY)
             )
-            overCenterX = cl[0] + centerFromTrackXSized(tW)
-            overCenterY = cl[1] + centerFromTrackYSized(tH)
+            overCenterX = cl[0] + offX
+            overCenterY = cl[1] + offY
         }
 
         bounceToX = targetCenterX
@@ -1808,11 +1855,15 @@ class PetView(context: Context) : View(context) {
             else -> PetState.stateForZone(v, PetState.ZONE_E, leftHalf)
         }
 
-        // 目标位置必须用 **want 的足迹** 算，否则换成旋转形态后会不贴边
+        // 目标位置必须用 **want 自己的素材** 算：角落素材与正立素材的格子宽度
+        // 不同（约 263 vs 289），拿当前状态的宽度去算，落点会差半个差值 ≈ 13px ——
+        // 表现就是"吸附后跟屏幕边缘留一条缝"（反过来则是越界 13px），
+        // 而且换素材那一下能看到跳变（闪烁）。
+        val foot = footprintOf(want)
+        val tW = foot[0]
+        val tH = foot[1]
+        val wantOff = centerOffsetInTrack(want)
         val wantRot = PetState.rotationForSnap(want)
-        val wantRotated = abs(abs(wantRot) - 90f) < 1f
-        val tW = if (wantRotated) cellH else cellW
-        val tH = if (wantRotated) cellW else cellH
 
         var nx = x
         var ny = y
@@ -1860,6 +1911,8 @@ class PetView(context: Context) : View(context) {
         // 后面无论是补间、回弹还是被连点打断，保存与"滑回哪里"都以它为准，
         // 不再看动画途中的 anchor（用户反馈的"位置会变"就出在这儿）。
         markRest(targetCenterX, targetCenterY)
+        // 注意：过冲点用的偏移必须是**目标状态**的（见 [centerOffsetInTrack]），
+        // 不能拿当前状态的 centerFromTrack* —— 换素材时两者差 ≈13px。
 
         if (needRotate) {
             frozenRot = curSizeRot
@@ -1872,7 +1925,10 @@ class PetView(context: Context) : View(context) {
             // 状态与尺寸已在此处理，别再让补间结束时的 applyPendingState 重做一遍
             pendingState = null
             // 边转边靠；末尾带回弹
-            snapWithBounce(targetCenterX, targetCenterY, snapSide, snapVert, tW, tH)
+            snapWithBounce(
+                targetCenterX, targetCenterY, snapSide, snapVert,
+                tW, tH, wantOff[0], wantOff[1]
+            )
             placeWindow()
             invalidate()
             host?.onSettled(want, c[0].roundToInt(), c[1].roundToInt())
@@ -1885,7 +1941,10 @@ class PetView(context: Context) : View(context) {
             bouncePending = false
             applyPendingState()
         } else {
-            snapWithBounce(targetCenterX, targetCenterY, snapSide, snapVert, tW, tH)
+            snapWithBounce(
+                targetCenterX, targetCenterY, snapSide, snapVert,
+                tW, tH, wantOff[0], wantOff[1]
+            )
         }
 
         placeWindow()

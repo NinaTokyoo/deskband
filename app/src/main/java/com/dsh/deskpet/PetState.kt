@@ -379,6 +379,13 @@ object PetState {
      * 所以传入的门槛是 `aW + 半宽`：等价于"素材**边缘**落在 aW 以内"，
      * 既保留了中心点判据，又让贴边静止位置稳定落在 B 内。
      *
+     * ⚠️ **角落（A 区）边界同样要滞回**：A 与 B/E 的分界就是 `dr == aW`
+     * （中心点判据那侧也是同一条线），所以贴着角落拖时手指抖一两像素，
+     * 就会在"角落素材 <-> 正立素材"之间来回切 —— 两套图连宽度都不同
+     * （约 263 vs 289），看起来就是**闪**（用户反馈：
+     * "切换角落素材与非角落素材时会有闪烁现象"）。已经在 A 里时把门槛放宽
+     * [HYSTERESIS_PX]，要明显离开才退出。
+     *
      * @param v    垂直基准（[vertOf] 的结果）
      * @param dv   到**基准边**的距离
      * @param prev 上一次的区号，用于决定用哪个门槛
@@ -389,8 +396,9 @@ object PetState {
         centerDist: Float = dr,
         bandPx: Float = currentAW
     ): Int {
-        // A（角落）不涉及这个抖动，直接算；C 已并入 E，不再单判
-        if (v != VERT_NONE && dv <= currentAH && dr <= currentAW) return ZONE_A
+        // C 已并入 E，不再单判。A 带滞回：已在角落则要"明显离开"才退出
+        val aPad = if (prev == ZONE_A) HYSTERESIS_PX else 0f
+        if (v != VERT_NONE && dv <= currentAH + aPad && dr <= currentAW + aPad) return ZONE_A
 
         val inB: Boolean
         if (prev == ZONE_B) {

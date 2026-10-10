@@ -344,8 +344,17 @@ class PetService : Service(), PetView.Host {
             // 看门狗：动画总时长 420+150ms，留足余量后强制落位。
             // 万一帧回调没跑起来（被暂停、或窗口在屏幕外时系统不给帧），
             // 宠物就会永远停在屏幕外 —— 绝不能出现"看不见但按钮显示已呼出"。
+            //
+            // ⚠️ 必须带上**世代号**一起判断：这 900ms 里用户完全可能又点了收起/呼出。
+            // 那时这次兜底会 forceSettleAt()，把**后来的收起动画**掐断
+            // （forceSettleAt 会取消补间、丢弃 slideDone），
+            // 于是"点了收起没反应、宠物留在屏幕上"——
+            // 用户反馈："多次点击呼出收起的时候，有时候点击收起没有反应"。
+            val myEpoch = epoch
             mainHandler.postDelayed({
-                if (petView === view) view.forceSettleAt(tx, ty)
+                if (petView === view && epoch == myEpoch && view.isSliding()) {
+                    view.forceSettleAt(tx, ty)
+                }
             }, 900L)
         }
 

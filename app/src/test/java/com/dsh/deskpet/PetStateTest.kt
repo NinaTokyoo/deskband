@@ -205,8 +205,7 @@ class PetStateTest {
     }
 
     @Test
-    fun hysteresis_stops_the_B_E_boundary_from_flickering() {
-        PetState.setZoneSize(200f, 365f)
+    fun hysteresis_stops_the_B_E_boundary_from_flickering() {        PetState.setZoneSize(200f, 365f)
         val v = PetState.VERT_BOTTOM
         // 稍微超出 aW 但还在滞回带内：
         // 之前是 B -> 保持 B（不闪）；之前是 E -> 保持 E
@@ -309,6 +308,64 @@ class PetStateTest {
             PetState.rotationDelta(PetState.BORDER_R_UPRIGHT, PetState.BORDER_L_UPRIGHT), 0.001f
         )
         assertEquals(0f, PetState.rotationDelta(PetState.CORNER_TR, PetState.EDGE_TOP_R), 0.001f)
+    }
+
+    /**
+     * **角落（A 区）边界也要滞回**：
+     * A 与 B/E 的分界就是 `dr == aW`，贴着角落拖时手指抖一两像素，
+     * 就会在"角落素材 <-> 正立素材"之间来回切（两套图宽度都不同，约 263 vs 289），
+     * 看起来就是闪（用户反馈："切换角落素材与非角落素材时会有闪烁现象"）。
+     */
+    @Test
+    fun the_corner_boundary_has_hysteresis_so_the_art_cannot_flicker() {
+        PetState.setZoneSize(200f, 365f)
+        val v = PetState.VERT_BOTTOM
+        val aW = PetState.currentAW
+        val aH = PetState.currentAH
+        val hys = PetState.HYSTERESIS_PX
+
+        // 横向边界：刚出界一点点
+        val justOut = aW + hys / 2f
+        assertEquals(
+            "已在角落：出界一点点必须仍是 A（否则素材会来回闪）",
+            PetState.ZONE_A,
+            PetState.zoneWithHysteresis(v, 0f, justOut, false, PetState.ZONE_A, justOut, 400f)
+        )
+        // 原本不在角落：同一个位置不该被判成 A（深入才进）
+        assertFalse(
+            "不在角落：这个位置不该突然进 A",
+            PetState.zoneWithHysteresis(v, 0f, justOut, false, PetState.ZONE_E, justOut, 400f)
+                == PetState.ZONE_A
+        )
+        // 纵向边界同理
+        val justOutV = aH + hys / 2f
+        assertEquals(
+            PetState.ZONE_A,
+            PetState.zoneWithHysteresis(v, justOutV, 100f, false, PetState.ZONE_A)
+        )
+        assertFalse(
+            PetState.zoneWithHysteresis(v, justOutV, 100f, false, PetState.ZONE_E) == PetState.ZONE_A
+        )
+
+        // 明确离开 -> 一定退出 A（否则会"粘"在角落）
+        assertFalse(
+            PetState.zoneWithHysteresis(
+                v, 0f, aW + hys + 2f, false, PetState.ZONE_A, aW + hys + 2f, 400f
+            ) == PetState.ZONE_A
+        )
+        // 明确深入 -> 一定进 A
+        assertEquals(
+            PetState.ZONE_A,
+            PetState.zoneWithHysteresis(v, 0f, aW - 10f, false, PetState.ZONE_E)
+        )
+
+        // 在边界上来回抖（±3px）不允许换区：这是"闪"的直接检验
+        var zone = PetState.ZONE_A
+        for (jitter in intArrayOf(-3, 3, -3, 3, -2, 2, -3, 3)) {
+            val dr = aW + jitter
+            zone = PetState.zoneWithHysteresis(v, 0f, dr, false, zone, dr, 400f)
+            assertEquals("抖动到 dr=$dr 时不该换出 A（否则素材闪）", PetState.ZONE_A, zone)
+        }
     }
 
     @Test
