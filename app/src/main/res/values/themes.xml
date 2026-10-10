@@ -35,12 +35,11 @@
         <item name="android:gravity">center_vertical</item>
     </style>
 
-    <!-- 标题右侧的小动作按钮（幽灵样式，不抢标题重心） -->
+    <!-- 标题右侧的小动作按钮（镂空，颜色由 AccentTheme 下发） -->
     <style name="CardAction">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginStart">10dp</item>
-        <item name="android:background">@drawable/btn_ghost_bg</item>
         <item name="android:textColor">@color/accent</item>
         <item name="android:textSize">13sp</item>
         <item name="android:paddingStart">12dp</item>
@@ -61,12 +60,15 @@
         <item name="android:lineSpacingExtra">3dp</item>
     </style>
 
+    <!--
+      按钮统一走"镂空"样式：背景（描边 + 文字色）由 AccentTheme 按当前角色发色
+      动态下发，所以这里**不设 android:background**，只定尺寸与排版。
+    -->
     <style name="PrimaryButton">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginTop">12dp</item>
-        <item name="android:background">@drawable/btn_primary_bg</item>
-        <item name="android:textColor">@color/on_accent</item>
+        <item name="android:textColor">@color/accent</item>
         <item name="android:textSize">16sp</item>
         <item name="android:textStyle">bold</item>
         <item name="android:paddingTop">11dp</item>
@@ -76,9 +78,9 @@
 
     <style name="BigButton" parent="PrimaryButton">
         <item name="android:textSize">18sp</item>
-        <item name="android:paddingTop">16dp</item>
-        <item name="android:paddingBottom">16dp</item>
-        <item name="android:layout_marginTop">4dp</item>
+        <item name="android:paddingTop">14dp</item>
+        <item name="android:paddingBottom">14dp</item>
+        <item name="android:layout_marginTop">12dp</item>
     </style>
 
 </resources>

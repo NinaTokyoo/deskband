@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.util.TypedValue
 import android.view.View
 import android.view.WindowInsets
 import android.view.inputmethod.InputMethodManager
@@ -62,6 +63,9 @@ class MainActivity : Activity() {
     /** 通知权限是否已经弹过系统对话框（弹过之后再点就直接去设置页） */
     private var notifyAsked = false
 
+    /** 当前强调色（由角色发色推出） */
+    private var accent = AccentTheme.FALLBACK
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -103,6 +107,8 @@ class MainActivity : Activity() {
         applyEdgeToEdge()
         setupBounceControls()
         setupNotifyControls()
+        applyAccentFromSkin()
+        fitTitleToWidth()
 
         rowOverlay.setOnClickListener { openOverlaySettings() }
         rowNotify.setOnClickListener { openNotificationSettings() }
@@ -344,6 +350,8 @@ class MainActivity : Activity() {
                     if (prefs.running) R.string.btn_dismiss else R.string.btn_summon,
                     labels.getOrNull(position) ?: dir
                 )
+                // 换角色 -> 重新提取发色并立刻换肤
+                applyAccentFromSkin()
                 PetService.notifyChanged(this@MainActivity)
             }
 
@@ -516,6 +524,52 @@ class MainActivity : Activity() {
 
         /** 权限未开启的红叉颜色 */
         const val COLOR_BAD = 0xFFFF453A.toInt()
+
+        /** 量文字宽度用的基准字号（px）：取得够大，量完再按比例缩 */
+        const val PROBE_TEXT_PX = 400f
+    }
+
+    // ---------------------------------------------------------------- 标题铺满
+
+    /**
+     * 把标题字号调到**正好填满可用宽度**。
+     *
+     * 不用 autoSizeTextType：它在 maxLines + ellipsize + wrap_content 的组合下
+     * 收敛不准，实测只填到屏幕四分之三左右。
+     * 这里直接量：先给一个很大的基准字号量出文字宽度，再按比例缩放到可用宽度。
+     * bold 字形与 typeface 都从 TextView 自己的 paint 里复制，所以量的是真实宽度。
+     */
+    private fun fitTitleToWidth() {
+        val t = findViewById<TextView>(R.id.txtTitle)
+        t.post {
+            val avail = t.width - t.paddingStart - t.paddingEnd
+            val text = t.text?.toString()
+            if (avail <= 0 || text.isNullOrEmpty()) return@post
+            val probe = Paint(t.paint)
+            probe.textSize = PROBE_TEXT_PX
+            val measured = probe.measureText(text)
+            if (measured > 0f) {
+                // 左右各留 1px 余量，避免因四舍五入把最后一个字挤出边界
+                val size = PROBE_TEXT_PX * (avail - 2f) / measured
+                t.setTextSize(TypedValue.COMPLEX_UNIT_PX, size)
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- 换肤
+
+    /**
+     * 从当前角色素材里提取发色，推出强调色并应用到整个界面。
+     *
+     * 取的是**角落素材**（头最大、发色面积最多），提取效果比正立素材稳。
+     * 取不到就退回默认青蓝，绝不会因为素材异常而让界面失去配色。
+     */
+    private fun applyAccentFromSkin() {
+        val sprite = PetSprite.load(assets, prefs.skin)
+        val bmp = sprite?.bitmap(PetState.CORNER_BR, mirror = false, flipV = false)
+        accent = AccentTheme.accentFor(bmp)
+        prefs.accentColor = accent
+        AccentTheme.apply(this, findViewById(R.id.root), accent)
     }
 
     // ---------------------------------------------------------------- 大小调节

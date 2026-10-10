@@ -136,6 +136,13 @@ class Prefs(context: Context) {
         get() = sp.getString(KEY_NOTIFY_TEXT, "") ?: ""
         set(v) { sp.edit().putString(KEY_NOTIFY_TEXT, v.take(NOTIFY_TEXT_MAX)).apply() }
 
+    /**
+     * 由当前角色发色推出的强调色（缓存，供下次启动先上色避免闪一下默认色）。
+     */
+    var accentColor: Int
+        get() = sp.getInt(KEY_ACCENT, 0xFF5FD3F3.toInt())
+        set(v) { sp.edit().putInt(KEY_ACCENT, v).apply() }
+
     companion object {
         private const val NAME = "deskpet"
         private const val KEY_RUNNING = "running"
@@ -151,6 +158,7 @@ class Prefs(context: Context) {
         private const val KEY_BOUNCE_AMP = "bounce_amp_scale"
         private const val KEY_BOUNCE_TIME = "bounce_time_scale"
         private const val KEY_NOTIFY_TEXT = "notify_text"
+        private const val KEY_ACCENT = "accent_color"
 
         /** 通知栏自定义内容的字符上限（用户指定 40） */
         const val NOTIFY_TEXT_MAX = 40

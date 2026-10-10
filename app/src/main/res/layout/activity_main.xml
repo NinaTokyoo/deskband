@@ -20,33 +20,32 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
         android:paddingTop="8dp"
         android:paddingBottom="28dp">
 
-        <!-- ① 标题 + 权限 + 开关 -->
-        <LinearLayout style="@style/Card">
+        <!-- 页面标题：在卡片之外，通栏。
+             字号不写死、也不用 autoSizeTextType（它在 maxLines+ellipsize 组合下
+             收敛不准，实测填不满），改由 MainActivity.fitTitleToWidth()
+             量出实际可用宽度后精确设定。 -->
+        <TextView
+            android:id="@+id/txtTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:layout_marginBottom="6dp"
+            android:maxLines="1"
+            android:includeFontPadding="false"
+            android:text="@string/ui_title"
+            android:textColor="@color/text_primary"
+            android:textStyle="bold" />
 
-            <!-- 标题：单行自适应，绝不换行 -->
-            <TextView
-                android:id="@+id/txtTitle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:autoSizeTextType="uniform"
-                android:autoSizeMinTextSize="11sp"
-                android:autoSizeMaxTextSize="21sp"
-                android:text="@string/ui_title"
-                android:textColor="@color/text_primary"
-                android:textStyle="bold" />
+        <!-- ① 权限 + 开关 -->
+        <LinearLayout style="@style/Card" android:tag="card" android:layout_marginStart="16dp" android:layout_marginEnd="16dp">
 
             <!-- 两个权限入口并排：文字靠左、标记靠右（两端对齐） -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
                 android:orientation="horizontal"
                 android:baselineAligned="false">
 
@@ -132,7 +131,7 @@
         </LinearLayout>
 
         <!-- ② 形象与复位 -->
-        <LinearLayout style="@style/Card">
+        <LinearLayout style="@style/Card" android:tag="card" android:layout_marginStart="16dp" android:layout_marginEnd="16dp">
 
             <TextView
                 style="@style/CardTitle"
@@ -156,7 +155,6 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="12dp"
-                    android:background="@drawable/btn_primary_bg"
                     android:paddingStart="22dp"
                     android:paddingEnd="22dp"
                     android:paddingTop="10dp"
@@ -170,7 +168,7 @@
         </LinearLayout>
 
         <!-- ③ 外观 -->
-        <LinearLayout style="@style/Card">
+        <LinearLayout style="@style/Card" android:tag="card" android:layout_marginStart="16dp" android:layout_marginEnd="16dp">
 
             <LinearLayout style="@style/CardTitleRow">
 
@@ -229,7 +227,7 @@
         </LinearLayout>
 
         <!-- ④ 松手回弹 -->
-        <LinearLayout style="@style/Card">
+        <LinearLayout style="@style/Card" android:tag="card" android:layout_marginStart="16dp" android:layout_marginEnd="16dp">
 
             <LinearLayout style="@style/CardTitleRow">
 
@@ -324,7 +322,7 @@
         </LinearLayout>
 
         <!-- ⑤ 通知栏自定义 -->
-        <LinearLayout style="@style/Card">
+        <LinearLayout style="@style/Card" android:tag="card" android:layout_marginStart="16dp" android:layout_marginEnd="16dp">
 
             <TextView
                 style="@style/CardTitle"
@@ -360,6 +358,8 @@
         <TextView
             style="@style/StatusLine"
             android:layout_marginTop="18dp"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp"
             android:text="@string/tip" />
     </LinearLayout>
 </ScrollView>

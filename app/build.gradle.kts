@@ -14,8 +14,8 @@ android {
         applicationId = "com.dsh.deskpet"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
         // 纯平台实现，不依赖 AndroidX / Material，包体小、构建面窄
     }
 
