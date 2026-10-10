@@ -1001,9 +1001,25 @@ class MainActivity : Activity() {
             override fun afterTextChanged(s: android.text.Editable?) = updateNotifyCount()
         })
 
+        /**
+         * 保存通知文案。
+         *
+         * 两条**留空回填**规则（用户要求）：
+         *   · 标题留空 -> 填入默认模板（`{name} 正在陪伴你`）。
+         *     回填模板而不是解析后的文字，是为了让占位符留着 —— 换角色时
+         *     标题还能跟着变；回填实际文字等于把角色名写死了。
+         *   · 正文留空 -> 填入**当前标题**（解析后的实际文字，
+         *     例如「后藤一里 正在陪伴你」）。这样通知里正文不会是一片空白。
+         */
         val applyNotify = {
-            prefs.notifyTitle = editNotifyTitle.text.toString()
-            prefs.notifyText = editNotify.text.toString()
+            val filled = PetState.fillNotifyTexts(
+                editNotifyTitle.text.toString(),
+                editNotify.text.toString(),
+                currentSkinName(),
+                Prefs.NOTIFY_TITLE_DEFAULT
+            )
+            prefs.notifyTitle = filled.title
+            prefs.notifyText = filled.body
             // 回写一次：setter 会按上限截断，把截断后的真实值显示出来
             editNotifyTitle.setText(prefs.notifyTitle)
             editNotify.setText(prefs.notifyText)

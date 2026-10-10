@@ -865,4 +865,38 @@ object PetState {
 
     /** 标题模板里的角色名占位符 */
     const val NAME_TOKEN = "{name}"
+
+    /**
+     * 通知标题与正文的"留空回填"结果。
+     *
+     * @param title 回填后的标题（**保留 {name} 占位符**，这样换角色时还会跟着变）
+     * @param body  回填后的正文（**已解析成实际文字**，例如「后藤一里 正在陪伴你」）
+     */
+    data class NotifyTexts(val title: String, val body: String)
+
+    /**
+     * 通知文案的留空回填规则（用户要求）：
+     *
+     *   · 标题留空 -> 用 [default]（默认模板）。
+     *     注意回填的是**模板**而不是解析后的文字 —— 保留 {name} 换角色才会跟着变，
+     *     回填实际文字等于把角色名写死了。
+     *   · 正文留空 -> 用**当前标题解析后的文字**。这样通知里正文不会是一片空白，
+     *     且用户改标题时正文会自动跟上。
+     *
+     * 判定用 isBlank：只敲了空格也算留空（用户视角那就是没填）。
+     */
+    fun fillNotifyTexts(
+        rawTitle: String?,
+        rawBody: String?,
+        name: String?,
+        default: String
+    ): NotifyTexts {
+        val title = if (rawTitle.isNullOrBlank()) default else rawTitle
+        val body = if (rawBody.isNullOrBlank()) {
+            buildTitle(title, name, default).text
+        } else {
+            rawBody
+        }
+        return NotifyTexts(title, body)
+    }
 }

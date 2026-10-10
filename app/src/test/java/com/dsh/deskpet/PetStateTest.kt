@@ -1594,4 +1594,55 @@ class PetStateTest {
         assertEquals(0, t.hlFrom)
         assertEquals("后藤一里".length, t.hlTo)
     }
+
+    // ------------------------------------------------ 通知文案的留空回填
+
+    /** 标题留空 -> 填入默认模板（保留占位符，不解析） */
+    @Test
+    fun fill_blank_title_uses_template_with_token_kept() {
+        val r = PetState.fillNotifyTexts("", "正文", "后藤一里", TITLE_DEFAULT)
+        assertEquals("{name} 正在陪伴你", r.title)
+        assertEquals("正文", r.body)   // 正文有值就不动
+    }
+
+    /** 只敲空格也算留空 */
+    @Test
+    fun fill_whitespace_only_counts_as_blank() {
+        val r = PetState.fillNotifyTexts("   ", "  \n ", "后藤一里", TITLE_DEFAULT)
+        assertEquals("{name} 正在陪伴你", r.title)
+        // 正文也留空 -> 回填标题解析后的文字
+        assertEquals("后藤一里 正在陪伴你", r.body)
+    }
+
+    /** 正文留空 -> 填入当前标题解析后的文字 */
+    @Test
+    fun fill_blank_body_uses_resolved_title() {
+        val r = PetState.fillNotifyTexts("{name} 陪你哦", "", "山田凉", TITLE_DEFAULT)
+        assertEquals("{name} 陪你哦", r.title)
+        assertEquals("山田凉 陪你哦", r.body)
+    }
+
+    /** 两个都留空 -> 标题用模板、正文用模板解析后的文字（两者一致） */
+    @Test
+    fun fill_both_blank() {
+        val r = PetState.fillNotifyTexts(null, null, "喜多郁代", TITLE_DEFAULT)
+        assertEquals("{name} 正在陪伴你", r.title)
+        assertEquals("喜多郁代 正在陪伴你", r.body)
+    }
+
+    /** 两个都有值 -> 原样保留，不做任何替换 */
+    @Test
+    fun fill_both_present_keeps_them() {
+        val r = PetState.fillNotifyTexts("我的标题", "我的正文", "后藤一里", TITLE_DEFAULT)
+        assertEquals("我的标题", r.title)
+        assertEquals("我的正文", r.body)
+    }
+
+    /** 标题不含 {name} 时，正文回填的就是标题原文 */
+    @Test
+    fun fill_body_follows_title_without_token() {
+        val r = PetState.fillNotifyTexts("桌宠在线", "", "后藤一里", TITLE_DEFAULT)
+        assertEquals("桌宠在线", r.title)
+        assertEquals("桌宠在线", r.body)
+    }
 }
