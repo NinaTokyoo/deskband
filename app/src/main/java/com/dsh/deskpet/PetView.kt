@@ -514,6 +514,17 @@ class PetView(context: Context) : View(context) {
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
 
     private var lastWinX = Int.MIN_VALUE
+
+    /**
+     * 窗口被"夹"回屏幕内造成的位移量（见 [placeWindow]）。
+     *
+     * 贴边/贴角时窗口会有一部分越出屏幕，而系统按 **窗口 frame ∩ 屏幕**
+     * 派发触摸，越出那一侧收不到事件 —— 表现就是"靠近屏幕边缘点在宠物上，
+     * 却同时操作到下面的桌面/App"。把窗口夹进屏幕，越界量记在这里，
+     * 由 [cellLocalX]/[cellLocalY] 反向补偿，宠物屏幕位置保持不变。
+     */
+    private var winShiftX = 0
+    private var winShiftY = 0
     private var lastWinY = Int.MIN_VALUE
     private var lastWinW = -1
     private var lastWinH = -1
