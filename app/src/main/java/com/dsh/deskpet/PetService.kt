@@ -139,7 +139,8 @@ class PetService : Service(), PetView.Host {
             if (v != null) {
                 if (v.isSliding()) {
                     v.reverseSlide()
-                } else {
+                } else if (!v.restoreRest()) {
+                    // 没记录过静止位置才退回"按当前位置重新吸附"
                     v.applySnap(v.state)
                     v.syncWindow()
                 }
@@ -532,6 +533,9 @@ class PetService : Service(), PetView.Host {
     }
 
     override fun onSettled(state: Int, left: Int, top: Int) {
+        // 动画期间视图报来的坐标不是静止位置（可能在屏幕外），直接忽略。
+        // 静止位置由 slideOutThenStop / savePosition 用 restFoot* 处理。
+        if (petView?.isSliding() == true) return
         prefs.snapState = state
         prefs.savePosition(left, top)
         scheduleSave()
@@ -550,10 +554,16 @@ class PetService : Service(), PetView.Host {
     private fun savePosition() {
         val v = petView ?: return
         prefs.snapState = v.state
-        // 用**锚点反算**的足迹位置，而不是 currentLeft/currentTop。
-        // 后者由当前窗口推出，动画中/后可能拿到屏幕外或中间态坐标，
-        // 存下去会让下次 restore() 落到错误位置（表现为位置漂移、首次不在右边框中点）。
-        prefs.savePosition(v.footLeft(), v.footTop())
+        // 用**静止**位置（动画中取记住的静止点），并**强制夹进屏幕**。
+        //
+        // 夹取是最后一道硬保证：上游已经堵了"起滑前先存"和"动画中忽略 onSettled"，
+        // 但只要还有任何路径把屏幕外坐标写进去，下次 restore() 就会让人物
+        // 落到屏幕外或贴到底部（用户反馈："连续快速点击几次之后就跳到右边框底部"）。
+        // 保证存进 prefs 的坐标永远在屏幕内，这类问题就不可能再出现。
+        val b = screenBounds()
+        val l = v.restFootLeft().coerceIn(0, b.width().coerceAtLeast(0))
+        val t = v.restFootTop().coerceIn(0, b.height().coerceAtLeast(0))
+        prefs.savePosition(l, t)
     }
 
     private fun savePositionNow() {

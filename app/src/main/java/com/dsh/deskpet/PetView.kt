@@ -679,6 +679,21 @@ class PetView(context: Context) : View(context) {
     fun footTop(): Int = (anchorY - centerFromTrackY()).roundToInt()
 
     /**
+     * **静止**位置的足迹左上角 —— 动画中返回记住的静止点，否则返回当前锚点。
+     *
+     * ⚠️ 保存位置一律走这个，不要用 [footLeft]/[footTop]：
+     * `onSettled` 会延迟 400ms 落盘，如果这 400ms 内用户点了收起，
+     * 延迟保存就在**滑动过程中**触发 —— 那时 anchorX 已在屏幕外，
+     * 存下去就是脏坐标，多次循环后位置越漂越远甚至跑出屏幕
+     * （实测 left: 1157 → 1212 → 1514）。
+     */
+    fun restFootLeft(): Int =
+        ((if (sliding) slideRestX else anchorX) - centerFromTrackX()).roundToInt()
+
+    fun restFootTop(): Int =
+        ((if (sliding) slideRestY else anchorY) - centerFromTrackY()).roundToInt()
+
+    /**
      * 看门狗：强制把宠物放回 (x, y)。
      *
      * 滑入动画依赖 Choreographer 帧回调；一旦帧回调因为任何原因没跑起来
@@ -706,6 +721,22 @@ class PetView(context: Context) : View(context) {
         anchorY = y
         syncWindow()
         invalidate()
+    }
+
+    /**
+     * 回到**记住的静止位置**（收起被打断、且动画已停时用）。
+     *
+     * ⚠️ 不能用 applySnap() 代替：那个是"按**当前位置**重新吸附最近的边角"。
+     * 快点点按时宠物正滑到一半（例如正往下滑、已经在屏幕底部附近），
+     * applySnap 就会把它吸到**底部**而不是原来的右边框中点
+     * （用户反馈："前几次确实在右边框中点，连续快速点击几次之后就跳到右边框底部"）。
+     *
+     * @return false 表示还没记录过静止位置，调用方应改用 applySnap 兜底
+     */
+    fun restoreRest(): Boolean {
+        if (slideRestX == 0f && slideRestY == 0f) return false
+        forceSettleAt(slideRestX, slideRestY)
+        return true
     }
 
     /** 动画期间不接受触摸，避免"正飞出去又被拖回来" */
