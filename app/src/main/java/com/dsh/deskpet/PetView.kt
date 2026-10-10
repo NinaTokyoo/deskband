@@ -652,6 +652,10 @@ class PetView(context: Context) : View(context) {
     /** 是否正处于"回弹收回"那一段（决定用哪条缓动曲线） */
     private var slidePhase2Running = false
 
+    /** 本次滑出开始时的静止位置（素材中心屏幕坐标），供反向滑回使用 */
+    private var slideRestX = 0f
+    private var slideRestY = 0f
+
     /** 当前锚点（素材中心屏幕坐标）—— 呼出动画要拿它当滑入目标 */
     fun anchorXNow(): Float = anchorX
     fun anchorYNow(): Float = anchorY
@@ -692,7 +696,24 @@ class PetView(context: Context) : View(context) {
         if (sliding) return
         val v = exitVector()
         val to = offScreenAnchor(v[0], v[1])
+        // 记住静止位置：连点时要把宠物原路滑回来
+        slideRestX = anchorX
+        slideRestY = anchorY
         startSlide(anchorX, anchorY, to[0], to[1], onDone)
+    }
+
+    /**
+     * 反向滑回静止位置（连点呼出时用）。
+     *
+     * **丢弃**待执行的 slideDone —— 否则那次收起的完成回调
+     * 仍会 removePet()+stopSelf()，把刚呼出的人物删掉。
+     */
+    fun reverseSlide() {
+        if (!sliding) return
+        slideDone = null
+        slideHasPhase2 = false
+        slidePhase2Running = false
+        startSlide(anchorX, anchorY, slideRestX, slideRestY, null)
     }
 
     /**

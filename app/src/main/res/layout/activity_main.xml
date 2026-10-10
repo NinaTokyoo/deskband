@@ -148,6 +148,16 @@
                     android:maxLines="1"
                     android:text="@string/btn_reset" />
             </LinearLayout>
+
+            <!-- 复位的选项：保留当前设置（只挪位置，不重置大小/回弹）。
+                 单独一行右对齐，避免把上面那排按钮挤窄。 -->
+            <Button
+                android:id="@+id/btnResetKeep"
+                style="@style/CardAction"
+                android:layout_gravity="end"
+                android:layout_marginTop="10dp"
+                android:layout_marginStart="0dp"
+                android:text="@string/reset_keep_off" />
         </LinearLayout>
 
         <!-- ② 形象：右下角实时显示当前角色的「右下角」素材。

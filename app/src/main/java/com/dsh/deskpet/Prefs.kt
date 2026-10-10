@@ -151,6 +151,16 @@ class Prefs(context: Context) {
         set(v) { sp.edit().putBoolean(KEY_BOUNCE_ON, v).apply() }
 
     /**
+     * 复位时是否**保留当前设置**。
+     *
+     * 开启：只把人物挪回右边框中点，大小/回弹等设置全不动。
+     * 关闭（默认）：一切恢复默认值。
+     */
+    var resetKeepSettings: Boolean
+        get() = sp.getBoolean(KEY_RESET_KEEP, false)
+        set(v) { sp.edit().putBoolean(KEY_RESET_KEEP, v).apply() }
+
+    /**
      * 明暗模式：[AccentTheme.MODE_SYSTEM] / [MODE_LIGHT][AccentTheme.MODE_LIGHT]
      * / [AccentTheme.MODE_DARK]。
      */
@@ -176,6 +186,7 @@ class Prefs(context: Context) {
         private const val KEY_ACCENT = "accent_color"
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_BOUNCE_ON = "bounce_on"
+        private const val KEY_RESET_KEEP = "reset_keep"
 
         /** 通知栏自定义内容的字符上限（用户指定 40） */
         const val NOTIFY_TEXT_MAX = 40

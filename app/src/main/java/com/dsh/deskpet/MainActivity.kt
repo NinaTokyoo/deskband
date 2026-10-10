@@ -44,6 +44,7 @@ class MainActivity : Activity() {
     private lateinit var btnResetSize: Button
     private lateinit var spinnerSkin: Spinner
     private lateinit var btnReset: Button
+    private lateinit var btnResetKeep: Button
 
     // 松手回弹调节
     private lateinit var seekBounceAmp: SeekBar
@@ -120,6 +121,7 @@ class MainActivity : Activity() {
         btnResetSize = findViewById(R.id.btnResetSize)
         spinnerSkin = findViewById(R.id.spinnerSkin)
         btnReset = findViewById(R.id.btnReset)
+        btnResetKeep = findViewById(R.id.btnResetKeep)
         seekBounceAmp = findViewById(R.id.seekBounceAmp)
         seekBounceMs = findViewById(R.id.seekBounceMs)
         txtBounceAmp = findViewById(R.id.txtBounceAmp)
@@ -148,6 +150,16 @@ class MainActivity : Activity() {
         rowNotify.setOnClickListener { openNotificationSettings() }
         btnToggle.setOnClickListener { togglePet() }
         btnReset.setOnClickListener { doReset() }
+        btnResetKeep.setOnClickListener {
+            prefs.resetKeepSettings = !prefs.resetKeepSettings
+            bindResetKeep()
+            Toast.makeText(
+                this,
+                if (prefs.resetKeepSettings) R.string.reset_keep_toast_on
+                else R.string.reset_keep_toast_off,
+                Toast.LENGTH_SHORT
+            ).show()
+        }
 
         seekSize.max = 1000
         seekSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -281,6 +293,7 @@ class MainActivity : Activity() {
         bindingSkin = false
 
         bindSizeControls()
+        bindResetKeep()
     }
 
     /** 小标记：已开启绿勾，未开启红叉 */
@@ -822,6 +835,13 @@ class MainActivity : Activity() {
      *
      * 不对素材做任何裁切 —— 只调整它在框内的缩放与位移。
      */
+    /** 复位选项按钮的文案：显示当前是"保留"还是"恢复默认" */
+    private fun bindResetKeep() {
+        btnResetKeep.text = getString(
+            if (prefs.resetKeepSettings) R.string.reset_keep_on else R.string.reset_keep_off
+        )
+    }
+
     private fun refreshCornerPreview() {
         val sa = assetsFor(prefs.skin)
         val bmp = sa.bmp

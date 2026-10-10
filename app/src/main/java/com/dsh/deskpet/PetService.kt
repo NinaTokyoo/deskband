@@ -40,6 +40,14 @@ class PetService : Service(), PetView.Host {
 
     private var sprite: PetSprite? = null
     private var petView: PetView? = null
+
+    /**
+     * 呼出/收起的世代号。
+     *
+     * 收起动画是异步的；动画期间用户又点呼出时，必须让那次收起的
+     * 完成回调作废，否则它会把刚呼出的人物删掉。
+     */
+    private var epoch = 0
     private var petParams: WindowManager.LayoutParams? = null
 
     private var screenOn = true
@@ -112,7 +120,16 @@ class PetService : Service(), PetView.Host {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (petView == null) showPet(animateIn = true)
+        if (petView == null) {
+            showPet(animateIn = true)
+        } else {
+            // 宠物已经在（可能正在播收起动画）。这是**一次新的呼出请求**：
+            //  1) 作废在途的收起回调 —— 否则它随后会 removePet()+stopSelf()，
+            //     把人物删掉（用户反馈"连续点击呼出收起人物会消失"）。
+            //  2) 如果它正滑出去，原路滑回来，否则会停在屏幕外看不见。
+            epoch++
+            petView?.let { v -> if (v.isSliding()) v.reverseSlide() }
+        }
         return START_STICKY
     }
 
@@ -233,6 +250,8 @@ class PetService : Service(), PetView.Host {
     // ---------------------------------------------------------------- 悬浮窗
 
     private fun showPet(animateIn: Boolean = false) {
+        // 作废所有在途的收起动画回调（见 slideOutThenStop 的说明）
+        epoch++
         val s = PetSprite.load(assets, prefs.skin)
             ?: PetSprite.load(assets, PetSprite.FALLBACK)
             ?: PetSprite.listSkins(assets).firstOrNull()?.let { PetSprite.load(assets, it) }
@@ -316,7 +335,13 @@ class PetService : Service(), PetView.Host {
             stopSelf()
             return
         }
+        // 世代号：收起动画是异步的（420ms）。如果动画期间用户又点了呼出，
+        // 新宠物已经建好，而**这个过期的回调**随后仍会 removePet()+stopSelf()，
+        // 把刚呼出的人物删掉 —— 用户反馈的"连续点击呼出收起人物会消失"。
+        // 用世代号让过期回调直接作废。
+        val my = ++epoch
         v.slideOut {
+            if (my != epoch) return@slideOut
             removePet()
             stopSelf()
         }
@@ -368,13 +393,17 @@ class PetService : Service(), PetView.Host {
      * 所以这里同时把尺寸和回弹参数也归位，而不只是挪位置。
      */
     private fun resetPet() {
-        prefs.sizeScale = 1f
-        prefs.bounceAmpScale = 1f
-        prefs.bounceTimeScale = 1f
+        // 「保留当前设置」开启时只把人物挪回右边框中点，大小与回弹都不动；
+        // 关闭时是原来的语义：一切恢复默认。
+        if (!prefs.resetKeepSettings) {
+            prefs.sizeScale = 1f
+            prefs.bounceAmpScale = 1f
+            prefs.bounceTimeScale = 1f
+        }
         prefs.forgetPosition()
 
         if (petView == null) {
-            showPet()
+            showPet(animateIn = true)
             return
         }
         val v = petView ?: return
@@ -385,7 +414,8 @@ class PetService : Service(), PetView.Host {
             return
         }
         v.sprite = sprite
-        v.setSizeFraction(prefs.sizeFraction)
+        // 保留设置时不要重设尺寸 —— 那会把用户调好的大小冲掉
+        if (!prefs.resetKeepSettings) v.setSizeFraction(prefs.sizeFraction)
         v.resetToRightMid()
     }
 
