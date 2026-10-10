@@ -14,14 +14,18 @@ android {
         applicationId = "com.dsh.deskpet"
         minSdk = 26
         targetSdk = 36
-        // 版本号：只改这一�?vName，versionCode 自动派生，永远不会不同步�?        //   1.1.03 -> 10103
+        // 版本号：只改这一行 vName，versionCode 自动派生，永远不会不同步。
+        //   1.1.05 -> 10105
         //   1.2.00 -> 10200
-        // 规律：去掉小数点当整数（单调递增）。发版时把这行末�?+1 即可�?        // ⚠️ 本机执行策略禁止运行 .ps1，所以不要用脚本自动改，手改这一行最稳�?        val vName = "1.1.05"
+        // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
+        // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏。
+        val vName = "1.1.05"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()
         }
-        // 纯平台实现，不依�?AndroidX / Material，包体小、构建面�?    }
+        // 纯平台实现，不依赖 AndroidX / Material，包体小、构建面窄
+    }
 
     signingConfigs {
         create("petkey") {
@@ -64,5 +68,6 @@ kotlin {
 }
 
 dependencies {
-    // 只有单元测试�?JUnit；App 本体仍是纯平台实现，不带任何运行时依�?    testImplementation("junit:junit:4.13.2")
+    // 只有单元测试用 JUnit；App 本体仍是纯平台实现，不带任何运行时依赖
+    testImplementation("junit:junit:4.13.2")
 }

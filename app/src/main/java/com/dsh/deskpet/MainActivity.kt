@@ -430,7 +430,7 @@ class MainActivity : Activity() {
         seekBounceMs.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
-                prefs.bounceTimeScale = scaleOf(progress, Prefs.TIME_SCALE_MIN, Prefs.TIME_SCALE_MAX)
+                prefs.bounceTimeScale = scaleOfLinear(progress, Prefs.TIME_SCALE_MIN, Prefs.TIME_SCALE_MAX)
                 bindBounceControls()
             }
             override fun onStartTrackingTouch(sb: SeekBar?) = Unit
@@ -535,6 +535,22 @@ class MainActivity : Activity() {
         val hi = log10(max.toDouble())
         val x = log10(v.coerceIn(min, max).toDouble())
         return (((x - lo) / (hi - lo)) * 1000.0).roundToInt().coerceIn(0, 1000)
+    }
+
+    /**
+     * **线性**映射版（时长滑块用）。
+     *
+     * 时长区间是 0.1 ~ 10，对数下 1.0 正好落在行程**正中间**，
+     * 但用户要求 1.0 应该在**靠左**的位置（和幅度滑块的手感一致）。
+     * 线性下 1.0 的进度 = (1-0.1)/(10-0.1) ≈ 9%，就在最左边附近 ✓
+     */
+    private fun scaleOfLinear(progress: Int, min: Float, max: Float): Float =
+        min + (max - min) * (progress.coerceIn(0, 1000) / 1000f)
+
+    private fun progressOfScaleLinear(v: Float, min: Float, max: Float): Int {
+        if (max <= min) return 0
+        return (((v.coerceIn(min, max) - min) / (max - min)) * 1000f)
+            .roundToInt().coerceIn(0, 1000)
     }
 
     private fun scaleOf(progress: Int): Float =
@@ -916,7 +932,7 @@ class MainActivity : Activity() {
         val amp = prefs.bounceAmpScale
         val tms = prefs.bounceTimeScale
         seekBounceAmp.progress = progressOfScale(amp, Prefs.AMP_SCALE_MIN, Prefs.AMP_SCALE_MAX)
-        seekBounceMs.progress = progressOfScale(tms, Prefs.TIME_SCALE_MIN, Prefs.TIME_SCALE_MAX)
+        seekBounceMs.progress = progressOfScaleLinear(tms, Prefs.TIME_SCALE_MIN, Prefs.TIME_SCALE_MAX)
         editBounceAmp.setText(fmtScale(amp))
         editBounceMs.setText(fmtScale(tms))
         txtBounceAmp.text = getString(
