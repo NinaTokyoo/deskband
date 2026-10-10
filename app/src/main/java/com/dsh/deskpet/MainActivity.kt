@@ -523,33 +523,168 @@ class MainActivity : Activity() {
         )
     }
 
-    /** 点整框：展开 / 收起二级菜单，三角同步翻转 */
+    /** 菜单展开/收起的时长与动画器（切换时先取消，避免连点互相打架） */
+    private val menuAnim = android.animation.ValueAnimator()
+    private var menuAnimating = false
+
+    /**
+     * 点整框：展开 / 收起二级菜单，三角同步翻转。
+     *
+     * 动画：高度从 0 长到内容高度（减速曲线）**并且**每一行依次淡入 ——
+     * 直接切 GONE/VISIBLE 太生硬（用户反馈）。收起走反向、时长短一些。
+     */
     private fun toggleSkinMenu() {
+        if (menuAnimating) return          // 动画途中忽略连点，免得状态错乱
         val open = skinMenuWrap.visibility != View.VISIBLE
-        if (open) buildSkinMenu()
-        skinMenuWrap.visibility = if (open) View.VISIBLE else View.GONE
-        // 人物**始终显示**在卡片右下角（用户要求）：菜单只占卡片左侧 2/3，
-        // 与右下角的素材不重叠，所以不需要在展开时把它收起来。
-        // 展开 -> 三角正立（旋转 180°）；收起 -> 恢复倒立
-        icoSkinArrow.animate().rotation(if (open) 180f else 0f).setDuration(140).start()
-        // ⚠️ 必须重刷一次主题，而且要在 visibility 改完之后：
-        //   · 菜单项是**刚新造**的视图，不在上一次 AccentTheme.apply 的遍历里，
-        //     不补这次的话分隔线是透明的（表现："线看不见"）；
-        //   · 名称框的圆角要跟着开合变（展开 -> 下方两角直角，与菜单连成一整块）。
+        if (open) expandSkinMenu() else collapseSkinMenu()
+    }
+
+    /** 展开：先量高度，再从 0 长开；每行错开淡入 */
+    private fun expandSkinMenu() {
+        skinMenuWrap.visibility = View.VISIBLE
+        // ⚠️ 顺序很重要：必须先让它 VISIBLE、再 applyTheme（applyTheme 会重建菜单，
+        //    重建出来的行才是"新的"，随后才能给它们初始 alpha 做淡入），
+        //    最后量高度。
+        applyTheme()
+        skinMenuWrap.post {
+            val target = skinMenu.contentHeight(skinMenuWrap)
+            if (target <= 0) {                 // 没量到就不动画，别让菜单卡在 0 高
+                skinMenuWrap.layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                return@post
+            }
+            val rows = skinMenuRows()
+            // 初始态：整块高度 0 + 每行透明、略微下移
+            skinMenuWrap.layoutParams.height = 0
+            skinMenuWrap.requestLayout()
+            rows.forEach { r ->
+                r.alpha = 0f
+                r.translationY = -dpf(6f)
+            }
+            menuAnimating = true
+            menuAnim.removeAllUpdateListeners()
+            menuAnim.removeAllListeners()
+            menuAnim.cancel()
+            menuAnim.setFloatValues(0f, 1f)
+            menuAnim.duration = MENU_OPEN_MS.toLong()
+            menuAnim.interpolator = android.view.animation.DecelerateInterpolator()
+            menuAnim.addUpdateListener { a ->
+                val f = a.animatedFraction
+                skinMenuWrap.layoutParams.height = (target * f).toInt()
+                skinMenuWrap.requestLayout()
+            }
+            menuAnim.addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: android.animation.Animator) {
+                    // 收尾：高度交回 WRAP_CONTENT，免得以后内容变化时被写死的高度卡住
+                    skinMenuWrap.layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                    skinMenuWrap.requestLayout()
+                    menuAnimating = false
+                }
+            })
+            menuAnim.start()
+            // 逐行淡入：错开一点点，像"依次冒出来"
+            val step = (MENU_OPEN_MS * 0.35f / rows.size.coerceAtLeast(1)).toLong()
+            rows.forEachIndexed { i, r ->
+                r.animate().alpha(1f).translationY(0f)
+                    .setStartDelay(i * step)
+                    .setDuration(MENU_OPEN_MS - i * step)
+                    .setInterpolator(android.view.animation.DecelerateInterpolator())
+                    .start()
+            }
+        }
+        icoSkinArrow.animate().rotation(180f).setDuration(MENU_OPEN_MS.toLong())
+            .setInterpolator(android.view.animation.DecelerateInterpolator()).start()
+    }
+
+    /** 收起：高度缩回 0，行同步淡出；结束再真正隐藏并复位 */
+    private fun collapseSkinMenu() {
+        val from = skinMenu.height
+        menuAnimating = true
+        menuAnim.removeAllUpdateListeners()
+        menuAnim.removeAllListeners()
+        menuAnim.cancel()
+        menuAnim.setFloatValues(1f, 0f)
+        menuAnim.duration = MENU_CLOSE_MS.toLong()
+        menuAnim.interpolator = android.view.animation.AccelerateInterpolator()
+        menuAnim.addUpdateListener { a ->
+            skinMenuWrap.layoutParams.height = (from * a.animatedFraction).toInt()
+            skinMenuWrap.requestLayout()
+        }
+        menuAnim.addListener(object : android.animation.AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: android.animation.Animator) {
+                finishCollapse()
+            }
+        })
+        menuAnim.start()
+        // 行同步淡出（不按顺序，一起走，收起要干脆）
+        skinMenuRows().forEach { r ->
+            r.animate().alpha(0f).setDuration(MENU_CLOSE_MS.toLong()).start()
+        }
+        icoSkinArrow.animate().rotation(0f).setDuration(MENU_CLOSE_MS.toLong())
+            .setInterpolator(android.view.animation.AccelerateInterpolator()).start()
+    }
+
+    /**
+     * 收起动画结束 / 需要立刻关闭时调用：隐藏、复位高度与每行状态、刷新主题。
+     *
+     * ⚠️ 每行的 alpha/translationY 一定要复位：它们是普通 View 属性，会留到下一次
+     *    展开；不复位的话下次展开时那些行会带着旧值（闪一下或不显示）。
+     */
+    private fun finishCollapse() {
+        skinMenuWrap.visibility = View.GONE
+        skinMenuWrap.layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+        skinMenuRows().forEach { r ->
+            r.animate().cancel()
+            r.alpha = 1f
+            r.translationY = 0f
+        }
+        skinMenuWrap.requestLayout()
+        menuAnimating = false
+        // 名称框的下方两角要恢复圆角（菜单收起了，不再与它相连）
         applyTheme()
     }
 
+    /** 菜单里那些"内容行"（跳过 1.5dp 的分隔线），淡入淡出只作用在它们身上 */
+    private fun skinMenuRows(): List<View> =
+        (0 until skinMenu.childCount).map { skinMenu.getChildAt(it) }
+            .filter { it is TextView }
+
+    /** 没有可动画的子 View 时，量它自己的内容高度（wrap_content 下的测量高度） */
+    private fun View.contentHeight(parent: View): Int {
+        val w = parent.width
+        if (w <= 0) return height
+        measure(
+            View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        )
+        return measuredHeight
+    }
+
+    /** dp -> px（Float 版，动画里用） */
+    private fun dpf(v: Float): Float =
+        android.util.TypedValue.applyDimension(
+            android.util.TypedValue.COMPLEX_UNIT_DIP, v, resources.displayMetrics
+        )
+
     /** 选中某个角色：换肤 + 收起菜单 + 三角复位 */
     private fun selectSkin(dir: String) {
-        skinMenuWrap.visibility = View.GONE
-        icoSkinArrow.animate().rotation(0f).setDuration(140).start()
-        if (dir == prefs.skin) return
+        // 立刻收起（不等动画）：用户已经点完选项了，这里要的是"马上给反馈"
+        skinMenuWrap.animate().cancel()
+        skinMenuRows().forEach { it.animate().cancel() }
+        menuAnim.cancel()
+        menuAnimating = false
+        icoSkinArrow.animate().rotation(0f).setDuration(MENU_CLOSE_MS.toLong())
+            .setInterpolator(android.view.animation.AccelerateInterpolator()).start()
+        if (dir == prefs.skin) {
+            finishCollapse()
+            return
+        }
         prefs.skin = dir
         // 换角色 -> 重新提取发色、立刻换肤；按钮名字与右下角预览同步更新
         refreshSkinBox()
         applyTheme()
         refreshCornerPreview()
         PetService.notifyChanged(this)
+        finishCollapse()
     }
 
     // ---------------------------------------------------------------- 回弹调节
@@ -967,6 +1102,12 @@ class MainActivity : Activity() {
     }
 
     private companion object {
+        /** 形象二级菜单展开时长：与三角旋转同长，两个动作才像一个整体 */
+        const val MENU_OPEN_MS = 220
+
+        /** 收起要干脆一些 */
+        const val MENU_CLOSE_MS = 160
+
         /** 量文字宽度用的基准字号（px）：取得够大，量完再按比例缩 */
         const val PROBE_TEXT_PX = 400f
 
