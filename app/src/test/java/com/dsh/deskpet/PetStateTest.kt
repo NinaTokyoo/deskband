@@ -368,6 +368,85 @@ class PetStateTest {
         }
     }
 
+    /**
+     * 呼出回弹要"弹一下"：中途必须荡到落点**另一侧**，最后精确落在落点上。
+     *
+     * 用户反馈："呼出的回弹动画是线性的吗？感觉很生硬。能不能做出弹了一下的感觉？"
+     */
+    @Test
+    fun the_summon_bounce_actually_swings_past_the_target() {
+        // 起点 = 过冲量（正好在过冲点上），终点 = 0（精确落位，不留缝）
+        assertEquals(1f, PetState.springBack(0f), 0.0001f)
+        assertEquals(0f, PetState.springBack(1f), 0.0001f)
+        // 超出范围也要夹住（t 可能因掉帧略大于 1）
+        assertEquals(1f, PetState.springBack(-0.5f), 0.0001f)
+        assertEquals(0f, PetState.springBack(1.5f), 0.0001f)
+
+        var deepest = 0f
+        var crossings = 0
+        var prev = PetState.springBack(0f)
+        // 只扫到 u<1：u=1 按定义就是 0（落点），不该算成"穿过"
+        for (i in 1..400) {
+            val u = i / 401f
+            val v = PetState.springBack(u)
+            // 摆动幅度绝不允许超过过冲量本身（否则会甩出去）
+            assertTrue("u=$u 时 |springBack|=$v 超过 1", abs(v) <= 1.0001f)
+            if (v < deepest) deepest = v
+            if (prev > 0f && v <= 0f) crossings++
+            prev = v
+        }
+        // 只穿一次零：一次干脆的"弹"，不是抖
+        assertEquals("应该只穿过落点一次", 1, crossings)
+        // 荡到另一侧要有可见幅度（约 -0.39），太小就看不出弹
+        assertTrue("另一侧幅度太小：$deepest", deepest < -0.3f)
+        assertTrue("另一侧幅度过大：$deepest", deepest > -0.55f)
+        // 摆回来那一段必须一路贴着 0 收（不能再翻正，否则尾巴会抖）
+        for (i in 330..399) {
+            assertTrue(
+                "尾巴上又摆回正侧了：u=${i / 400f}",
+                PetState.springBack(i / 400f) <= 0.0001f
+            )
+        }
+
+        // 曲线要连续：相邻采样不允许跳变（跳变会表现为画面一顿）
+        var last = PetState.springBack(0f)
+        for (i in 1..400) {
+            val v = PetState.springBack(i / 400f)
+            assertTrue("曲线跳变", abs(v - last) < 0.02f)
+            last = v
+        }
+    }
+
+    /**
+     * 进场缓动：起步最快、之后一路减速（"冲进来然后刹住"），
+     * 且两端精确（0 -> 1），否则要么飞进来时有偏差、要么最后落不到位。
+     */
+    @Test
+    fun the_arrival_easing_starts_fast_and_lands_exactly() {
+        assertEquals(0f, PetState.easeInArrive(0f), 0.0001f)
+        assertEquals(1f, PetState.easeInArrive(1f), 0.0001f)
+        // 单调不减
+        var last = -1f
+        for (i in 0..200) {
+            val v = PetState.easeInArrive(i / 200f)
+            assertTrue("进场缓动不单调", v >= last - 0.0001f)
+            last = v
+        }
+        // 前 10% 就该走掉近三成行程（smoothstep 只有 2.8%），这才叫"冲进来"
+        assertTrue(
+            "起步太慢：${PetState.easeInArrive(0.1f)}",
+            PetState.easeInArrive(0.1f) > 0.25f
+        )
+        // 中段速度必须明显低于 smoothstep（否则又是匀速平移的观感）
+        val midArrive = PetState.easeInArrive(0.7f) - PetState.easeInArrive(0.3f)
+        val midSmooth = PetState.smoothstep(0.7f) - PetState.smoothstep(0.3f)
+        assertTrue("进场中段仍然接近匀速：$midArrive vs $midSmooth", midArrive < midSmooth * 0.7f)
+        // 收起那条保持原样（慢慢平移）
+        assertEquals(0f, PetState.smoothstep(0f), 0.0001f)
+        assertEquals(1f, PetState.smoothstep(1f), 0.0001f)
+        assertEquals(0.5f, PetState.smoothstep(0.5f), 0.0001f)
+    }
+
     @Test
     fun attached_states_are_recognised_for_drag_damping() {
         // 吸附状态起步才加阻尼

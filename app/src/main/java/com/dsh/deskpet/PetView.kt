@@ -676,14 +676,31 @@ class PetView(context: Context) : View(context) {
                 }
                 need = true
             }
-            // 呼出/收起滑动：smoothstep，两头慢，观感是"慢慢平移"
+            // 呼出/收起滑动：两段式 —— 进场段 + 回弹段
             if (sliding) {
                 val t = ((now - slideStart).toFloat() / slideMs).coerceIn(0f, 1f)
-                // 第一段（进出屏幕）用 smoothstep，两头慢 —— "慢慢平移"；
-                // 第二段（回弹收回）用 easeOutCubic，起步快、末段缓 —— "啪"一下。
-                val e = if (slidePhase2Running) easeOutCubic(t) else t * t * (3f - 2f * t)
-                anchorX = slideFromX + (slideToX - slideFromX) * e
-                anchorY = slideFromY + (slideToY - slideFromY) * e
+                if (slidePhase2Running) {
+                    // 回弹段：从过冲点"弹"回落点。
+                    //
+                    // 用 PetState.springBack：中途会荡到**落点另一侧**一点点
+                    // （最深约 41% 过冲量），最后精确停在落点上
+                    // （springBack(1) == 0，所以不会留缝）。
+                    //
+                    // ⚠️ 原来这里是 over→落点的 easeOutCubic，只是"减速停住"、
+                    // 中途不越过落点 —— 观感很生硬。用户反馈：
+                    // "呼出的回弹动画是线性的吗？感觉很生硬，能不能做出弹了一下的感觉？"
+                    val k = PetState.springBack(t)
+                    anchorX = slideToX + (slideFromX - slideToX) * k
+                    anchorY = slideToY + (slideFromY - slideToY) * k
+                } else {
+                    // 第一段（进出屏幕）：
+                    //   呼入 -> easeInArrive（起步最快、一路减速，"啪一下到位"）
+                    //   收起 -> smoothstep（两头慢、中段快，"慢慢平移出去"）
+                    // 都满足 e(0)=0、e(1)=1，所以两端位置都是精确的。
+                    val e = if (slideEntry) PetState.easeInArrive(t) else PetState.smoothstep(t)
+                    anchorX = slideFromX + (slideToX - slideFromX) * e
+                    anchorY = slideFromY + (slideToY - slideFromY) * e
+                }
                 if (t >= 1f) {
                     if (slideHasPhase2) {
                         // 第一段（冲到过冲点）结束 -> 收回最终落点。
@@ -691,7 +708,7 @@ class PetView(context: Context) : View(context) {
                         // 第二段用**专用的短时长**，不复用 bounceBackMs：
                         // 那是边框回弹的"慢慢缩回"用时（默认 360ms），
                         // 拿来收呼出回弹会变成慢吞吞地挪回去，观感不自然。
-                        // 回弹要"啪"一下，所以短 + easeOutCubic（起步快、末段缓）。
+                        // 回弹要"啪"一下，所以短 + 阻尼摆动（见上面的 springBack）。
                         slideHasPhase2 = false
                         slidePhase2Running = true
                         slideFromX = slideToX
@@ -749,6 +766,14 @@ class PetView(context: Context) : View(context) {
 
     /** 是否正处于"回弹收回"那一段（决定用哪条缓动曲线） */
     private var slidePhase2Running = false
+
+    /**
+     * 这次滑动是**进场**（呼出/滑回屏幕内）还是出场（收起）。
+     *
+     * 两者手感要求相反：进场要"冲进来然后刹住"（[PetState.easeInArrive]），
+     * 出场要"慢慢平移出去"（[PetState.smoothstep]）。
+     */
+    private var slideEntry = false
 
     /**
      * **真实静止位置**（素材中心屏幕坐标）—— 最近一次"停稳"的地方。
@@ -984,7 +1009,7 @@ class PetView(context: Context) : View(context) {
             overX = targetX
             overY = targetY
         }
-        startSlide(fromX, fromY, overX, overY, null, targetX, targetY)
+        startSlide(fromX, fromY, overX, overY, null, targetX, targetY, entry = true)
     }
 
     /**
@@ -1025,13 +1050,15 @@ class PetView(context: Context) : View(context) {
         dragOffsetY = 0f
         syncWindow()
 
-        // 复用统一实现：从屏幕外滑回落点，并带上呼出回弹（过冲 + 收回）。
+        // 复用统一实现：从屏幕外滑回落点，并带上呼出回弹（过冲 + 弹回）。
+        // entry=true：进场段用"冲进来然后刹住"的曲线（不是收起那种慢慢平移）
         startSlidingTo(targetX, targetY)
     }
 
     private fun startSlide(
         fromX: Float, fromY: Float, toX: Float, toY: Float, onDone: (() -> Unit)?,
-        endX: Float = toX, endY: Float = toY
+        endX: Float = toX, endY: Float = toY,
+        entry: Boolean = false
     ) {
         slideFromX = fromX
         slideFromY = fromY
@@ -1040,6 +1067,7 @@ class PetView(context: Context) : View(context) {
         slideEndX = endX
         slideEndY = endY
         slideHasPhase2 = (endX != toX || endY != toY)
+        slideEntry = entry
         slidePhase2Running = false
         slideStart = SystemClock.uptimeMillis()
         slideMs = SLIDE_MS
@@ -2126,7 +2154,8 @@ class PetView(context: Context) : View(context) {
         private const val SLIDE_MS = 420f
 
         /** 呼出回弹第二段（收回落点）的时长：要"啪"一下，不能慢 */
-        private const val SLIDE_SETTLE_MS = 150f
+        /** 呼出回弹第二段（过冲点 -> 落点）的时长：够看清"弹一下"，又不拖沓 */
+    private const val SLIDE_SETTLE_MS = 210f
         private const val FLIP_MS = 260f
         private const val ROT_MS = 180f
 
