@@ -9,4 +9,15 @@
     <color name="accent_pressed">#8AE2FA</color>
     <color name="btn_disabled">#263039</color>
     <color name="on_accent">#0E1116</color>
+
+    <!--
+      开屏底色。用户明确要求：**浅色模式白、深色模式黑**。
+      深色那份放在 values-night/colors.xml 里（同名覆盖），系统切换主题时
+      由资源系统自动选，不需要代码判断。
+
+      ⚠️ 跟随的是**系统**深浅色，不是 App 内的"外观模式"设置 ——
+         windowBackground 在 Activity 创建之前就要用，那时还读不到
+         SharedPreferences，只能交给资源限定符。
+    -->
+    <color name="splash_bg">#FFFFFF</color>
 </resources>

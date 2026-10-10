@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  一个完全透明的 1x1 图，专门用来"占位"。
+
+  用途：Android 12+ 的系统开屏（SplashScreen API）默认会拿**应用图标**在屏幕
+  正中画一个圆，再叠在我们自己的 windowBackground 之上 —— 结果就是
+  "系统画一个圆、我们画的图被盖住"。
+
+  把 windowSplashScreenAnimatedIcon 指到这个透明图，系统那层就等于什么都不画，
+  我们自己的 @drawable/splash_bg（windowBackground）才能完整显示出来。
+
+  ⚠️ 不要试图用 android:windowSplashScreenBehavior 关掉图标：那个属性的取值是
+     枚举（default / no_background / ...），填数字会编译报
+     "expected enum but got (raw string)"（踩过）。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="1dp"
+    android:height="1dp"
+    android:viewportWidth="1"
+    android:viewportHeight="1">
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M0,0h1v1h-1z" />
+</vector>

@@ -1,6 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  应用图标（Android 8.0+ 的自适应图标）。
+
+  画来自 res/drawable-nodpi/ic_launcher_art.png（1254x1254 满幅方图）。
+  深色版本放在 res/drawable-night-nodpi/ 同名文件里，系统切到深色模式时
+  自动启用 —— 用的是 Android 官方的 night 资源限定符。
+
+  ⚠️ 这不是"App 内选深色就换图标"：启动器画图标时不会去读我们 App 的
+     SharedPreferences，系统级切换图标只有 night 限定符这一条官方途径。
+     所以这里跟随的是**系统**深浅色，与 App 内的"外观模式"设置无关。
+
+  ⚠️ 原来的前景/背景是两份矢量（ic_launcher_foreground / _background.xml），
+     现在改用用户提供的位图，那两份已删除。因此这里也不再声明 <monochrome>
+     —— 主题化图标需要一个单色矢量，拿彩色位图当单色没有意义。
+-->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@drawable/ic_launcher_background" />
-    <foreground android:drawable="@drawable/ic_launcher_foreground" />
-    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+    <background android:drawable="@drawable/ic_launcher_art" />
 </adaptive-icon>

@@ -127,9 +127,40 @@ class MainActivity : Activity() {
     /** 当前强调色（由角色发色推出） */
     private var accent = AccentTheme.FALLBACK
 
+    /**
+     * 开屏退场：立刻把窗口背景交给主界面，并在 [SPLASH_MS] 后把主题换回 AppTheme。
+     *
+     * 开屏画面**不是**一层视图，而是主题的 windowBackground（见 SplashTheme）：
+     *   ① 冷启动第一帧就有画面，不会先闪一下主界面底色；
+     *   ② Android 12+ 的系统开屏会据此接管，两段画面天然一致，不会出现
+     *      "系统画一个圆形图标、我们再画一张"的叠影。
+     *   （曾经试过"再叠一层 FrameLayout 遮罩"：系统开屏盖在它上面，遮罩根本
+     *     看不见 —— 白折腾一轮。已改成只用 windowBackground。）
+     *
+     * ⚠️ 主题切回放在延后执行而不是一开始就设：windowBackground 在 Activity
+     *    创建之前就要用，那时读不到 SharedPreferences，所以开屏只能跟随
+     *    **系统**深浅色（night 资源限定符）。切回 AppTheme 之后，界面内的
+     *    明暗由 applyTheme() 按 App 自己的"外观模式"设置走。
+     */
+    private fun dismissSplash() {
+        // 立刻卸掉窗口背景上的开屏图：它此刻已被主界面内容整个盖住，看不出变化。
+        // 不卸的话，主界面滚到边界时底下会露出开屏图。
+        window.setBackgroundDrawable(null)
+        window.decorView.postDelayed({
+            if (isFinishing || isDestroyed) return@postDelayed
+            setTheme(R.style.AppTheme)
+        }, SPLASH_MS)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        // ⚠️ setTheme 必须在 super.onCreate **之前**：窗口是按主题建的，
+        //    晚一步设置就来不及影响 windowBackground。
+        //    SplashTheme 的 windowBackground 直接就是开屏图，所以冷启动**第一帧**
+        //    就画出开屏画面，不会先闪一下主界面的底色。
+        setTheme(R.style.SplashTheme)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        dismissSplash()
         prefs = Prefs(this)
         // 冷启动纠正一次残留标志：进程被从最近任务划掉时服务已死，
         // 但持久化的 running 还是 true，会让按钮显示"收起"却没有桌宠。
@@ -1009,6 +1040,9 @@ class MainActivity : Activity() {
     }
 
     private companion object {
+        /** 开屏停留时长（用户要求：1.2 秒左右自动进主页） */
+        const val SPLASH_MS = 1200L
+
         /** 量文字宽度用的基准字号（px）：取得够大，量完再按比例缩 */
         const val PROBE_TEXT_PX = 400f
 

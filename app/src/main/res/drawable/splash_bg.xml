@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  开屏画面：纯色底 + 居中的开屏图。
+
+  图来自 res/drawable-*{,-night}/splash_logo.png —— 浅色用浅色那张、
+  深色用深色那张，由 night 资源限定符自动选。
+  底色来自 @color/splash_bg（浅色白、深色黑，同样是 night 限定符）。
+
+  这个 drawable 既当 windowBackground（冷启动时先显示，避免白屏/黑屏一闪），
+  也当 Activity 里那层开屏遮罩的背景，两处保持一致就不会有跳变。
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/splash_bg" />
+    <item>
+        <bitmap
+            android:src="@drawable/splash_logo"
+            android:gravity="center"
+            android:filter="true" />
+    </item>
+</layer-list>
