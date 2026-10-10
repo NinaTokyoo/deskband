@@ -279,8 +279,8 @@ class PetView(context: Context) : View(context) {
     /** 素材格子在窗口内的左上角（含轻跳余量） */
     // 减去 winShift*：窗口被夹进屏幕挪了多少，格子在窗口内就反着挪多少，
     // 于是宠物在屏幕上的位置恒定不变（见 placeWindow 的说明）。
-    private fun cellLocalX(): Float = (boxOffX + cellOffX - winShiftX).toFloat()
-    private fun cellLocalY(): Float = (boxOffY + cellOffY - winShiftY).toFloat()
+    private fun cellLocalX(): Float = (boxOffX + cellOffX).toFloat()
+    private fun cellLocalY(): Float = (boxOffY + cellOffY).toFloat()
 
     /** 素材中心点在窗口内的偏移（相对窗口左上角） */
     private fun centerInWindowX(): Float = cellLocalX() + artU * cellW
@@ -1084,7 +1084,7 @@ class PetView(context: Context) : View(context) {
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                if (!hitsPet(event.x, event.y)) return false
+                if (!hitsPet(event.x + winShiftX, event.y + winShiftY)) return false
                 downRawX = event.rawX
                 downRawY = event.rawY
                 dragOffsetX = 0f
@@ -1373,6 +1373,15 @@ class PetView(context: Context) : View(context) {
         val cy = pivotY()
 
         val save = canvas.save()
+        // 窗口被夹进屏幕造成的位移，在这里用**画布平移**补偿。
+        //
+        // 只影响绘制，**不污染** cellLocalX / centerInWindowX / centerFromTrackX
+        // 等坐标换算。（曾经把补偿放进 cellLocalX：centerFromTrackX 跟着变，
+        // 收起时保存的足迹位置与呼出时反算的 anchor 用了不同的 winShift，
+        // 于是每次收起再呼出就漂一个 winShift —— 位置不断往角落跑。）
+        if (winShiftX != 0 || winShiftY != 0) {
+            canvas.translate(-winShiftX.toFloat(), -winShiftY.toFloat())
+        }
         // 旋转绕格子中心；只改变换、不动格子尺寸 -> 比例不变
         if (abs(rot) > 0.01f) canvas.rotate(rot, cx, cy)
 
