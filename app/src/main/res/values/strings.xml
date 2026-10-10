@@ -21,9 +21,10 @@
     <!-- ② 形象与复位 -->
     <string name="section_skin">当前形象</string>
     <string name="btn_reset">复位</string>
-    <!-- 复位选项（按钮文案按用户要求） -->
-    <string name="reset_keep_off">复位保留设置：关</string>
-    <string name="reset_keep_on">复位保留设置：开</string>
+    <!-- 复位选项。文案必须短到能在按钮里完整显示（曾用"复位保留设置：开"
+         会被 ellipsize 截成"复位保留…"），字号与「复位」一致（都用 BigButton 样式）。 -->
+    <string name="reset_keep_off">复位保留：关</string>
+    <string name="reset_keep_on">复位保留：开</string>
     <string name="reset_keep_toast_on">复位将保留当前设置，只把人物移回右边框中点</string>
     <string name="reset_keep_toast_off">复位将恢复默认设置</string>
     <string name="reset_done">已复位</string>
