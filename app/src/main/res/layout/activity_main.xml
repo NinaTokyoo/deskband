@@ -126,38 +126,47 @@
                 android:orientation="horizontal"
                 android:baselineAligned="false">
 
-                <Button
-                    android:id="@+id/btnToggle"
-                    style="@style/BigButton"
+                <LinearLayout
                     android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="2"
-                    android:layout_marginTop="0dp"
-                    android:maxLines="1"
-                    android:ellipsize="end"
-                    android:text="@string/btn_summon" />
-
-                <Button
-                    android:id="@+id/btnReset"
-                    style="@style/BigButton"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
+                    android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:layout_marginTop="0dp"
-                    android:layout_marginStart="12dp"
-                    android:maxLines="1"
-                    android:text="@string/btn_reset" />
-            </LinearLayout>
+                    android:orientation="vertical">
 
-            <!-- 复位的选项：保留当前设置（只挪位置，不重置大小/回弹）。
-                 单独一行右对齐，避免把上面那排按钮挤窄。 -->
-            <Button
-                android:id="@+id/btnResetKeep"
-                style="@style/CardAction"
-                android:layout_gravity="end"
-                android:layout_marginTop="10dp"
-                android:layout_marginStart="0dp"
-                android:text="@string/reset_keep_off" />
+                    <Button
+                        android:id="@+id/btnToggle"
+                        style="@style/BigButton"
+                        android:layout_marginTop="0dp"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        android:text="@string/btn_summon" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="12dp"
+                    android:orientation="vertical">
+
+                    <Button
+                        android:id="@+id/btnReset"
+                        style="@style/BigButton"
+                        android:layout_marginTop="0dp"
+                        android:maxLines="1"
+                        android:text="@string/btn_reset" />
+
+                    <Button
+                        android:id="@+id/btnResetKeep"
+                        style="@style/CardAction"
+                        android:layout_width="match_parent"
+                        android:layout_marginStart="0dp"
+                        android:layout_marginTop="8dp"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        android:gravity="center"
+                        android:text="@string/reset_keep_off" />
+                </LinearLayout>
+            </LinearLayout>
         </LinearLayout>
 
         <!-- ② 形象：右下角实时显示当前角色的「右下角」素材。
