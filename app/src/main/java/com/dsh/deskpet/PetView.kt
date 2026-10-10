@@ -139,6 +139,15 @@ class PetView(context: Context) : View(context) {
     private val scaledCache = HashMap<String, Bitmap>()
 
     /**
+     * 当前是否吸附在**上边组**（上沿比下沿近）。
+     *
+     * 运行时判定而不是靠状态区分：这样"上边只贴上沿"这种情形
+     * 可以直接复用正立素材（只是上下翻转），不必再加状态。
+     * 它同时驱动三件事：素材上下翻转、上/下角状态选择、收起方向。
+     */
+    private var snapNearTop = false
+
+    /**
      * 旋转动画期间是否"冻结"尺寸。
      *
      * 冻结时 [sizeRotation] 返回 [frozenRot]（旧朝向），
@@ -759,6 +768,7 @@ class PetView(context: Context) : View(context) {
         val right = left + trackW
         val bottom = top + trackH
         val eps = 2f
+        if (top <= eps) return floatArrayOf(0f, -1f)
         if (bottom >= b.height() - eps) return floatArrayOf(0f, 1f)
         if (left <= eps) return floatArrayOf(-1f, 0f)
         if (right >= b.width() - eps) return floatArrayOf(1f, 0f)
@@ -773,7 +783,11 @@ class PetView(context: Context) : View(context) {
             dirX < 0f -> -bboxW / 2f
             else -> anchorX
         }
-        val y = if (dirY > 0f) b.height() + bboxH / 2f else anchorY
+        val y = when {
+            dirY > 0f -> b.height() + bboxH / 2f
+            dirY < 0f -> -bboxH / 2f
+            else -> anchorY
+        }
         return floatArrayOf(x, y)
     }
 
@@ -868,6 +882,7 @@ class PetView(context: Context) : View(context) {
             if (v[0] < 0f) from[0] = minOf(from[0], -(bboxW / 2f))
             if (v[0] == 0f) from[0] = targetX
             if (v[1] > 0f) from[1] = maxOf(from[1], b.height() + bboxH / 2f)
+            if (v[1] < 0f) from[1] = minOf(from[1], -(bboxH / 2f))
             if (v[1] == 0f) from[1] = targetY
         }
         anchorX = from[0]
@@ -1357,7 +1372,8 @@ class PetView(context: Context) : View(context) {
         // 左半屏**只做水平镜像**（不做上下翻转）。
         // 翻转旋转角符号（见 PetState.rotationForSnap）已经能让两侧都"头朝内"，
         // 再加纵向翻转反而会把人物倒过来。
-        return s.bitmap(st, mirror = PetState.isLeft(st), flipV = false)
+        // 上边组：素材**上下翻转**（与贴底完全对称）
+        return s.bitmap(st, mirror = PetState.isLeft(st), flipV = snapNearTop)
     }
 
     /**
@@ -1462,7 +1478,8 @@ class PetView(context: Context) : View(context) {
         // 跨半屏 -> 触发镜像翻转动画
         startFlip(if (leftHalf) 1f else 0f)
 
-        val db = PetState.bottomDist(y, trackH.toFloat(), b.height().toFloat())
+        val dv = PetState.vertDist(y, trackH.toFloat(), b.height().toFloat())
+        snapNearTop = PetState.nearerEdgeIsTop(y, trackH.toFloat(), b.height().toFloat())
         val dr = PetState.sideDist(x, trackW.toFloat(), b.width().toFloat(), leftHalf)
         // 旋转判定看**素材中心点**有没有越过 B/E 分界线
         val cd = PetState.centerSideDist(
@@ -1479,13 +1496,13 @@ class PetView(context: Context) : View(context) {
         // 取 max(trackW, trackH)（互换后不变）即可打破这个反馈。
         val halfRef = maxOf(trackW, trackH) / 2f
         val zone = PetState.zoneWithHysteresis(
-            db, dr, leftHalf, lastZone, cd,
+            dv, dr, leftHalf, lastZone, cd,
             PetState.currentAW + halfRef
         )
         lastZone = zone
 
         // B 区即"中心点已越界" -> 旋转形态；E 区保持正立
-        val st = PetState.stateForZone(zone, leftHalf)
+        val st = PetState.stateForZone(zone, leftHalf, snapNearTop)
         setDragState(st)
     }
 
@@ -1524,14 +1541,15 @@ class PetView(context: Context) : View(context) {
         val y = curTrackTop()
         // 中线判定用**足迹中心**（0115 版行为）
         val leftHalf = (x + trackW / 2f) < b.width() / 2f
-        val db = PetState.bottomDist(y, trackH.toFloat(), b.height().toFloat())
+        val dv = PetState.vertDist(y, trackH.toFloat(), b.height().toFloat())
+        snapNearTop = PetState.nearerEdgeIsTop(y, trackH.toFloat(), b.height().toFloat())
         val dr = PetState.sideDist(x, trackW.toFloat(), b.width().toFloat(), leftHalf)
 
         // 与拖动时保持一致：中心点判据，门槛含半宽，且半宽取与朝向无关的值
         // （否则门槛与朝向互相决定，会形成自反馈振荡）
         val cd = PetState.centerSideDist(curCenterX(), b.width().toFloat(), leftHalf)
         val zone = PetState.zoneWithHysteresis(
-            db, dr, leftHalf, lastZone, cd,
+            dv, dr, leftHalf, lastZone, cd,
             PetState.currentAW + maxOf(trackW, trackH) / 2f
         )
         lastZone = zone
@@ -1539,7 +1557,7 @@ class PetView(context: Context) : View(context) {
         // ---- 朝向由"最终贴到哪条边"决定，而不是由拖动时的区号决定 ----
         // 用户要求：即使拖的时候素材没转，只要松手后贴到侧边，就要自动旋转 + 贴边。
         val edges = if (zone == PetState.ZONE_E) {
-            if (PetState.nearerEdgeIsBottom(db, dr)) intArrayOf(1, 0) else intArrayOf(0, 1)
+            if (PetState.nearerEdgeIsBottom(dv, dr)) intArrayOf(1, 0) else intArrayOf(0, 1)
         } else {
             PetState.snapEdgesForZone(zone)
         }
@@ -1548,7 +1566,7 @@ class PetView(context: Context) : View(context) {
         val want = when {
             // 角落：两条边都贴 -> 用角落素材
             snapBottom && snapSide ->
-                if (leftHalf) PetState.CORNER_BL else PetState.CORNER_BR
+                PetState.stateForZone(PetState.ZONE_A, leftHalf, snapNearTop)
             // 贴侧边 -> 一定旋转躺倒
             snapSide -> if (leftHalf) PetState.BORDER_L else PetState.BORDER_R
             // 只贴底边 -> 正立
