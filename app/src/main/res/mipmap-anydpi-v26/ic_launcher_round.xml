@@ -1,11 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  圆形启动器图标（自适应图标，由系统按各厂商遮罩裁切）。
-  内容与 ic_launcher.xml 相同 —— 圆/方两种遮罩都由系统按图标类型处理，
-  这里只是给 android:roundIcon 一个入口。
+  自适应图标（Android 8.0+）。
 
-  深色版本同样走 res/drawable-night-nodpi/ic_launcher_art.png。
+  ⚠️ 为什么把图缩进安全区，而不是直接当 background 铺满：
+     自适应图标只保证露出中心 66/108（安全区），其余按各厂商遮罩（圆、方、水滴…）
+     裁掉。直接铺满的话四边会被裁 —— 用户明确要求"不要裁切图片"。所以：
+       · background = 一层**纯色** @color/ic_launcher_bg
+         （沿图片四边取样得到的底色）—— 被裁掉的只是这层纯色，与图同色，看不出区别
+       · foreground = **整张图**缩到 61% 居中 —— 图完整落在安全区内，任何遮罩都裁不到
+
+     深色版本：前景在 res/drawable-night-nodpi/ 同名文件，底色在 values-night/，
+     由 night 资源限定符自动选（跟随**系统**深色模式）。
 -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@drawable/ic_launcher_art" />
+    <background android:drawable="@drawable/ic_launcher_bg" />
+    <foreground android:drawable="@drawable/ic_launcher_fg" />
 </adaptive-icon>

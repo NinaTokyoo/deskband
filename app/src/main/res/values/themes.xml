@@ -9,22 +9,6 @@
         <item name="android:windowLightStatusBar">false</item>
     </style>
 
-    <!--
-      开屏主题：windowBackground 直接就是开屏图。
-
-      ⚠️ 为什么要有这一份：冷启动时 Activity 的布局还没测量完，系统会先拿
-         windowBackground 顶上。不设的话会先闪一下纯色（@color/bg）再出内容。
-         设成开屏图，系统在**第一帧**就把画面画出来。
-
-      ⚠️ 深浅色只能靠 night 资源限定符（@color/splash_bg 在 values-night 里
-         覆盖成黑色、splash_logo 在 drawable-night-* 里换成深色那张）：
-         windowBackground 在 Activity 创建之前就要用，那时读不到
-         SharedPreferences，所以这里跟随的是**系统**深浅色，
-         与 App 内的"外观模式"设置无关。
-    -->
-    <style name="SplashTheme" parent="@style/AppTheme">
-        <item name="android:windowBackground">@drawable/splash_bg</item>
-    </style>
 
     <!-- 提高信息密度：内边距 16->11，卡片间距 14->8，标题 16->15sp -->
     <style name="Card">

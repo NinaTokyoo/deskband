@@ -1,19 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  应用图标（Android 8.0+ 的自适应图标）。
+  自适应图标（Android 8.0+）。
 
-  画来自 res/drawable-nodpi/ic_launcher_art.png（1254x1254 满幅方图）。
-  深色版本放在 res/drawable-night-nodpi/ 同名文件里，系统切到深色模式时
-  自动启用 —— 用的是 Android 官方的 night 资源限定符。
+  ⚠️ 为什么把图缩进安全区，而不是直接当 background 铺满：
+     自适应图标只保证露出中心 66/108（安全区），其余按各厂商遮罩（圆、方、水滴…）
+     裁掉。直接铺满的话四边会被裁 —— 用户明确要求"不要裁切图片"。所以：
+       · background = 一层**纯色** @color/ic_launcher_bg
+         （沿图片四边取样得到的底色）—— 被裁掉的只是这层纯色，与图同色，看不出区别
+       · foreground = **整张图**缩到 61% 居中 —— 图完整落在安全区内，任何遮罩都裁不到
 
-  ⚠️ 这不是"App 内选深色就换图标"：启动器画图标时不会去读我们 App 的
-     SharedPreferences，系统级切换图标只有 night 限定符这一条官方途径。
-     所以这里跟随的是**系统**深浅色，与 App 内的"外观模式"设置无关。
-
-  ⚠️ 原来的前景/背景是两份矢量（ic_launcher_foreground / _background.xml），
-     现在改用用户提供的位图，那两份已删除。因此这里也不再声明 <monochrome>
-     —— 主题化图标需要一个单色矢量，拿彩色位图当单色没有意义。
+     深色版本：前景在 res/drawable-night-nodpi/ 同名文件，底色在 values-night/，
+     由 night 资源限定符自动选（跟随**系统**深色模式）。
 -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@drawable/ic_launcher_art" />
+    <background android:drawable="@drawable/ic_launcher_bg" />
+    <foreground android:drawable="@drawable/ic_launcher_fg" />
 </adaptive-icon>

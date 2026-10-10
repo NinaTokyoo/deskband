@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- 深色模式下的开屏底色：黑（用户要求） -->
-    <color name="splash_bg">#000000</color>
-</resources>
