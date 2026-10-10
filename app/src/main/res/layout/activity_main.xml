@@ -23,14 +23,17 @@
         android:paddingTop="8dp"
         android:paddingBottom="28dp">
 
-        <!-- 页面标题：在卡片之外，通栏。
+        <!-- 页面标题：在卡片之外，左右边距与下方卡片对齐（都是 16dp）。
              字号不写死、也不用 autoSizeTextType（它在 maxLines+ellipsize 组合下
              收敛不准，实测填不满），改由 MainActivity.fitTitleToWidth()
-             量出实际可用宽度后精确设定。 -->
+             量出实际可用宽度后精确设定 —— 加上这里的边距后，
+             标题正好在卡片的左右边界之间填满。 -->
         <TextView
             android:id="@+id/txtTitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp"
             android:layout_marginTop="18dp"
             android:layout_marginBottom="6dp"
             android:maxLines="1"
@@ -116,17 +119,15 @@
             </LinearLayout>
 
             <!-- 呼出/收起：通栏大按钮。
-                 文字带形象名，可能很长，所以单行 + 自动缩字号，
-                 绝不换行（用户要求"防止人物名字过长导致换行"）。 -->
+                 文字含形象名，用 maxLines=1 保证绝不换行；
+                 通栏宽度足够（最长名字 5 字 ≈ 500px，可用宽约 1380px），
+                 所以不需要 autoSize —— 那个在实测中收敛不准，标题上已踩过坑。 -->
             <Button
                 android:id="@+id/btnToggle"
                 style="@style/BigButton"
                 android:layout_marginTop="12dp"
                 android:maxLines="1"
                 android:ellipsize="end"
-                android:autoSizeTextType="uniform"
-                android:autoSizeMinTextSize="11sp"
-                android:autoSizeMaxTextSize="19sp"
                 android:text="@string/btn_summon" />
         </LinearLayout>
 

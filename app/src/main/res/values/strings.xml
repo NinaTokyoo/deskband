@@ -7,8 +7,9 @@
     <string name="ui_title">DeskBand by NinaTokyoo</string>
 
     <!-- ① 开关与权限 -->
-    <string name="btn_summon">呼出%1$s</string>
-    <string name="btn_dismiss">收起%1$s</string>
+    <!-- 形象名前后各留一个空格，读起来更清楚：例如「收起 喜多郁代」 -->
+    <string name="btn_summon">呼出 %1$s</string>
+    <string name="btn_dismiss">收起 %1$s</string>
     <string name="need_overlay">还没有悬浮窗权限，先去设置里打开</string>
     <string name="start_failed">启动失败，请确认悬浮窗权限已开启</string>
     <!-- 权限入口：文案严格按用户要求，只有这两行 -->
@@ -56,8 +57,8 @@
     <!-- 通知 -->
     <string name="notif_channel">桌宠</string>
     <string name="notif_channel_desc">桌宠在桌面上运行时显示的常驻通知</string>
-    <!-- 标题随当前形象变化，例如「山田凉正在陪伴你」 -->
-    <string name="notif_title_fmt">%1$s正在陪伴你</string>
+    <!-- 标题随当前形象变化，形象名后留一个空格：例如「山田凉 正在陪伴你」 -->
+    <string name="notif_title_fmt">%1$s 正在陪伴你</string>
     <string name="notif_title_fallback">桌宠正在陪伴你</string>
     <string name="notif_text">点这里回到设置，或直接收起桌宠</string>
     <string name="action_stop">收起</string>
