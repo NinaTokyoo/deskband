@@ -743,14 +743,26 @@ class PetView(context: Context) : View(context) {
     fun isSliding(): Boolean = sliding
 
     /**
-     * 退出方向：贴**左右边框** -> 水平移出；**角落/底边** -> 向下移出。
+     * 退出方向：**按实际贴边情况**判断，不再只看状态。
      *
-     * 正立贴边态（*_UPRIGHT）也属于左右边框，走水平。
+     * 规则：**贴底优先** -> 向下收；否则贴左 -> 左；贴右 -> 右；
+     * 都没贴（悬空）也向下收。
+     *
+     * ⚠️ 原来只按 state 判断（BORDER_* 走水平），于是"吸附在底边"
+     * 但状态仍是右边框时就会往左右跑（用户反馈：
+     * "吸附在底边的时候应该是收入到屏幕下面，现在是往左右跑的"）。
      */
-    private fun exitVector(): FloatArray = when (state) {
-        PetState.BORDER_L, PetState.BORDER_L_UPRIGHT -> floatArrayOf(-1f, 0f)
-        PetState.BORDER_R, PetState.BORDER_R_UPRIGHT -> floatArrayOf(1f, 0f)
-        else -> floatArrayOf(0f, 1f)
+    private fun exitVector(): FloatArray {
+        val b = host?.bounds() ?: return floatArrayOf(0f, 1f)
+        val left = anchorX - centerFromTrackX()
+        val top = anchorY - centerFromTrackY()
+        val right = left + trackW
+        val bottom = top + trackH
+        val eps = 2f
+        if (bottom >= b.height() - eps) return floatArrayOf(0f, 1f)
+        if (left <= eps) return floatArrayOf(-1f, 0f)
+        if (right >= b.width() - eps) return floatArrayOf(1f, 0f)
+        return floatArrayOf(0f, 1f)
     }
 
     /** 让**整个窗口**都移出屏幕时，锚点（素材中心）该在哪 */
@@ -791,13 +803,43 @@ class PetView(context: Context) : View(context) {
      *
      * **丢弃**待执行的 slideDone —— 否则那次收起的完成回调
      * 仍会 removePet()+stopSelf()，把刚呼出的人物删掉。
+     *
+     * ⚠️ 必须走 [startSlidingTo]：它会把过冲点一起算上，
+     * 从而保留**呼出回弹**那一段。原来直接 startSlide(..., null)
+     * 用的是默认 endX=toX，slideHasPhase2 恒为 false，
+     * 回弹根本没排上（用户反馈："未完全收起时点呼入，呼入的回弹动画消失"）。
      */
     fun reverseSlide() {
         if (!sliding) return
         slideDone = null
         slideHasPhase2 = false
         slidePhase2Running = false
-        startSlide(anchorX, anchorY, slideRestX, slideRestY, null)
+        startSlidingTo(slideRestX, slideRestY)
+    }
+
+    /**
+     * 从**当前位置**滑到 (targetX, targetY)，并带上呼出回弹。
+     *
+     * 过冲量用固定像素（复用 prefs.bouncePx），不按行程比例 ——
+     * 行程可能是"整个屏幕外"，按比例会冲出天文数字。
+     */
+    private fun startSlidingTo(targetX: Float, targetY: Float) {
+        val fromX = anchorX
+        val fromY = anchorY
+        val dx = targetX - fromX
+        val dy = targetY - fromY
+        val len = kotlin.math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
+        val amp = if (len > 1f && prefs.bounceEnabled) prefs.bouncePx else 0f
+        val overX: Float
+        val overY: Float
+        if (amp > 0f) {
+            overX = targetX + dx / len * amp
+            overY = targetY + dy / len * amp
+        } else {
+            overX = targetX
+            overY = targetY
+        }
+        startSlide(fromX, fromY, overX, overY, null, targetX, targetY)
     }
 
     /**
@@ -821,23 +863,8 @@ class PetView(context: Context) : View(context) {
         dragOffsetY = 0f
         syncWindow()
 
-        // 呼出回弹：先沿进场方向**冲过**落点一点，再收回落点。
-        // 过冲量用固定像素（和边框回弹同源），不是按行程比例 ——
-        // 行程是"整个屏幕外"，按比例算会冲出天文数字。
-        val dx = targetX - from[0]
-        val dy = targetY - from[1]
-        val len = kotlin.math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
-        val overX: Float
-        val overY: Float
-        if (len > 1f) {
-            val amp = if (prefs.bounceEnabled) prefs.bouncePx else 0f
-            overX = targetX + dx / len * amp
-            overY = targetY + dy / len * amp
-        } else {
-            overX = targetX
-            overY = targetY
-        }
-        startSlide(from[0], from[1], overX, overY, null, targetX, targetY)
+        // 复用统一实现：从屏幕外滑回落点，并带上呼出回弹（过冲 + 收回）。
+        startSlidingTo(targetX, targetY)
     }
 
     private fun startSlide(
