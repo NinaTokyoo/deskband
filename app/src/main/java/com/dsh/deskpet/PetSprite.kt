@@ -18,8 +18,14 @@ import org.json.JSONObject
  * 不额外存左侧图。实测确认过：
  *   flip(mirror(角落素材))   == 原来的「左下角」
  *   flip(mirror(正立素材))   == 原来的「左边框」
- * 所以左半屏在渲染时做 **水平镜像 + 上下翻转**（等价于旋转 180°）即可，
+ * 所以左半屏在渲染时做 **水平镜像**（转 90° 的形态再叠加旋转角符号翻转）即可，
  * 省掉一半体积，也保证左右永远一致。
+ *
+ * ## 上方怎么来的
+ *
+ * 同理不额外存"上方"图：**上角 / 贴上沿 = 下角 / 贴下沿上下翻转**（flipV），
+ * 于是上半屏是下半屏沿水平轴镜像过来的形态，左右两侧用同一套规则
+ * （左半屏 = 镜像 + 上下翻转）。翻转量由 [PetState.flipVFor] 按状态给出。
  *
  * 用户要求：**不裁切、不改比例**，所以这里只做等比缩放，不裁剪任何像素。
  */
@@ -40,8 +46,13 @@ class PetSprite private constructor(
     /**
      * 取要绘制的位图（**不含旋转**，旋转在绘制时用 Canvas 做）。
      *
+     * 两个变换都是 **state 的纯函数**（由调用方按 [PetState.isLeft] /
+     * [PetState.flipVFor] 传入），缓存键才与内容一一对应。
+     *
      * @param mirror 左半屏 -> 水平镜像
-     * @param flipV  左半屏且带旋转时 -> 再上下翻转（否则人物会上下颠倒）
+     * @param flipV  上边组（上角 / 贴上沿）-> 上下翻转。
+     *               左右两侧同一套规则，所以左半屏是"镜像 + 上下翻转"
+     *               （等价于旋转 180°）；旋转躺倒的侧边形态不翻。
      */
     fun bitmap(state: Int, mirror: Boolean, flipV: Boolean = false): Bitmap {
         val key = state * 4 + (if (mirror) 2 else 0) + (if (flipV) 1 else 0)

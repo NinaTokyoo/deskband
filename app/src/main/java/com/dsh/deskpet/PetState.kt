@@ -3,22 +3,35 @@ package com.dsh.deskpet
 /**
  * 桌宠的分区、吸附与朝向规则（纯逻辑，不依赖 Android，可单元测试）。
  *
- * ============================ 分区（A / B / C / E） ============================
+ * ============================ 分区（A / B / E） ============================
  *
- * 判定基准是桌宠的**底边**和**本侧边缘**：
- *   db = 底边离屏幕底部的距离
- *   dr = 离本侧吸附边的距离（左半屏量左边，右半屏量右边）
+ * 判定基准是桌宠的**足迹边缘**与**垂直基准边**（上沿或下沿，见 [vertOf]）：
  *
- *   A 区：db <= aH 且 dr <= aW   —— 角落。用「右下角 / 左下角」素材，不旋转
- *   C 区：排除 A 后 db <= aH      —— 下侧带。用「正立素材」，不旋转
- *   B 区：排除 A 后 dr <= aW      —— 侧边带。用「正立素材」，不旋转
- *   E 区：其余                    —— 用「正立素材」；**右侧越界时旋转 90°**
+ *   dv = 足迹到**基准水平边**的距离（贴上沿时量上沿，贴下沿时量下沿）
+ *   dr = 足迹到**本侧吸附边**的距离（左半屏量左边，右半屏量右边）
  *
- * **A 区尺寸用户可调**（滑块 / 数字输入），B 与 C 跟着一起变：
+ *   A 区：dv <= aH 且 dr <= aW   —— 角落（上角或下角，由基准边决定）。用「角落」素材
+ *   B 区：排除 A 后 dr <= aW      —— 侧边带。用「正立素材」，**旋转 90° 躺倒**
+ *   E 区：其余                    —— 用「正立素材」；松手时贴**更近的那条边**
+ *
+ * **A 区尺寸用户可调**（滑块 / 数字输入），B 跟着一起变：
  *   B 的横向起点 = A 的横向尺寸（B 左侧对齐 A 左侧）
- *   C 的纵向起点 = A 的纵向尺寸（C 上侧对齐 A 上侧）
  *
- * 没有 D 区，**没有模糊**。稳定存在的朝向只有「正立」与「旋转 90°」两种。
+ * 没有 D 区，**没有模糊**。稳定存在的朝向只有「正立」与「旋转 90°」两种；
+ * 上半屏的形态则是下半屏的**上下镜像**（素材上下翻转，见 [flipVFor]）。
+ * ============================================================================
+ *
+ * ==================== 为什么要有 VERT_* 这个显式枚举 ====================
+ *
+ * 上边吸附与下边吸附**完全对称**，唯一的差别是"以哪条水平边为基准"。
+ * 曾经的做法是直接把 `bottomDist` 换成 `min(topDist, bottomDist)` 就完事 ——
+ * 结果下游全部错位：zoneOf / snapEdgesForZone / snapPosition 的语义都建立在
+ * "到基准边的距离"上，悄悄换掉距离的含义却不同步改判定规则，于是
+ * "上边/上角吸不上、初始位置变了、侧边头部朝向错了"一起爆发。
+ *
+ * 所以基准在这里**显式建模**：[vertOf] 只负责"选哪条边"，
+ * 距离函数 [vertDistFor] 只负责"量到那条边的距离"，
+ * 判定与吸附函数全部**显式接受**这个枚举。任何一处漏传，编译器立刻报错。
  * ============================================================================
  */
 object PetState {
@@ -37,16 +50,44 @@ object PetState {
     /**
      * **上方角落**（与下方的 CORNER_BR/CORNER_BL 完全对称）。
      *
-     * 吸附规则与下方角落一致（贴侧 + 贴垂直边），区别只在：
-     *   · 垂直方向贴上沿（见 [snapPosition] 的 nearTop）
-     *   · 素材**上下翻转**（见 [isTop]）
+     * 吸附规则与下方角落一致（贴侧 + 贴水平边），区别只在：
+     *   · 水平方向贴上沿（见 [vertForState] 返回 VERT_TOP）
+     *   · 素材**上下翻转**（见 [flipVFor]）
      *   · 收起时向**上**滑出（见 PetView.exitVector）
      */
     const val CORNER_TR = 7
     const val CORNER_TL = 8
 
-    /** 是否属于"上边组"（上方角落）：决定素材上下翻转与收起方向 */
-    fun isTop(state: Int): Boolean = state == CORNER_TR || state == CORNER_TL
+    /**
+     * **贴上沿**（正立素材上下翻转），与贴下沿的 [BORDER_R_UPRIGHT] /
+     * [BORDER_L_UPRIGHT] 完全对称 —— 上半屏的"正立"就是下半屏倒过来挂。
+     */
+    const val EDGE_TOP_R = 9
+    const val EDGE_TOP_L = 10
+
+    // ---------------------------------------------------------------- 垂直基准
+
+    /**
+     * **无纵向基准**：只贴侧边，纵向自由（旋转躺倒的侧边形态）。
+     *
+     * 也用作 [vertOf] 的 `prev` 默认值，表示"没有上一次的基准，直接比大小"。
+     */
+    const val VERT_NONE = 0
+
+    /** 下边组：以屏幕**下沿**为垂直基准 */
+    const val VERT_BOTTOM = 1
+
+    /** 上边组：以屏幕**上沿**为垂直基准（素材上下翻转、向上收、从上方呼入） */
+    const val VERT_TOP = 2
+
+    /**
+     * 中线滞回带（px）：跨越屏幕中线后要**多走这么远**才换组。
+     *
+     * 不设它的话，手指停在中线附近抖动会让素材在"正立 / 倒挂"之间高频翻转。
+     * 换组是**整个形态翻过来**的视觉变化，比 B/E 分界那种切换更醒目，
+     * 所以死区比 [HYSTERESIS_PX] 稍大。
+     */
+    const val VERT_HYSTERESIS_PX = 24f
 
     // ---------------------------------------------------------------- A 区尺寸（可调）
 
@@ -90,7 +131,11 @@ object PetState {
 
     // ---------------------------------------------------------------- 状态判定
 
-    fun isCorner(state: Int) = state == CORNER_BR || state == CORNER_BL || state == CORNER_TR || state == CORNER_TL
+    /** 是否属于**上边组**：素材上下翻转、向上收起、从上方呼入 */
+    fun isTop(state: Int): Boolean = vertForState(state) == VERT_TOP
+
+    fun isCorner(state: Int) =
+        state == CORNER_BR || state == CORNER_BL || state == CORNER_TR || state == CORNER_TL
 
     fun isBorder(state: Int) = state == BORDER_R || state == BORDER_L
 
@@ -106,23 +151,41 @@ object PetState {
      */
     fun isAttachedState(state: Int): Boolean = when (state) {
         BORDER_R, BORDER_L, BORDER_R_UPRIGHT, BORDER_L_UPRIGHT,
-            CORNER_BR, CORNER_BL, CORNER_TR, CORNER_TL -> true
+            CORNER_BR, CORNER_BL, CORNER_TR, CORNER_TL,
+            EDGE_TOP_R, EDGE_TOP_L -> true
         else -> false
     }
 
     fun isLeft(state: Int): Boolean = when (state) {
-        CORNER_TL,
+        CORNER_TL, EDGE_TOP_L,
         CORNER_BL, BORDER_L, BORDER_L_UPRIGHT -> true
         else -> false
     }
 
     /** 是否用「角落」那套素材 */
-    fun usesCornerArt(state: Int) = state == CORNER_BR || state == CORNER_BL || state == CORNER_TR || state == CORNER_TL
+    fun usesCornerArt(state: Int) = isCorner(state)
 
     /** 是否用「正立素材」那套图 */
     fun usesBorderArt(state: Int) = !usesCornerArt(state)
 
     fun needsMirror(state: Int) = isLeft(state)
+
+    /**
+     * 素材要不要**上下翻转**（flipV）。
+     *
+     * 上边组的形态就是下边组沿水平轴镜像过来的：贴在底边是"站在地上"，
+     * 贴在上沿就是"倒挂在顶上"。
+     *
+     * ⚠️ 这个判断必须**只是 state 的纯函数**（内部走 [vertForState]）。
+     * PetView 的 artCenterCache / scaledCache 都以 state 为键，
+     * 若翻转取决于运行时的临时标志（比如"当前离上沿近不近"），
+     * 缓存就会串味 —— 素材中心点、命中判定与实际画面全对不上，
+     * 表现就是"位置自己变了、点击没反应"。
+     *
+     * 旋转形态（BORDER_R/BORDER_L）**不翻**：它们本来就是靠镜像 + 旋转角
+     * 让头朝屏幕内侧的，再上下翻转会把人物倒过来（曾经踩过）。
+     */
+    fun flipVFor(state: Int): Boolean = isTop(state)
 
     /**
      * 状态对应的旋转角（传给 Canvas.rotate，正数 = 屏幕视觉顺时针）。
@@ -138,106 +201,65 @@ object PetState {
         else -> 0f
     }
 
-    // ---------------------------------------------------------------- 分区判定
+    // ---------------------------------------------------------------- 垂直基准
+
+    fun topDist(y: Float, h: Float, screenH: Float): Float = y.coerceAtLeast(0f)
+
+    /** 离底边的距离（两侧相同） */
+    fun bottomDist(y: Float, h: Float, screenH: Float): Float =
+        (screenH - (y + h)).coerceAtLeast(0f)
 
     /**
-     * 落在哪个区。
-     *
-     * 先判 A（角落），再判 B（贴侧边），其余都是 E。
-     *
-     * ⚠️ 原来的 **C 区（贴底边带）已按要求合并进 E 区**，与 E 完全同一套逻辑：
-     * 松手时贴"更近的那条边" —— 在底部附近自然就是贴底边，所以观感不变，
-     * 但靠近底部又靠近侧边时会正确地贴侧边并旋转，不再被 C 强行拉到底边。
-     * [ZONE_C] 常量保留（历史值与测试引用），但**不会再被返回**。
-     *
-     * 左右半屏用同一套逻辑，只是 dr 的基准边不同。
+     * 到**较近的那条水平边**的距离（上沿或下沿取小）。
+     * 只用于"没有指定基准"的场合（[VERT_NONE]）。
      */
-    fun zoneOf(db: Float, dr: Float, leftHalf: Boolean): Int {
-        if (db <= currentAH && dr <= currentAW) return ZONE_A
-        if (dr <= currentAW) return ZONE_B
-        return ZONE_E
-    }
+    fun vertDist(y: Float, h: Float, screenH: Float): Float =
+        minOf(topDist(y, h, screenH), bottomDist(y, h, screenH))
 
     /**
-     * 带**滞回**的分区判定，专治 B/E 分界线附近来回闪。
+     * **选垂直基准**：离上沿更近就是上边组，否则是下边组。
      *
-     * 问题：单纯比较 dr 与 aW，宠物停在分界线上时手指的微小抖动
-     * 就会让 dr 在 aW 两侧反复越界，状态于是来回切。
+     * 带**中线滞回**：`prev` 给出的上一次基准在中线附近 [VERT_HYSTERESIS_PX]
+     * 之内保持不变，避免手指抖动时素材在正立/倒挂之间反复翻。
      *
-     * 做法：进入 B 用较严的门槛（必须真正贴边），退出 B 用较松的门槛
-     * （要明显离开才退出），两个门槛之间是"保持原状"的死区。
-     *
-     * @param prev 上一次的区号，用于决定用哪个门槛
+     * @param prev 上一次的基准；[VERT_NONE] 表示没有上一次，直接比大小
+     * @return [VERT_TOP] 或 [VERT_BOTTOM]（**从不返回 VERT_NONE**）
      */
-    /**
-     * 分区判定（带滞回）。
-     *
-     * ⚠️ B/E 用**中心点**判据（用户规则），但门槛必须把素材**半宽**算进去：
-     *
-     *   宠物完全贴紧侧边时，中心点离侧边的距离正好等于**半宽**。
-     *   若拿 aW(默认200) 直接当门槛，而半宽有 231~270，
-     *   那么"贴边静止"这个位置反而被判成 E —— 状态会在旋转/正立之间
-     *   反复横跳，而且 leftHalf 依赖 trackW，trackW 一跳过中线判定也跟着抖，
-     *   镜像翻转看起来就不对了。
-     *
-     * 所以传入的门槛是 `aW + 半宽`：等价于"素材**边缘**落在 aW 以内"，
-     * 既保留了中心点判据，又让贴边静止位置稳定落在 B 内。
-     *
-     * @param bandPx 中心点到侧边的门槛，调用方传 currentAW + trackW/2
-     */
-    fun zoneWithHysteresis(
-        db: Float, dr: Float, leftHalf: Boolean, prev: Int,
-        centerDist: Float = dr,
-        bandPx: Float = currentAW
-    ): Int {
-        // A（角落）不涉及这个抖动，直接算；C 已并入 E，不再单判
-        if (db <= currentAH && dr <= currentAW) return ZONE_A
-
-        val inB: Boolean
-        if (prev == ZONE_B) {
-            // 已经在 B：要明显离开才退出
-            inB = centerDist <= bandPx + HYSTERESIS_PX
-        } else {
-            // 不在 B：中心点要真正越过分界线才进入
-            inB = centerDist <= bandPx
+    fun vertOf(y: Float, h: Float, screenH: Float, prev: Int = VERT_NONE): Int {
+        val t = topDist(y, h, screenH)
+        val b = bottomDist(y, h, screenH)
+        return when (prev) {
+            // 已经在上边组：要"明显变成下沿更近"才换组
+            VERT_TOP -> if (t > b + VERT_HYSTERESIS_PX) VERT_BOTTOM else VERT_TOP
+            // 已经在下边组：要"明显变成上沿更近"才换组
+            VERT_BOTTOM -> if (b > t + VERT_HYSTERESIS_PX) VERT_TOP else VERT_BOTTOM
+            else -> if (t <= b) VERT_TOP else VERT_BOTTOM
         }
-        return if (inB) ZONE_B else ZONE_E
-    }
-
-    /** 已取消模糊功能，永远返回 false（接口保留） */
-    fun hasBlur(db: Float, dr: Float, leftHalf: Boolean): Boolean = false
-
-    fun nearerEdgeIsBottom(db: Float, dr: Float): Boolean = db <= dr
-
-    /**
-     * 松手时贴哪条边：[0] = 贴底边，[1] = 贴侧边。
-     *
-     * ⚠️ 必须传入**已经判定好的 zone**，不要在这里重新 zoneOf。
-     * 因为分区判定用的是"中心点是否越过 B/E 分界线"，而 zoneOf 用的是
-     * 边缘距离，两者在素材较大时会得出不同结论 —— 结果就是判成了 B（该贴侧边）
-     * 却按 E 去贴最近边，贴到底边上了（用户反馈的"侧边不吸附"）。
-     */
-    fun snapEdgesForZone(zone: Int): IntArray = when (zone) {
-        ZONE_A -> intArrayOf(1, 1)
-        ZONE_C -> intArrayOf(1, 0)
-        ZONE_B -> intArrayOf(0, 1)
-        else -> intArrayOf(0, 0)   // E：由调用方按"更近的一边"决定
     }
 
     /**
-     * 该用哪个状态（同时决定素材与旋转）。
+     * 该基准下"到基准边的距离" —— 分区与吸附**统一用这个当垂直轴距离**。
      *
-     *   A 区 -> 角落素材，正立
-     *   B 区 -> 正立素材，**贴边时旋转 90°**（恢复左右边框旋转吸附）
-     *   C 区 -> 正立素材，正立（贴底，头朝上）
-     *   E 区 -> 正立素材；是否旋转由 [rotationForE] 看右侧有没有越界
+     * 于是上边组与下边组共用同一套 A/B/E 判定，天然对称。
+     * [VERT_NONE]（没有基准）时退化成"到较近那条水平边的距离"。
      */
-    fun stateForZone(zone: Int, leftHalf: Boolean, nearTop: Boolean = false): Int = when (zone) {
-        ZONE_A -> if (nearTop) { if (leftHalf) CORNER_TL else CORNER_TR }
-            else { if (leftHalf) CORNER_BL else CORNER_BR }
-        ZONE_B -> if (leftHalf) BORDER_L else BORDER_R
-        ZONE_C -> if (leftHalf) BORDER_L_UPRIGHT else BORDER_R_UPRIGHT
-        else -> if (leftHalf) BORDER_L_UPRIGHT else BORDER_R_UPRIGHT
+    fun vertDistFor(v: Int, y: Float, h: Float, screenH: Float): Float = when (v) {
+        VERT_TOP -> topDist(y, h, screenH)
+        VERT_BOTTOM -> bottomDist(y, h, screenH)
+        else -> vertDist(y, h, screenH)
+    }
+
+    /**
+     * 状态挂在**哪条水平边**上 —— 由状态反推基准（持久化恢复、复位、初始窗口都用它）。
+     *
+     *   上角 / 贴上沿 -> [VERT_TOP]
+     *   躺侧边（旋转）-> [VERT_NONE]（纵向自由，垂直居中）
+     *   其余（下角 / 贴下沿）-> [VERT_BOTTOM]
+     */
+    fun vertForState(state: Int): Int = when (state) {
+        CORNER_TR, CORNER_TL, EDGE_TOP_R, EDGE_TOP_L -> VERT_TOP
+        BORDER_R, BORDER_L -> VERT_NONE
+        else -> VERT_BOTTOM
     }
 
     /**
@@ -254,26 +276,6 @@ object PetState {
 
     // ---------------------------------------------------------------- 距离
 
-    /** 离底边的距离（两侧相同） */
-    fun bottomDist(y: Float, h: Float, screenH: Float): Float =
-        (screenH - (y + h)).coerceAtLeast(0f)
-
-    /** 离**上沿**的距离（与 [bottomDist] 完全对称） */
-    fun topDist(y: Float, h: Float, screenH: Float): Float = y.coerceAtLeast(0f)
-
-    /**
-     * 到**较近的那条水平边**的距离（上沿或下沿取小）。
-     *
-     * 分区判定统一用这个当"垂直轴距离"，于是上边组与下边组
-     * 共用同一套 A/B/E 判定，天然对称。
-     */
-    fun vertDist(y: Float, h: Float, screenH: Float): Float =
-        minOf(topDist(y, h, screenH), bottomDist(y, h, screenH))
-
-    /** 是否离上沿更近（决定贴上还是贴下、素材是否上下翻转、收起方向） */
-    fun nearerEdgeIsTop(y: Float, h: Float, screenH: Float): Boolean =
-        topDist(y, h, screenH) <= bottomDist(y, h, screenH)
-
     /**
      * 离**本侧吸附边**的距离 —— 左半屏量左边，右半屏量右边。
      *
@@ -284,36 +286,154 @@ object PetState {
         if (leftHalf) x.coerceAtLeast(0f)
         else (screenW - (x + w)).coerceAtLeast(0f)
 
+    // ---------------------------------------------------------------- 分区判定
+
+    /**
+     * 落在哪个区。
+     *
+     * 先判 A（角落），再判 B（贴侧边），其余都是 E。
+     *
+     * ⚠️ 原来的 **C 区（贴底边带）已按要求合并进 E 区**，与 E 完全同一套逻辑：
+     * 松手时贴"更近的那条边" —— 在底部附近自然就是贴底边，所以观感不变，
+     * 但靠近底部又靠近侧边时会正确地贴侧边并旋转，不再被 C 强行拉到底边。
+     * [ZONE_C] 常量保留（历史值与测试引用），但**不会再被返回**。
+     *
+     * @param v  垂直基准（[vertOf] 的结果）
+     * @param dv 到**基准边**的距离（[vertDistFor] 的结果）
+     * @param dr 到本侧吸附边的距离（[sideDist] 的结果）
+     */
+    fun zoneOf(v: Int, dv: Float, dr: Float, leftHalf: Boolean): Int {
+        // A 区（角落）必须有纵向基准才成立：没有基准就没有"角"
+        if (v != VERT_NONE && dv <= currentAH && dr <= currentAW) return ZONE_A
+        if (dr <= currentAW) return ZONE_B
+        return ZONE_E
+    }
+
+    /**
+     * 带**滞回**的分区判定，专治 B/E 分界线附近来回闪。
+     *
+     * 问题：单纯比较 dr 与 aW，宠物停在分界线上时手指的微小抖动
+     * 就会让 dr 在 aW 两侧反复越界，状态于是来回切。
+     *
+     * 做法：进入 B 用较严的门槛（必须真正贴边），退出 B 用较松的门槛
+     * （要明显离开才退出），两个门槛之间是"保持原状"的死区。
+     *
+     * ⚠️ B/E 用**中心点**判据（用户规则），但门槛必须把素材**半宽**算进去：
+     *
+     *   宠物完全贴紧侧边时，中心点离侧边的距离正好等于**半宽**。
+     *   若拿 aW(默认200) 直接当门槛，而半宽有 231~270，
+     *   那么"贴边静止"这个位置反而被判成 E —— 状态会在旋转/正立之间
+     *   反复横跳，而且 leftHalf 依赖 trackW，trackW 一跳过中线判定也跟着抖，
+     *   镜像翻转看起来就不对了。
+     *
+     * 所以传入的门槛是 `aW + 半宽`：等价于"素材**边缘**落在 aW 以内"，
+     * 既保留了中心点判据，又让贴边静止位置稳定落在 B 内。
+     *
+     * @param v    垂直基准（[vertOf] 的结果）
+     * @param dv   到**基准边**的距离
+     * @param prev 上一次的区号，用于决定用哪个门槛
+     * @param bandPx 中心点到侧边的门槛，调用方传 currentAW + trackW/2
+     */
+    fun zoneWithHysteresis(
+        v: Int, dv: Float, dr: Float, leftHalf: Boolean, prev: Int,
+        centerDist: Float = dr,
+        bandPx: Float = currentAW
+    ): Int {
+        // A（角落）不涉及这个抖动，直接算；C 已并入 E，不再单判
+        if (v != VERT_NONE && dv <= currentAH && dr <= currentAW) return ZONE_A
+
+        val inB: Boolean
+        if (prev == ZONE_B) {
+            // 已经在 B：要明显离开才退出
+            inB = centerDist <= bandPx + HYSTERESIS_PX
+        } else {
+            // 不在 B：中心点要真正越过分界线才进入
+            inB = centerDist <= bandPx
+        }
+        return if (inB) ZONE_B else ZONE_E
+    }
+
+    /** 已取消模糊功能，永远返回 false（接口保留） */
+    fun hasBlur(v: Int, dv: Float, dr: Float, leftHalf: Boolean): Boolean = false
+
+    /**
+     * 松手时贴哪条边：`[0]` = 贴**水平边**（上沿还是下沿由 [snapPosition] 里的基准决定），
+     * `[1]` = 贴**侧边**。
+     *
+     * ⚠️ 必须传入**已经判定好的 zone**，不要在这里重新分区。
+     * 因为分区判定用的是"中心点是否越过 B/E 分界线"，而 zoneOf 用的是
+     * 边缘距离，两者在素材较大时会得出不同结论 —— 结果就是判成了 B（该贴侧边）
+     * 却按 E 去贴最近边，贴到底边上了（用户反馈的"侧边不吸附"）。
+     *
+     * ⚠️ E 区"贴更近的那条边"的比较也**必须在这里**做完，调用方不要自己再比一遍：
+     * 两处规则一旦分叉，就会出现"显示贴在侧边、实际吸到了底边"这类错位。
+     *
+     * @param v  垂直基准；[VERT_NONE] 时 A 区退化（没有角可贴，只贴侧边）
+     * @param dv 到**基准边**的距离（E 区用它和 [dr] 比远近）
+     */
+    fun snapEdgesForZone(v: Int, zone: Int, dv: Float, dr: Float): IntArray = when (zone) {
+        // 角落要两条边都贴；但"哪个角"依赖纵向基准，没有基准就只能贴侧边
+        ZONE_A -> if (v == VERT_NONE) intArrayOf(0, 1) else intArrayOf(1, 1)
+        ZONE_C -> intArrayOf(1, 0)
+        ZONE_B -> intArrayOf(0, 1)
+        // E：贴更近的那条边（dv 已经是"到基准水平边"的距离）
+        else -> if (dv <= dr) intArrayOf(1, 0) else intArrayOf(0, 1)
+    }
+
+    /**
+     * 该用哪个状态（同时决定素材、旋转与是否上下翻转）。
+     *
+     *   A 区 -> 角落素材（纵向基准决定是上角还是下角），正立/倒挂
+     *   B 区 -> 正立素材，**贴边时旋转 90°**（头朝屏幕内侧）
+     *   C 区 -> 正立素材，正立（历史区号，已并入 E）
+     *   E 区 -> 正立素材：贴水平边（上/下由基准决定），旋转与否由调用方按 B 区判定
+     *
+     * @param v 垂直基准 —— 决定"上角 / 下角"和"贴上沿 / 贴下沿"
+     */
+    fun stateForZone(v: Int, zone: Int, leftHalf: Boolean): Int = when (zone) {
+        ZONE_A -> if (v == VERT_TOP) {
+            if (leftHalf) CORNER_TL else CORNER_TR
+        } else {
+            if (leftHalf) CORNER_BL else CORNER_BR
+        }
+        ZONE_B -> if (leftHalf) BORDER_L else BORDER_R
+        ZONE_C -> uprightFor(v, leftHalf)
+        else -> uprightFor(v, leftHalf)
+    }
+
+    /** 贴水平边（不旋转）时的状态：上沿倒挂，下沿正立 */
+    private fun uprightFor(v: Int, leftHalf: Boolean): Int =
+        if (v == VERT_TOP) {
+            if (leftHalf) EDGE_TOP_L else EDGE_TOP_R
+        } else {
+            if (leftHalf) BORDER_L_UPRIGHT else BORDER_R_UPRIGHT
+        }
+
     // ---------------------------------------------------------------- 吸附
 
     /**
      * 计算吸附后的格子位置（贴边）。
      *
+     * @param v 垂直基准（[VERT_TOP] -> 贴上沿，其余 -> 贴下沿）
      * @param trackW/trackH 吸附后素材在屏幕上的**足迹**（旋转后宽高可能互换）
      * @return [x, y]
      */
     fun snapPosition(
+        v: Int,
         x: Float, y: Float,
         trackW: Float, trackH: Float,
-        db: Float, dr: Float,
+        dv: Float, dr: Float,
         screenW: Float, screenH: Float,
         leftHalf: Boolean,
-        zone: Int = -1,
-        /** 垂直方向该贴上沿(true)还是下沿(false)。与底边完全对称。 */
-        nearTop: Boolean = false
+        zone: Int = -1
     ): FloatArray {
         // 分区优先用调用方判定好的 zone（与状态判定保持同一套规则）；
         // 没传时退化为按边缘距离现算（仅旧调用方会走到这里）。
-        val z = if (zone >= 0) zone else zoneOf(db, dr, leftHalf)
-        val edges = if (z == ZONE_E) {
-            // E 区：贴更近的那条边
-            if (nearerEdgeIsBottom(db, dr)) intArrayOf(1, 0) else intArrayOf(0, 1)
-        } else {
-            snapEdgesForZone(z)
-        }
+        val z = if (zone >= 0) zone else zoneOf(v, dv, dr, leftHalf)
+        val edges = snapEdgesForZone(v, z, dv, dr)
         var nx = x
         var ny = y
-        if (edges[0] == 1) ny = if (nearTop) 0f else screenH - trackH
+        if (edges[0] == 1) ny = if (v == VERT_TOP) 0f else screenH - trackH
         if (edges[1] == 1) nx = if (leftHalf) 0f else screenW - trackW
         return floatArrayOf(nx, ny)
     }

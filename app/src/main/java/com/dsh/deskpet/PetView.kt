@@ -113,6 +113,18 @@ class PetView(context: Context) : View(context) {
     private fun topPad(): Int =
         (cellH * HOP_FRACTION).toInt() + HOP_PAD_MIN
 
+    /**
+     * 轻跳的**底部**余量：与 [topPad] 取同一个值。
+     *
+     * 弹起方向永远指向**屏幕内侧**（贴底时向上弹、贴上沿时向下弹），
+     * 两头都需要同样多的余量 —— 否则贴上沿时一点击，人物会被窗口下沿切掉。
+     *
+     * ⚠️ 这里**必须与状态无关**（不能"贴上沿才留"）：上下两组形态若窗口高度不同，
+     * 拖过屏幕中线时窗口就会 resize（WM 重新布局 + Surface 重分配），
+     * 表现是拖拽经过中线时跳一下 —— 与"窗口取两套素材并集"是同一个道理。
+     */
+    private fun bottomPad(): Int = topPad()
+
     /** 足迹盒在"旋转包络窗口"内的偏移 */
     private var footOffX = 0
     private var footOffY = 0
@@ -206,19 +218,22 @@ class PetView(context: Context) : View(context) {
         }
 
         bboxW = envW.toInt() + HOP_PAD_X * 2
-        bboxH = envH.toInt() + topPad() + HOP_PAD_BOTTOM
+        bboxH = envH.toInt() + topPad() + bottomPad()
         boxOffX = HOP_PAD_X
         boxOffY = topPad()
 
         // 格子在窗口里居中（旋转包络的中心）；绕偏心支点转时靠包络的
         // 富余量容纳，所以这里居中即可。
+        //
+        // 注：cellOffY - footOffY 与两个余量之差恒为 0（未旋转时 cellH == trackH），
+        // 所以余量取值不影响 centerFromTrackY，只影响窗口本身的高度。
         cellOffX = (bboxW - HOP_PAD_X * 2 - cellW) / 2
-        cellOffY = (bboxH - topPad() - HOP_PAD_BOTTOM - cellH) / 2
+        cellOffY = (bboxH - topPad() - bottomPad() - cellH) / 2
 
         // 足迹盒在包络窗口里的偏移 —— 贴边/夹取算的是足迹盒的边，
         // 不是包络窗口的边，所以换算时必须把这个偏移减掉。
         footOffX = (bboxW - HOP_PAD_X * 2 - trackW) / 2
-        footOffY = (bboxH - topPad() - HOP_PAD_BOTTOM - trackH) / 2
+        footOffY = (bboxH - topPad() - bottomPad() - trackH) / 2
 
         // 素材中心点：按 alpha 外接框算，结果**按状态缓存**。
         // alphaBounds 要整张位图逐行扫描，而 cacheSizes 在状态切换时会被反复调用，
@@ -364,11 +379,14 @@ class PetView(context: Context) : View(context) {
             } else {
                 oldRight - trackW + centerFromTrackX()
             }
-            // 纵向：贴底 / 角落 -> 底边不动；侧边形态垂直居中 -> 中心不动
-            anchorY = if (state == PetState.BORDER_R || state == PetState.BORDER_L) {
-                oldCenterY
-            } else {
-                oldBottom - trackH + centerFromTrackY()
+            // 纵向：以**吸附边**为基准缩放 ——
+            //   贴上沿 / 上角 -> 顶边不动（否则缩小后会离屏幕顶一条缝）
+            //   躺侧边        -> 垂直居中，中心不动
+            //   贴底 / 下角   -> 底边不动（否则缩小后会浮空）
+            anchorY = when {
+                PetState.isTop(state) -> oldTop + centerFromTrackY()
+                state == PetState.BORDER_R || state == PetState.BORDER_L -> oldCenterY
+                else -> oldBottom - trackH + centerFromTrackY()
             }
 
             // 放大后可能把宠物顶到屏幕外（侧边形态是垂直居中的），
@@ -403,6 +421,7 @@ class PetView(context: Context) : View(context) {
         }
         state = newState
         cacheSizes()
+        startFlipV(if (PetState.isTop(newState)) 1f else 0f)
         if (willRotate) startRotAnim(shownRotation, newRot)
         placeWindow()
         invalidate()
@@ -490,6 +509,18 @@ class PetView(context: Context) : View(context) {
     private var flipStart = 0L
     private var flipRunning = false
 
+    // ---- 跨屏幕中线的**上下翻转**动画（下边组 <-> 上边组）----
+    //
+    // 上半屏就是下半屏沿水平轴镜像过来的形态（素材上下翻转，见 PetState.flipVFor）。
+    // 换组时用一个纵向压扁的动画把 180° 的观感做出来 —— 与上面镜像翻转同一套手法：
+    // 素材本身在状态切换那一帧就换好了，动画只是画布上的压扁，不参与任何尺寸/位置记账。
+    /** 0 = 下边组（正立），1 = 上边组（倒挂）；中间值即翻转过程 */
+    private var flipV = 0f
+    private var flipVFrom = 0f
+    private var flipVTo = 0f
+    private var flipVStart = 0L
+    private var flipVRunning = false
+
     // ---- 旋转动画（0 <-> ∓90 之间平滑过渡）----
     /** 当前显示用的角度（动画过程中是中间值） */
     private var shownRotation = 0f
@@ -506,6 +537,12 @@ class PetView(context: Context) : View(context) {
 
     /** 上一次的区号，用于 B/E 分界的滞回判定 */
     private var lastZone = PetState.ZONE_E
+
+    /**
+     * 上一次的垂直基准（[PetState.VERT_TOP] / [PetState.VERT_BOTTOM]），
+     * 用于**屏幕中线**的滞回判定 —— 见 [PetState.vertOf]。
+     */
+    private var lastVert = PetState.VERT_NONE
 
     @Suppress("unused")
     private var pendingLeft = false
@@ -575,6 +612,15 @@ class PetView(context: Context) : View(context) {
                 if (t >= 1f) {
                     flip = flipTo
                     flipRunning = false
+                }
+                need = true
+            }
+            if (flipVRunning) {
+                val t = ((now - flipVStart).toFloat() / FLIP_MS).coerceIn(0f, 1f)
+                flipV = flipVFrom + (flipVTo - flipVFrom) * easeOutCubic(t)
+                if (t >= 1f) {
+                    flipV = flipVTo
+                    flipVRunning = false
                 }
                 need = true
             }
@@ -745,12 +791,13 @@ class PetView(context: Context) : View(context) {
     /**
      * 退出方向：**按实际贴边情况**判断，不再只看状态。
      *
-     * 规则：**贴底优先** -> 向下收；否则贴左 -> 左；贴右 -> 右；
-     * 都没贴（悬空）也向下收。
+     * 规则：**贴底优先** -> 向下收；然后**贴上沿** -> 向上收；
+     * 否则贴左 -> 左；贴右 -> 右；都没贴（悬空）也向下收。
      *
      * ⚠️ 原来只按 state 判断（BORDER_* 走水平），于是"吸附在底边"
      * 但状态仍是右边框时就会往左右跑（用户反馈：
      * "吸附在底边的时候应该是收入到屏幕下面，现在是往左右跑的"）。
+     * 上边组同理：贴在屏幕顶上就必须**向上**收出去。
      */
     private fun exitVector(): FloatArray {
         val b = host?.bounds() ?: return floatArrayOf(0f, 1f)
@@ -760,6 +807,7 @@ class PetView(context: Context) : View(context) {
         val bottom = top + trackH
         val eps = 2f
         if (bottom >= b.height() - eps) return floatArrayOf(0f, 1f)
+        if (top <= eps) return floatArrayOf(0f, -1f)
         if (left <= eps) return floatArrayOf(-1f, 0f)
         if (right >= b.width() - eps) return floatArrayOf(1f, 0f)
         return floatArrayOf(0f, 1f)
@@ -773,7 +821,11 @@ class PetView(context: Context) : View(context) {
             dirX < 0f -> -bboxW / 2f
             else -> anchorX
         }
-        val y = if (dirY > 0f) b.height() + bboxH / 2f else anchorY
+        val y = when {
+            dirY > 0f -> b.height() + bboxH / 2f
+            dirY < 0f -> -bboxH / 2f
+            else -> anchorY
+        }
         return floatArrayOf(x, y)
     }
 
@@ -845,6 +897,9 @@ class PetView(context: Context) : View(context) {
     /**
      * 呼出：先瞬移到屏幕外，再平滑滑回 [targetX]/[targetY]。
      *
+     * 从**哪一侧**屏幕外进来由 [exitVector] 决定 —— 与收起方向严格互逆，
+     * 所以贴上沿的宠物是"从屏幕上沿滑下来"，贴底的是"从屏幕下方升上来"。
+     *
      * 注意瞬移那一步必须 syncWindow()，否则窗口还停在屏幕内、
      * 会看到宠物"从原地开始飞"。
      */
@@ -868,6 +923,7 @@ class PetView(context: Context) : View(context) {
             if (v[0] < 0f) from[0] = minOf(from[0], -(bboxW / 2f))
             if (v[0] == 0f) from[0] = targetX
             if (v[1] > 0f) from[1] = maxOf(from[1], b.height() + bboxH / 2f)
+            if (v[1] < 0f) from[1] = minOf(from[1], -(bboxH / 2f))
             if (v[1] == 0f) from[1] = targetY
         }
         anchorX = from[0]
@@ -934,6 +990,10 @@ class PetView(context: Context) : View(context) {
      * 过冲方向 = 吸附的移动方向（见 [bouncePending] 的说明），幅度取用户设定。
      * 若某个轴本来就在贴边位置（移动量≈0），该轴不弹。
      *
+     * 上下两边对称：贴上沿时目标在上方，过冲就朝上；贴下沿则朝下。
+     * 过冲点的夹取（[PetState.clampToScreen]）对两侧一视同仁，
+     * 所以"往上冲出屏幕"与"往下冲出屏幕"允许的幅度也完全一样。
+     *
      * ⚠️ **过冲点必须夹取**：回弹幅度可被用户调到很大（36px × 最多 5 倍 = 180px），
      * 而宠物本身可能只有 200 多像素宽 —— 不夹的话会被推出屏幕大半，
      * 加上回洛时长也能调到很长，看起来就是"卡进边框里几乎消失"。
@@ -941,7 +1001,7 @@ class PetView(context: Context) : View(context) {
      */
     private fun snapWithBounce(
         targetCenterX: Float, targetCenterY: Float,
-        snapSide: Boolean, snapBottom: Boolean,
+        snapSide: Boolean, snapVert: Boolean,
         tW: Int, tH: Int
     ) {
         // 回弹参数由用户在 App 里调（滑块 + 数字输入），每次吸附时现读。
@@ -954,7 +1014,7 @@ class PetView(context: Context) : View(context) {
         var ox = 0f
         var oy = 0f
         if (snapSide && abs(dx) > 1f && amp > 0.5f) ox = if (dx > 0f) amp else -amp
-        if (snapBottom && abs(dy) > 1f && amp > 0.5f) oy = if (dy > 0f) amp else -amp
+        if (snapVert && abs(dy) > 1f && amp > 0.5f) oy = if (dy > 0f) amp else -amp
 
         if (ox == 0f && oy == 0f) {
             // 已经在贴边位置，没什么可弹的
@@ -1038,6 +1098,8 @@ class PetView(context: Context) : View(context) {
      */
     private fun setDragState(newState: Int) {
         if (state == newState) return
+        // 换组的瞬间就把"上下翻转"排上动画：上半屏的形态是下半屏沿水平轴镜像过来的
+        startFlipV(if (PetState.isTop(newState)) 1f else 0f)
         val prevRot = curSizeRot
         val prevShown = shownRotation
         val newRot = PetState.rotationForSnap(newState)
@@ -1135,6 +1197,35 @@ class PetView(context: Context) : View(context) {
         scheduleFrame()
     }
 
+    /**
+     * 跨**屏幕中线**的上下翻转：与 [startFlip] 完全对称，只是压扁轴换成纵向。
+     *
+     * 目标由**状态**决定（[PetState.isTop]），不是由"当前离上沿近不近"决定 ——
+     * 画出来的形态必须与最终吸附的形态一致，否则松手那一下会突然翻过去。
+     */
+    private fun startFlipV(target: Float) {
+        if (flipVRunning && abs(flipVTo - target) < 0.01f) return
+        if (abs(flipV - target) < 0.01f && !flipVRunning) {
+            flipV = target
+            return
+        }
+        flipVFrom = flipV
+        flipVTo = target
+        flipVStart = SystemClock.uptimeMillis()
+        flipVRunning = true
+        choreographer.removeFrameCallback(frameCallback)
+        scheduleFrame()
+    }
+
+    /** 不做动画，直接把上下翻转对齐到某个状态（恢复位置 / 复位 / 吸附落位时用） */
+    private fun alignFlipV(st: Int) {
+        val t = if (PetState.isTop(st)) 1f else 0f
+        flipV = t
+        flipVFrom = t
+        flipVTo = t
+        flipVRunning = false
+    }
+
     // ---------------------------------------------------------------- 位置
     //
     // anchorX/anchorY 是**素材中心点**的屏幕坐标（不是格子左上角）。
@@ -1208,12 +1299,18 @@ class PetView(context: Context) : View(context) {
         cacheSizes()
         // 先算足迹盒左上角，再换算成中心点（anchor 存的是中心点）
         val trackLeft = if (PetState.isLeft(newState)) 0f else (b.width() - trackW).toFloat()
-        val trackTop = if (PetState.isZoneless(newState)) ((b.height() - trackH) / 2f)
-        else (b.height() - trackH).toFloat()
+        // 纵向：由状态自己决定挂在哪条水平边上（贴上沿 -> 顶边贴 0）
+        val trackTop = when (PetState.vertForState(newState)) {
+            PetState.VERT_TOP -> 0f
+            else -> if (PetState.isZoneless(newState)) ((b.height() - trackH) / 2f)
+            else (b.height() - trackH).toFloat()
+        }
         anchorX = trackLeft + centerFromTrackX()
         anchorY = trackTop + centerFromTrackY()
         dragOffsetX = 0f
         dragOffsetY = 0f
+        lastVert = PetState.vertForState(newState)
+        alignFlipV(newState)
         cancelTween()
         syncWindow()
     }
@@ -1222,6 +1319,9 @@ class PetView(context: Context) : View(context) {
     fun restore(state0: Int, left: Int, top: Int) {
         state = state0
         cacheSizes()
+        // 记住这个状态的纵向归属：紧接着的第一次拖动就不会因为中线滞回而先跳到另一组
+        lastVert = PetState.vertForState(state0)
+        alignFlipV(state0)
         anchorX = left + centerFromTrackX()
         anchorY = top + centerFromTrackY()
         dragOffsetX = 0f
@@ -1268,6 +1368,8 @@ class PetView(context: Context) : View(context) {
         flipFrom = 0f
         flipTo = 0f
         lastZone = PetState.ZONE_B
+        lastVert = PetState.vertForState(PetState.BORDER_R)
+        alignFlipV(PetState.BORDER_R)
         syncWindow()
         host?.onSettled(state, left.roundToInt(), top.roundToInt())
     }
@@ -1300,7 +1402,9 @@ class PetView(context: Context) : View(context) {
             val push = jumpAt(t)
             val rot = displayRotation()
             if (headAlongY) {
-                dy += push
+                // 与 onDraw 里的 canvas.translate 严格互逆：
+                // 下边组画的时候向上移了 -push，这里就加回 push；上边组相反。
+                dy += if (PetState.isTop(state)) -push else push
             } else {
                 dx += push * (if (rot > 0f) 1f else -1f)
             }
@@ -1310,6 +1414,12 @@ class PetView(context: Context) : View(context) {
         if (flip > 0.001f && flip < 0.999f) {
             val squash = abs(1f - 2f * flip).coerceAtLeast(0.03f)
             dx /= squash
+        }
+
+        // 反掉上下翻转动画的垂直压缩（与 onDraw 里的 canvas.scale 互逆）
+        if (flipV > 0.001f && flipV < 0.999f) {
+            val squash = abs(1f - 2f * flipV).coerceAtLeast(0.03f)
+            dy /= squash
         }
 
         // 命中判定用**显示角度**，和实际画出来的朝向保持一致
@@ -1352,12 +1462,25 @@ class PetView(context: Context) : View(context) {
         return bx >= b[0] && bx < b[2] && by >= b[1] && by < b[3]
     }
 
+    /**
+     * 取该状态要画的位图（**镜像 / 上下翻转在这里定，不含旋转**）。
+     *
+     * ⚠️ mirror 与 flipV 都必须是 **state 的纯函数**：
+     *   · [PetState.isLeft]   —— 左半屏水平镜像
+     *   · [PetState.flipVFor] —— 上边组（上角 / 贴上沿）上下翻转
+     *
+     * 绝不能用"当前离上沿近不近"这类**运行时标志**来选翻转：
+     * artCenterCache / scaledCache 都以 state 为键，翻转一旦不由状态唯一决定，
+     * 缓存就会串味 —— 素材中心点算错（表现是位置自己变了）、
+     * 命中判定与实际画面不一致。
+     *
+     * 左半屏叠加上下翻转不会把人物倒过来：上边组本来就是"下边组沿水平轴镜像"
+     * 的形态，左右两侧用同一套规则才对称；而旋转躺倒的侧边形态由
+     * [PetState.flipVFor] 返回 false，不受影响（否则头会朝错方向）。
+     */
     private fun bitmapFor(st: Int): Bitmap? {
         val s = sprite ?: return null
-        // 左半屏**只做水平镜像**（不做上下翻转）。
-        // 翻转旋转角符号（见 PetState.rotationForSnap）已经能让两侧都"头朝内"，
-        // 再加纵向翻转反而会把人物倒过来。
-        return s.bitmap(st, mirror = PetState.isLeft(st), flipV = false)
+        return s.bitmap(st, mirror = PetState.isLeft(st), flipV = PetState.flipVFor(st))
     }
 
     /**
@@ -1462,7 +1585,16 @@ class PetView(context: Context) : View(context) {
         // 跨半屏 -> 触发镜像翻转动画
         startFlip(if (leftHalf) 1f else 0f)
 
-        val db = PetState.bottomDist(y, trackH.toFloat(), b.height().toFloat())
+        val screenH = b.height().toFloat()
+        val trackHf = trackH.toFloat()
+
+        // ---- 垂直基准：这里只决定"以哪条水平边为准"，距离语义本身不动 ----
+        // 离上沿近就是上边组（带中线滞回，见 PetState.vertOf）。
+        // 选完基准才去量距离，于是上/下两组天然共用同一套 A/B/E 判定。
+        val v = PetState.vertOf(y, trackHf, screenH, lastVert)
+        lastVert = v
+        val dv = PetState.vertDistFor(v, y, trackHf, screenH)
+
         val dr = PetState.sideDist(x, trackW.toFloat(), b.width().toFloat(), leftHalf)
         // 旋转判定看**素材中心点**有没有越过 B/E 分界线
         val cd = PetState.centerSideDist(
@@ -1479,13 +1611,14 @@ class PetView(context: Context) : View(context) {
         // 取 max(trackW, trackH)（互换后不变）即可打破这个反馈。
         val halfRef = maxOf(trackW, trackH) / 2f
         val zone = PetState.zoneWithHysteresis(
-            db, dr, leftHalf, lastZone, cd,
+            v, dv, dr, leftHalf, lastZone, cd,
             PetState.currentAW + halfRef
         )
         lastZone = zone
 
-        // B 区即"中心点已越界" -> 旋转形态；E 区保持正立
-        val st = PetState.stateForZone(zone, leftHalf)
+        // B 区即"中心点已越界" -> 旋转形态；
+        // A/E 区按**垂直基准**决定用上角/下角、贴上沿/贴下沿（倒挂/正立）
+        val st = PetState.stateForZone(v, zone, leftHalf)
         setDragState(st)
     }
 
@@ -1524,35 +1657,39 @@ class PetView(context: Context) : View(context) {
         val y = curTrackTop()
         // 中线判定用**足迹中心**（0115 版行为）
         val leftHalf = (x + trackW / 2f) < b.width() / 2f
-        val db = PetState.bottomDist(y, trackH.toFloat(), b.height().toFloat())
+
+        val screenH = b.height().toFloat()
+        val trackHf = trackH.toFloat()
+
+        // 与拖动时**完全同一套**基准选择与距离度量（含中线滞回，参数一并续上），
+        // 所以"松手瞬间看到的形态"与"最终吸附到的形态"必然一致。
+        val v = PetState.vertOf(y, trackHf, screenH, lastVert)
+        lastVert = v
+        val dv = PetState.vertDistFor(v, y, trackHf, screenH)
         val dr = PetState.sideDist(x, trackW.toFloat(), b.width().toFloat(), leftHalf)
 
         // 与拖动时保持一致：中心点判据，门槛含半宽，且半宽取与朝向无关的值
         // （否则门槛与朝向互相决定，会形成自反馈振荡）
         val cd = PetState.centerSideDist(curCenterX(), b.width().toFloat(), leftHalf)
         val zone = PetState.zoneWithHysteresis(
-            db, dr, leftHalf, lastZone, cd,
+            v, dv, dr, leftHalf, lastZone, cd,
             PetState.currentAW + maxOf(trackW, trackH) / 2f
         )
         lastZone = zone
 
-        // ---- 朝向由"最终贴到哪条边"决定，而不是由拖动时的区号决定 ----
+        // ---- 贴哪条边：整个判定（含 E 区"贴更近的边"）都在逻辑层做完 ----
         // 用户要求：即使拖的时候素材没转，只要松手后贴到侧边，就要自动旋转 + 贴边。
-        val edges = if (zone == PetState.ZONE_E) {
-            if (PetState.nearerEdgeIsBottom(db, dr)) intArrayOf(1, 0) else intArrayOf(0, 1)
-        } else {
-            PetState.snapEdgesForZone(zone)
-        }
-        val snapBottom = edges[0] == 1
+        val edges = PetState.snapEdgesForZone(v, zone, dv, dr)
+        val snapVert = edges[0] == 1
         val snapSide = edges[1] == 1
+        // 贴水平边时用哪个状态由**垂直基准**决定：下沿正立、上沿倒挂。
+        // 贴两条边就是角：下角用 CORNER_B[LR]，上角用 CORNER_T[LR]。
         val want = when {
-            // 角落：两条边都贴 -> 用角落素材
-            snapBottom && snapSide ->
-                if (leftHalf) PetState.CORNER_BL else PetState.CORNER_BR
-            // 贴侧边 -> 一定旋转躺倒
+            snapVert && snapSide -> PetState.stateForZone(v, PetState.ZONE_A, leftHalf)
+            // 贴侧边 -> 一定旋转躺倒（左右对称，与上下无关）
             snapSide -> if (leftHalf) PetState.BORDER_L else PetState.BORDER_R
-            // 只贴底边 -> 正立
-            else -> if (leftHalf) PetState.BORDER_L_UPRIGHT else PetState.BORDER_R_UPRIGHT
+            // 只贴水平边 -> 正立素材（可能上下翻转）
+            else -> PetState.stateForZone(v, PetState.ZONE_E, leftHalf)
         }
 
         // 目标位置必须用 **want 的足迹** 算，否则换成旋转形态后会不贴边
@@ -1563,18 +1700,22 @@ class PetView(context: Context) : View(context) {
 
         var nx = x
         var ny = y
-        if (snapBottom) ny = (b.height() - tH).toFloat()
+        // 贴水平边：贴上沿贴 0，贴下沿贴底 —— 由垂直基准决定，两边完全对称
+        if (snapVert) ny = if (v == PetState.VERT_TOP) 0f else (b.height() - tH).toFloat()
         if (snapSide) nx = if (leftHalf) 0f else (b.width() - tW).toFloat()
         val c = PetState.clampToScreen(
             nx, ny, tW.toFloat(), tH.toFloat(),
             b.width().toFloat(), b.height().toFloat()
         )
 
-        // 吸附完成时翻转值对齐所在半屏
+        // 吸附完成时翻转值对齐所在半屏（水平镜像）与所在上下半屏（上下翻转）。
+        // flipV 只驱动压扁动画：0 与 1 都不压扁，对齐它只是"不再补播动画"，
+        // 不会让画面突然翻过去（素材随状态走，见 bitmapFor）。
         flip = if (leftHalf) 1f else 0f
         flipFrom = flip
         flipTo = flip
         flipRunning = false
+        alignFlipV(want)
 
         // 状态切换推迟到补间结束
         pendingState = want
@@ -1610,7 +1751,7 @@ class PetView(context: Context) : View(context) {
             // 状态与尺寸已在此处理，别再让补间结束时的 applyPendingState 重做一遍
             pendingState = null
             // 边转边靠；末尾带回弹
-            snapWithBounce(targetCenterX, targetCenterY, snapSide, snapBottom, tW, tH)
+            snapWithBounce(targetCenterX, targetCenterY, snapSide, snapVert, tW, tH)
             placeWindow()
             invalidate()
             host?.onSettled(want, c[0].roundToInt(), c[1].roundToInt())
@@ -1623,7 +1764,7 @@ class PetView(context: Context) : View(context) {
             bouncePending = false
             applyPendingState()
         } else {
-            snapWithBounce(targetCenterX, targetCenterY, snapSide, snapBottom, tW, tH)
+            snapWithBounce(targetCenterX, targetCenterY, snapSide, snapVert, tW, tH)
         }
 
         placeWindow()
@@ -1645,6 +1786,7 @@ class PetView(context: Context) : View(context) {
         val st = pendingState ?: return
         pendingState = null
         val newRot = PetState.rotationForSnap(st)
+        alignFlipV(st)
         if (!rotAnimRunning && abs(shownRotation - newRot) > 0.01f) {
             // 兜底：还差一个旋转，冻结尺寸后接着转（正常路径不会走到这里）
             frozenRot = curSizeRot
@@ -1707,10 +1849,12 @@ class PetView(context: Context) : View(context) {
             val sx = if (headAlongY) 1f + sq else 1f - sq
             val sy = if (headAlongY) 1f - sq else 1f + sq
             canvas.scale(sx, sy, cx, cy)
-            // 压扁之后向头的方向弹起：头朝上就往上，头朝左就往左
+            // 压扁之后向头的方向弹起：头朝上就往上，头朝左就往左。
+            // 上边组是倒挂的（头朝下），所以它**向下**弹 —— 与"始终朝屏幕内侧弹"
+            // 是同一件事：弹起方向永远背离吸附的那条边。
             val push = jumpAt(t)
             val dx = if (headAlongY) 0f else -push * (if (rot > 0f) 1f else -1f)
-            val dy = if (headAlongY) -push else 0f
+            val dy = if (!headAlongY) 0f else if (PetState.isTop(state)) push else -push
             canvas.translate(dx, dy)
         }
 
@@ -1718,6 +1862,13 @@ class PetView(context: Context) : View(context) {
         if (flip > 0.001f && flip < 0.999f) {
             val squash = abs(1f - 2f * flip).coerceAtLeast(0.03f)
             canvas.scale(squash, 1f, cx, cy)
+        }
+
+        // 跨屏幕中线的**上下翻转**：同上，只是压扁轴换成纵向
+        // （下边组 <-> 上边组，素材本身就是沿水平轴镜像的两套）
+        if (flipV > 0.001f && flipV < 0.999f) {
+            val squash = abs(1f - 2f * flipV).coerceAtLeast(0.03f)
+            canvas.scale(1f, squash, cx, cy)
         }
 
         // 用**原图 + src/dst 矩形**绘制，让 GPU 去做缩放。
@@ -1809,9 +1960,13 @@ class PetView(context: Context) : View(context) {
 
         /** 窗口给"轻跳"和四角旋转留的余量，避免边缘被切 */
         const val HOP_PAD_X = 8
-        const val HOP_PAD_BOTTOM = 8
 
-        /** 轻跳余量的最小保底值 */
+        /**
+         * 轻跳余量的最小保底值。
+         *
+         * 上下两头**用同一个值**（见 [bottomPad]）：弹起方向永远朝屏幕内侧，
+         * 贴上沿的宠物是向下弹的，底部同样需要 cellH×8% 的余量。
+         */
         const val HOP_PAD_MIN = 8
 
         /** 服务在 addView 前算初始窗口用 */
@@ -1835,19 +1990,23 @@ class PetView(context: Context) : View(context) {
             val diag = kotlin.math.hypot(cell[0].toDouble(), cell[1].toDouble()).toFloat()
             val envW = maxOf(diag, cell[0] * (1f + SQ_MAX)).toInt()
             val envH = maxOf(diag, cell[1] * (1f + SQ_MAX)).toInt()
-            val top = (cell[1] * HOP_FRACTION).toInt() + HOP_PAD_MIN
+            val pad = (cell[1] * HOP_FRACTION).toInt() + HOP_PAD_MIN
 
             // 足迹盒在包络里的位置（居中）
             val footOffX = (envW - tw) / 2
             val footOffY = (envH - th) / 2
 
             val x = if (PetState.isLeft(state)) 0 else screen.width() - tw
-            val y = if (PetState.isZoneless(state)) (screen.height() - th) / 2
-            else screen.height() - th
+            // 纵向：上边组贴顶，躺侧边垂直居中，其余贴底
+            val y = when (PetState.vertForState(state)) {
+                PetState.VERT_TOP -> 0
+                else -> if (PetState.isZoneless(state)) (screen.height() - th) / 2
+                else screen.height() - th
+            }
 
             return intArrayOf(
-                x - HOP_PAD_X - footOffX, y - top - footOffY,
-                envW + HOP_PAD_X * 2, envH + top + HOP_PAD_BOTTOM
+                x - HOP_PAD_X - footOffX, y - pad - footOffY,
+                envW + HOP_PAD_X * 2, envH + pad * 2
             )
         }
     }
