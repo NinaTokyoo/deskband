@@ -857,6 +857,19 @@ class PetView(context: Context) : View(context) {
         slideRestX = targetX
         slideRestY = targetY
         val from = offScreenAnchor(v[0], v[1])
+        // ⚠️ 起点必须**严格**满足两点，否则会出现"斜着从角上飞进来"：
+        //   1) 进场轴上一定在屏幕外（用 max/min 强制，不只是"加半个窗口"）
+        //   2) 另一轴**钉死在落点**上 —— 原实现对该轴保留 anchorX/anchorY，
+        //      只要那一刻锚点有偏差，就会变成斜向进场
+        //      （用户反馈："第一次呼入是从右下角飞到右边框中点"）。
+        val b = host?.bounds()
+        if (b != null) {
+            if (v[0] > 0f) from[0] = maxOf(from[0], b.width() + bboxW / 2f)
+            if (v[0] < 0f) from[0] = minOf(from[0], -(bboxW / 2f))
+            if (v[0] == 0f) from[0] = targetX
+            if (v[1] > 0f) from[1] = maxOf(from[1], b.height() + bboxH / 2f)
+            if (v[1] == 0f) from[1] = targetY
+        }
         anchorX = from[0]
         anchorY = from[1]
         dragOffsetX = 0f
