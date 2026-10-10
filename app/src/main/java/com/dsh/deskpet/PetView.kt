@@ -162,6 +162,10 @@ class PetView(context: Context) : View(context) {
         cellW = cell[0]
         cellH = cell[1]
 
+        // ⚠️ 未冻结时必须**先**把 curSizeRot 归位到当前状态，再算 trackW/trackH。
+        // 否则 sizeRotation() 读到的是上一个状态的朝向，足迹盒宽高算反，
+        // 贴边就会留缝（首次呼出吸附右边框、素材与边框之间有缝隙）。
+        if (!frozen) curSizeRot = PetState.rotationForSnap(state)
         val rot = sizeRotation()
         val q = ((rot % 360f) + 360f) % 360f
         val rotated = q == 90f || q == 270f
@@ -876,12 +880,19 @@ class PetView(context: Context) : View(context) {
             val cx = x.coerceIn(0, (b.width() - bboxW).coerceAtLeast(0))
             val cy = y.coerceIn(0, (b.height() - bboxH).coerceAtLeast(0))
             if (cx != x || cy != y) {
-                winShiftX = cx - x
-                winShiftY = cy - y
+                val nx = cx - x
+                val ny = cy - y
                 x = cx
                 y = cy
-                // 补偿量变了必须重画：空闲时不会有帧回调，不 invalidate 就会停一拍
-                invalidate()
+                // ⚠️ 只有补偿量**真的变了**才重画。
+                // placeWindow() 是从 onDraw() 里调的，无条件 invalidate() 会变成
+                // onDraw -> placeWindow -> invalidate -> onDraw ... 的**死循环**：
+                // CPU 跑满、整个 App 卡到被系统干掉（用户反馈点收起把 App 关了）。
+                if (nx != winShiftX || ny != winShiftY) {
+                    winShiftX = nx
+                    winShiftY = ny
+                    invalidate()
+                }
             }
         }
 
