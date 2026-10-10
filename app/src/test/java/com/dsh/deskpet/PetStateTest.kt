@@ -618,38 +618,61 @@ class PetStateTest {
     }
 
     /**
-     * 点击/长按压缩的支点：**只有贴底边 / 左下角 / 右下角**才"底边不动、只压上边"。
+     * 压缩/弹起的**吸附边**判定：四条边各自对应哪些状态。
      *
-     * 用户要求："现在只针对吸附在底边和左右下角的情况进行修改点击动画：
-     * 现在是点击上下同时向中间压缩，修改为底边不动仅上边向下压缩。"
+     * 用户先要求"只针对底边和左右下角，底边不动仅上边向下压缩"，
+     * 随后要求"把底边的单击和长按动画复制到其他三边，记得旋转对应角度"——
+     * 于是判据从"是不是底边组"泛化成"贴的是哪条屏幕边"。
      */
     @Test
-    fun only_the_bottom_group_squashes_from_the_bottom_edge() {
-        // 底边（两个正立形态）+ 左右下角 —— 这三种情况脚踩在屏幕下沿，压缩时脚不能动
-        assertTrue(PetState.squashFromBottom(PetState.BORDER_R_UPRIGHT))
-        assertTrue(PetState.squashFromBottom(PetState.BORDER_L_UPRIGHT))
-        assertTrue(PetState.squashFromBottom(PetState.CORNER_BR))
-        assertTrue(PetState.squashFromBottom(PetState.CORNER_BL))
-
-        // 侧边躺倒（VERT_NONE）与上边组（VERT_TOP）保持原样：绕素材中心压
-        assertFalse(PetState.squashFromBottom(PetState.BORDER_R))
-        assertFalse(PetState.squashFromBottom(PetState.BORDER_L))
-        assertFalse(PetState.squashFromBottom(PetState.CORNER_TR))
-        assertFalse(PetState.squashFromBottom(PetState.CORNER_TL))
-        assertFalse(PetState.squashFromBottom(PetState.EDGE_TOP_R))
-        assertFalse(PetState.squashFromBottom(PetState.EDGE_TOP_L))
-
-        // 与垂直基准严格一致：判据就是 vertForState == VERT_BOTTOM
+    fun every_state_knows_which_screen_edge_it_is_attached_to() {
+        // 下边：两个下角 + 贴下沿的两个正立形态
         for (s in intArrayOf(
-            PetState.CORNER_BR, PetState.CORNER_BL, PetState.BORDER_R, PetState.BORDER_L,
-            PetState.BORDER_R_UPRIGHT, PetState.BORDER_L_UPRIGHT,
+            PetState.CORNER_BR, PetState.CORNER_BL,
+            PetState.BORDER_R_UPRIGHT, PetState.BORDER_L_UPRIGHT
+        )) {
+            assertEquals("状态 $s 应贴下边", PetState.ATTACH_BOTTOM, PetState.attachEdgeOf(s))
+        }
+        // 上边：两个上角 + 贴上沿的两个正立形态
+        for (s in intArrayOf(
             PetState.CORNER_TR, PetState.CORNER_TL, PetState.EDGE_TOP_R, PetState.EDGE_TOP_L
         )) {
-            assertEquals(
-                "状态 $s 的支点判据与垂直基准不一致",
-                PetState.vertForState(s) == PetState.VERT_BOTTOM,
-                PetState.squashFromBottom(s)
-            )
+            assertEquals("状态 $s 应贴上边", PetState.ATTACH_TOP, PetState.attachEdgeOf(s))
+        }
+        // 左右两条竖边
+        assertEquals(PetState.ATTACH_RIGHT, PetState.attachEdgeOf(PetState.BORDER_R))
+        assertEquals(PetState.ATTACH_LEFT, PetState.attachEdgeOf(PetState.BORDER_L))
+
+        // 支点：只有贴顶取格子上缘，其余三种取下缘
+        //（贴左右边框时画布 y 轴指向屏幕左右，支点在下缘 == 贴边那条竖边不动）
+        assertFalse(PetState.squashPivotAtCellBottom(PetState.CORNER_TR))
+        assertFalse(PetState.squashPivotAtCellBottom(PetState.CORNER_TL))
+        assertFalse(PetState.squashPivotAtCellBottom(PetState.EDGE_TOP_R))
+        assertFalse(PetState.squashPivotAtCellBottom(PetState.EDGE_TOP_L))
+        for (s in intArrayOf(
+            PetState.CORNER_BR, PetState.CORNER_BL,
+            PetState.BORDER_R_UPRIGHT, PetState.BORDER_L_UPRIGHT,
+            PetState.BORDER_R, PetState.BORDER_L
+        )) {
+            assertTrue("状态 $s 的支点应在格子下缘", PetState.squashPivotAtCellBottom(s))
+        }
+
+        // 弹起方向：贴顶往下（+1），其余三种往屏幕内侧（-1）
+        assertEquals(1f, PetState.jumpSignY(PetState.CORNER_TR), 0.0001f)
+        assertEquals(1f, PetState.jumpSignY(PetState.EDGE_TOP_L), 0.0001f)
+        for (s in intArrayOf(
+            PetState.CORNER_BR, PetState.CORNER_BL,
+            PetState.BORDER_R_UPRIGHT, PetState.BORDER_L_UPRIGHT,
+            PetState.BORDER_R, PetState.BORDER_L
+        )) {
+            assertEquals("状态 $s 应朝屏幕内侧弹", -1f, PetState.jumpSignY(s), 0.0001f)
+        }
+
+        // 十个状态一个都不能漏：每种都必须有明确的吸附边
+        for (s in 0..10) {
+            if (s == 4) continue // 4 是空缺编号
+            val e = PetState.attachEdgeOf(s)
+            assertTrue("状态 $s 的吸附边非法: $e", e in 0..3)
         }
     }
 

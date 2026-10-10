@@ -644,18 +644,51 @@ object PetState {
         if (isCorner(state)) 1f else normal
 
     /**
-     * 点击/长按压缩时，是否**以底边为支点**（底边不动，只把上边压下来）。
+     * 点击/长按压缩时，宠物**贴着哪条屏幕边**。
      *
-     * 只对"吸附在**底边** / **左下角** / **右下角**"这三种情况生效 ——
-     * 也就是垂直基准为 [VERT_BOTTOM] 的状态：贴底边的两个正立形态
-     * （[BORDER_R_UPRIGHT] / [BORDER_L_UPRIGHT]）与两个下角（[CORNER_BR] / [CORNER_BL]）。
+     * 压缩规则是"吸附边不动，另一侧压过来"，弹起方向是它的反方向（朝屏幕内侧）——
+     * 四条边共用同一套，只是要按状态**旋转到对应角度**：
      *
-     * 它们本来就是"脚踩在屏幕下沿"的姿态，压缩时脚不动才自然；
-     * 若仍像原来那样上下同时向中间压，脚会离地、看起来像悬空缩了一下。
+     * | 状态 | 吸附边 | 法线（画布坐标） | 支点（画布局部 y） |
+     * |---|---|---|---|
+     * | `CORNER_BR/BL`、`BORDER_*_UPRIGHT` | 下边 | y | 格子**下**缘 |
+     * | `CORNER_TR/TL`、`EDGE_TOP_*` | 上边 | y | 格子**上**缘 |
+     * | `BORDER_R` | 右边 | y（素材已躺倒，法线在画布上仍是 y） | 格子**下**缘 |
+     * | `BORDER_L` | 左边 | 同上 | 格子**下**缘 |
      *
-     * 侧边（[VERT_NONE]，躺倒）与上边组（[VERT_TOP]，倒挂）保持原样：绕素材中心压。
+     * 贴左右边框时素材是旋转 90° 画的，画布的 y 轴正好指向屏幕的左右方向，
+     * 所以法线仍然是 y —— 四种边在绘制代码里因此可以走同一套缩放/平移。
      */
-    fun squashFromBottom(state: Int): Boolean = vertForState(state) == VERT_BOTTOM
+    const val ATTACH_BOTTOM = 0
+    const val ATTACH_TOP = 1
+    const val ATTACH_LEFT = 2
+    const val ATTACH_RIGHT = 3
+
+    /** 该状态贴在哪条屏幕边上（见 [ATTACH_BOTTOM] 等常量的说明） */
+    fun attachEdgeOf(state: Int): Int = when {
+        state == BORDER_R -> ATTACH_RIGHT
+        state == BORDER_L -> ATTACH_LEFT
+        vertForState(state) == VERT_TOP -> ATTACH_TOP
+        else -> ATTACH_BOTTOM
+    }
+
+    /**
+     * 压缩支点是否取格子的**下**缘（否则取上缘）。
+     *
+     * "贴顶"是唯一需要翻面的一种 —— 它贴的是屏幕上方，压缩时屏幕上方那条边不动。
+     * 贴左右边框虽然贴的是竖边，但素材躺倒后画布 y 轴指向那条竖边，支点仍在下缘。
+     */
+    fun squashPivotAtCellBottom(state: Int): Boolean =
+        attachEdgeOf(state) != ATTACH_TOP
+
+    /**
+     * 弹起方向在画布 y 轴上的符号：+1 = 向局部下方，-1 = 向局部上方。
+     *
+     * 永远是"背离吸附边、朝屏幕内侧"：贴下边往上弹、贴上边往下弹、
+     * 贴左右边框时画布 y 轴指向屏幕左右，于是也是**背离那条竖边**。
+     */
+    fun jumpSignY(state: Int): Float =
+        if (attachEdgeOf(state) == ATTACH_TOP) 1f else -1f
 
     /**
      * 长按松手时的**弹起高度系数**：与压缩程度成正比。

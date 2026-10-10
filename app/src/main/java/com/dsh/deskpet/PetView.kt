@@ -505,15 +505,21 @@ class PetView(context: Context) : View(context) {
     /**
      * 长按压缩：**按住不放就一直往下压**，最深 [PRESS_MAX_SQ]（50%），松手回弹。
      *
-     * 只对"吸附在底边 / 左下角 / 右下角"这三种情况启用（见
-     * [PetState.squashFromBottom]）—— 它们的支点是**底边**：底边不动、只压上边。
-     * 其余状态（侧边躺倒、上边倒挂）保持原来的"绕素材中心压"。
+     * **四条边都启用**，规则统一为"**吸附边不动，另一侧压过来**"：
+     * 贴下边就压上边、贴上边就压下边、贴左右边框时素材是躺倒的，
+     * 压的就是"朝屏幕内侧"的那一侧（见 [PetState.attachEdgeOf]）——
+     * 贴哪条边由状态决定，旋转由 canvas 负责，绘制代码只有一套。
+     *
+     * 用户要求："现在只针对吸附在底边和左右下角的情况进行修改点击动画……
+     * 底边不动仅上边向下压缩"，随后又要求"把底边的单击和长按动画复制到其他三边，
+     * 记得旋转对应角度"。
      *
      * 三点约定（用户确认过）：
      *   · 一按下就立刻开始压（没有"长按判定"的等待），短按也会先压一点点；
      *   · 短按松手 -> **接着播原来的点击动画**（继续压到 [SQ_MAX]、弹起、落回），
-     *     衔接方式是把点击动画的时钟往前拨（见 [startHopFrom]），所以不会跳变；
-     *   · 长按（已经压得比 [SQ_MAX] 更深）松手 -> 只回弹，不弹起、也不触发点击互动。
+     *     衔接方式是把点击动画的时钟往前拨（见 [onTapped]），所以不会跳变；
+     *   · 长按（已经压得比 [SQ_MAX] 更深）松手 -> 回弹 + 与压缩程度成正比的弹起，
+     *     落地还有一次回弹；这一档**不触发点击互动**。
      */
     private var pressing = false
     private var pressStart = 0L
@@ -611,13 +617,13 @@ class PetView(context: Context) : View(context) {
     }
 
     /**
-     * 压缩的**支点 Y**（与 [onDraw] 里 `canvas.scale` 的支点严格一致）。
+     * 压缩的**支点**（画布局部 y，与 [onDraw] 里 `canvas.scale` 的支点严格一致）。
      *
-     * 贴底边 / 左下角 / 右下角时是**素材底边**（底边不动，只把上边压下来），
-     * 其余状态仍是素材中心。
+     * 贴顶取格子上缘（屏幕上方不动），其余三种边取下缘 ——
+     * 贴左右边框时画布 y 轴指向屏幕的左右，支点在下缘就等于"贴边那条竖边不动"。
      */
-    private fun squashPivotY(headAlongY: Boolean): Float =
-        if (headAlongY && PetState.squashFromBottom(state)) cellLocalY() + cellH else pivotY()
+    private fun squashPivotLocalY(): Float =
+        if (PetState.squashPivotAtCellBottom(state)) cellLocalY() + cellH else cellLocalY()
 
     /**
      * 松手回弹：从当前压缩量弹回 0，并可带一次**向上弹起**。
@@ -1819,23 +1825,15 @@ class PetView(context: Context) : View(context) {
         val sq = currentSquash()
         val push = currentJump()
         if (abs(sq) > 0.0001f || push > 0.0001f || hopping) {
-            val headAlongY = abs(displayRotation()) < 45f
-            val sx = if (headAlongY) 1f + sq else 1f - sq
-            val sy = if (headAlongY) 1f - sq else 1f + sq
-            // ⚠️ 支点可能是素材**底边**（贴底边/下角时），不是中心 ——
-            // 先相对支点反缩放，再换算回"相对素材中心"的偏移
-            // （后面的旋转、换格子坐标都以素材中心为参考）。
-            val py = squashPivotY(headAlongY)
-            dx = (localX - cx) / sx
-            dy = (localY - py) / sy + (py - cy)
-            val rot = displayRotation()
-            if (headAlongY) {
-                // 与 onDraw 里的 canvas.translate 严格互逆：
-                // 下边组画的时候向上移了 -push，这里就加回 push；上边组相反。
-                dy += if (PetState.isTop(state)) -push else push
-            } else {
-                dx += push * (if (rot > 0f) 1f else -1f)
-            }
+            // 与 onDraw 同一套：法线方向压缩 (1+sq, 1-sq)，支点在吸附边上
+            // ⚠️ 支点不是素材中心（贴顶是格子上缘、其余是下缘）——
+            // 先相对支点反缩放，再换算回"相对素材中心"的偏移，
+            // 因为后面的旋转、换格子坐标都以素材中心为参考。
+            val py = squashPivotLocalY()
+            dx = (localX - cx) / (1f + sq)
+            dy = (localY - py) / (1f - sq) + (py - cy)
+            // 与 onDraw 里的 canvas.translate 严格互逆
+            dy -= PetState.jumpSignY(state) * push
         }
 
         // 反掉翻转动画的水平压缩
@@ -2345,24 +2343,22 @@ class PetView(context: Context) : View(context) {
         // 旋转绕格子中心；只改变换、不动格子尺寸 -> 比例不变
         if (abs(rot) > 0.01f) canvas.rotate(rot, cx, cy)
 
-        // 点击/长按反馈：在人物自己的坐标系里压扁（压的方向跟着头朝向）
+        // 点击/长按反馈：在人物自己的坐标系里压扁（压的方向跟着**吸附边**走）
         val sq = currentSquash()
         val push = currentJump()
         if (abs(sq) > 0.0001f || push > 0.0001f || hopping) {
-            // 沿"头轴"压扁。贴底/角落时头轴是 y，贴侧边（转 90°）时头轴是 x。
-            val headAlongY = abs(rot) < 45f
-            val sx = if (headAlongY) 1f + sq else 1f - sq
-            val sy = if (headAlongY) 1f - sq else 1f + sq
-            // ⚠️ 支点：贴底边 / 左下角 / 右下角时**底边不动**（只压上边），
-            // 其余状态仍绕素材中心 —— 与 hitsPet 里的逆变换必须一致。
-            canvas.scale(sx, sy, cx, squashPivotY(headAlongY))
-            // 压扁之后向头的方向弹起：头朝上就往上，头朝左就往左。
-            // 上边组是倒挂的（头朝下），所以它**向下**弹 —— 与"始终朝屏幕内侧弹"
-            // 是同一件事：弹起方向永远背离吸附的那条边。
+            // 沿"吸附边"的**法线**压缩：吸附边不动，另一侧压过来；
+            // 切向同时撑大 (1+sq) 做体积感。
+            //
+            // ⚠️ 四条边共用这一套（贴底/贴顶/贴左右边框）：贴左右边框时素材是旋转
+            // 90° 画的，画布的 y 轴正好指向屏幕的左右方向，所以法线在画布上仍是 y
+            // —— 旋转已经作用在 canvas 上了。支点见 [squashPivotLocalY]，
+            // 与 hitsPet 里的逆变换必须完全一致。
+            canvas.scale(1f + sq, 1f - sq, cx, squashPivotLocalY())
+            // 弹起方向：背离吸附边、朝屏幕内侧，同样是画布 y 轴上的符号
+            //（贴顶往下弹，其余三种往上/朝屏幕内弹）。
             // 点一下是轻跳；长按松手是"与压缩程度成正比"的弹起（见 currentJump）。
-            val dx = if (headAlongY) 0f else -push * (if (rot > 0f) 1f else -1f)
-            val dy = if (!headAlongY) 0f else if (PetState.isTop(state)) push else -push
-            canvas.translate(dx, dy)
+            canvas.translate(0f, PetState.jumpSignY(state) * push)
         }
 
         // 跨半屏的镜像翻转：中途压成一条线再展开，做出"翻面"观感
