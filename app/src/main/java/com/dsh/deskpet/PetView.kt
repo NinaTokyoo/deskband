@@ -542,8 +542,14 @@ class PetView(context: Context) : View(context) {
                 if (t >= 1f) hopping = false
                 need = true
             }
-            invalidate()
-            if (need) scheduleFrame()
+            // 只有真的有动画时才重绘。
+            // 原来无条件 invalidate()，于是每段动画结束都会多画一帧、
+            // 而且和 App 主界面共用主线程的 Choreographer —— 用户反馈
+            // "呼出桌宠时上下滑动不如收起时跟手"，少画一帧是一帧。
+            if (need) {
+                invalidate()
+                scheduleFrame()
+            }
         }
     }
 
