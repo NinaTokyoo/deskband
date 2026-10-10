@@ -528,11 +528,8 @@ class MainActivity : Activity() {
         val open = skinMenuWrap.visibility != View.VISIBLE
         if (open) buildSkinMenu()
         skinMenuWrap.visibility = if (open) View.VISIBLE else View.GONE
-        // ⚠️ 菜单展开时先收起右下角人物：菜单是**满宽**的，人物停在原位会被
-        // 菜单最后几行和横线压住（用户明确要求"不要与人物发生重叠"）。
-        // 用 GONE 而不是 INVISIBLE —— INVISIBLE 仍占 104dp 高度，
-        // 菜单下面会留一条空白带。收起菜单后立刻恢复。
-        imgCornerPreview.visibility = if (open) View.GONE else View.VISIBLE
+        // 人物**始终显示**在卡片右下角（用户要求）：菜单只占卡片左侧 2/3，
+        // 与右下角的素材不重叠，所以不需要在展开时把它收起来。
         // 展开 -> 三角正立（旋转 180°）；收起 -> 恢复倒立
         icoSkinArrow.animate().rotation(if (open) 180f else 0f).setDuration(140).start()
         // ⚠️ 必须重刷一次主题，而且要在 visibility 改完之后：

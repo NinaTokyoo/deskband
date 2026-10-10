@@ -133,68 +133,80 @@
                         style="@style/CardTitle"
                         android:text="@string/section_skin" />
 
+                    <!-- ⚠️ 宽度 = 卡片内容宽度的 2/3（用户要求）：名称框与展开的
+                         二级菜单**同一款宽度**，所以它们一起塞进这个列容器里，
+                         宽度只在一处定义，绝不会出现"上宽下窄"的台阶。
+
+                         用权重 66:34 而不是写死 dp，换屏幕尺寸也不会跑偏。 -->
                     <LinearLayout
-                    android:id="@+id/boxSkin"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingStart="12dp"
-                    android:paddingEnd="10dp"
-                    android:paddingTop="9dp"
-                    android:paddingBottom="9dp">
-
-                    <TextView
-                        android:id="@+id/txtSkinName"
-                        android:layout_width="0dp"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:maxLines="1"
-                        android:ellipsize="end"
-                        android:textSize="15sp" />
+                        android:orientation="horizontal">
 
-                    <!-- ⚠️ 箭头要**避开右下角的人物素材**（素材 104dp 宽 + 1dp 边距，
-                         再留 8dp 间隙）。不给这个 marginEnd 的话箭头会被素材整个盖住 ——
-                         原来的 Spinner 就是靠 marginEnd=99dp 避让的，换成自绘框时漏掉了。 -->
-                    <ImageView
-                        android:id="@+id/icoSkinArrow"
-                        android:layout_width="14dp"
-                        android:layout_height="14dp"
-                        android:layout_marginStart="8dp"
-                        android:layout_marginEnd="113dp"
-                        android:src="@drawable/ic_triangle_down"
-                        android:clickable="false"
-                        android:focusable="false"
-                        android:importantForAccessibility="no" />
-                </LinearLayout>
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="66"
+                            android:orientation="vertical">
 
-                <!-- 二级菜单：默认隐藏，点框展开。行与行之间的横线由代码加。
-                     ⚠️ 宽度**不是满宽**：从卡片左侧起占到约 2/3 处就收边
-                     （用户要求），右边框在那里结束，人物素材留在右侧不被打扰。
-                     用法：match_parent 的容器 + 内部按 0.66 权重排一个实心块，
-                     这样比例不依赖具体像素宽度，换屏幕也不会跑偏。 -->
-                <LinearLayout
-                    android:id="@+id/skinMenuWrap"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="-1dp"
-                    android:orientation="horizontal"
-                    android:visibility="gone">
+                            <LinearLayout
+                                android:id="@+id/boxSkin"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="8dp"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical"
+                                android:paddingStart="12dp"
+                                android:paddingEnd="10dp"
+                                android:paddingTop="9dp"
+                                android:paddingBottom="9dp">
 
-                    <LinearLayout
-                        android:id="@+id/skinMenu"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="66"
-                        android:orientation="vertical" />
+                                <TextView
+                                    android:id="@+id/txtSkinName"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:maxLines="1"
+                                    android:ellipsize="end"
+                                    android:textSize="15sp" />
 
-                    <!-- 右侧留白：占 1/3，保证菜单右边界落在卡片 2/3 处 -->
-                    <Space
-                        android:layout_width="0dp"
-                        android:layout_height="1dp"
-                        android:layout_weight="34" />
-                </LinearLayout>
+                                <ImageView
+                                    android:id="@+id/icoSkinArrow"
+                                    android:layout_width="14dp"
+                                    android:layout_height="14dp"
+                                    android:layout_marginStart="8dp"
+                                    android:src="@drawable/ic_triangle_down"
+                                    android:clickable="false"
+                                    android:focusable="false"
+                                    android:importantForAccessibility="no" />
+                            </LinearLayout>
+
+                            <!-- 二级菜单：默认隐藏，点框展开。行间横线由代码加。
+                                 外层只负责显隐，内层才是真正的一列选项。
+                                 -1dp 的 marginTop 把相接处两道描边叠成一道，
+                                 这样名称框 + 菜单看起来是"一整块"。 -->
+                            <LinearLayout
+                                android:id="@+id/skinMenuWrap"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="-1dp"
+                                android:orientation="vertical"
+                                android:visibility="gone">
+
+                                <LinearLayout
+                                    android:id="@+id/skinMenu"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:orientation="vertical" />
+                            </LinearLayout>
+                        </LinearLayout>
+
+                        <!-- 右侧留白：占 1/3，把上面的控件挤到卡片左侧 2/3 -->
+                        <Space
+                            android:layout_width="0dp"
+                            android:layout_height="1dp"
+                            android:layout_weight="34" />
+                    </LinearLayout>
                 </LinearLayout>
 
                 <!-- 宽度要与上面 Spinner 的 marginEnd 配合：
@@ -212,7 +224,7 @@
                     android:layout_width="104dp"
                     android:layout_height="104dp"
                     android:layout_gravity="end|bottom"
-                    android:layout_marginEnd="1dp"
+                                        android:layout_marginEnd="1dp"
                     android:layout_marginBottom="1dp"
                     android:scaleType="matrix"
                     android:clickable="false"
