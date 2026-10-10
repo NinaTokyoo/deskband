@@ -37,7 +37,7 @@ class MainActivity : Activity() {
     private lateinit var markOverlay: TextView
     private lateinit var markNotify: TextView
     private lateinit var btnToggle: Button
-    private lateinit var seekSize: SeekBar
+    private lateinit var seekSize: ThumbSeekBar
     private lateinit var txtSize: TextView
     private lateinit var editSize: EditText
     private lateinit var btnSaveSize: Button
@@ -62,8 +62,8 @@ class MainActivity : Activity() {
     private lateinit var btnResetKeep: Button
 
     // 松手回弹调节
-    private lateinit var seekBounceAmp: SeekBar
-    private lateinit var seekBounceMs: SeekBar
+    private lateinit var seekBounceAmp: ThumbSeekBar
+    private lateinit var seekBounceMs: ThumbSeekBar
     private lateinit var txtBounceAmp: TextView
     private lateinit var txtBounceMs: TextView
     private lateinit var editBounceAmp: EditText
@@ -73,9 +73,9 @@ class MainActivity : Activity() {
     private lateinit var btnBounceToggle: Button
 
     // ---- 呼出回弹卡 ----
-    private lateinit var seekSummonTime: SeekBar
-    private lateinit var seekSummonPop: SeekBar
-    private lateinit var seekSummonSpring: SeekBar
+    private lateinit var seekSummonTime: ThumbSeekBar
+    private lateinit var seekSummonPop: ThumbSeekBar
+    private lateinit var seekSummonSpring: ThumbSeekBar
     private lateinit var txtSummonTime: TextView
     private lateinit var txtSummonPop: TextView
     private lateinit var txtSummonSpring: TextView
@@ -87,10 +87,10 @@ class MainActivity : Activity() {
     private lateinit var btnSummonToggle: Button
 
     // ---- 呼吸卡 ----
-    private lateinit var seekBreathSpeed: SeekBar
+    private lateinit var seekBreathSpeed: ThumbSeekBar
     private lateinit var txtBreathSpeed: TextView
     private lateinit var editBreathSpeed: EditText
-    private lateinit var seekBreathAmp: SeekBar
+    private lateinit var seekBreathAmp: ThumbSeekBar
     private lateinit var txtBreathAmp: TextView
     private lateinit var editBreathAmp: EditText
     private lateinit var btnSaveBreath: Button
@@ -210,6 +210,8 @@ class MainActivity : Activity() {
         applyEdgeToEdge()
         setupSummonControls()
         setupBounceControls()
+        // 滑条只允许按住滑块拖动 —— 必须在各 setup* 之前装好
+        installThumbOnlySeekBars()
         setupBreathControls()
         setupNotifyControls()
         applyTheme()
@@ -226,8 +228,6 @@ class MainActivity : Activity() {
             prefs.resetKeepSettings = !prefs.resetKeepSettings
             bindResetKeep()
         }
-
-        seekSize.max = 1000
         seekSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
@@ -616,8 +616,6 @@ class MainActivity : Activity() {
      * 改完立刻生效，不需要重启桌宠、也不会挪动它的位置。
      */
     private fun setupBounceControls() {
-        seekBounceAmp.max = 1000
-        seekBounceMs.max = 1000
 
         seekBounceAmp.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
@@ -695,9 +693,6 @@ class MainActivity : Activity() {
      * 所以不需要通知服务：下一次呼出就会用上新值。
      */
     private fun setupSummonControls() {
-        seekSummonTime.max = 1000
-        seekSummonPop.max = 1000
-        seekSummonSpring.max = 1000
 
         seekSummonTime.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
@@ -842,7 +837,6 @@ class MainActivity : Activity() {
         // 用**线性**映射：区间 0.1~10 跨度不大，线性下 1.0 落在偏左但可接受；
         // 用对数的话 1.0 正好在正中，但 0.1~10 的两端手感差别（0.1 慢到几乎
         // 看不出、10 快到发颤）更适合线性 —— 与幅度一致，用户已在幅度上习惯。
-        seekBreathSpeed.max = 1000
         seekBreathSpeed.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
@@ -865,8 +859,6 @@ class MainActivity : Activity() {
             applySpeed(); clearInputFocus(); true
         }
         editBreathSpeed.setOnFocusChangeListener { _, has -> if (!has) applySpeed() }
-
-        seekBreathAmp.max = 1000
         seekBreathAmp.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
@@ -1446,6 +1438,26 @@ class MainActivity : Activity() {
 
     private fun progressOfSizeScale(v: Float): Int =
         progressOfScale(v, Prefs.SIZE_SCALE_MIN, Prefs.SIZE_SCALE_MAX)
+
+
+    // ---------------------------------------------------------------- 滑条
+
+    /**
+     * 滑条统一设上限。
+     *
+     * ⚠️ "只能按住滑块拖动"**不在这里做** —— 那是 [ThumbSeekBar] 的职责
+     * （见该类的说明：用 setOnTouchListener 拦不住）。这里只把上限收成一处，
+     * 省得 8 个 setup* 里各写一遍 `bar.max = 1000`。
+     */
+    private fun installThumbOnlySeekBars() {
+        val bars = arrayOf(
+            seekSize,
+            seekSummonTime, seekSummonPop, seekSummonSpring,
+            seekBounceAmp, seekBounceMs,
+            seekBreathSpeed, seekBreathAmp
+        )
+        for (bar in bars) bar.max = 1000
+    }
 
     /** 把当前值刷到滑块 / 文本框 / 摘要文字 */
     private fun bindSizeControls() {

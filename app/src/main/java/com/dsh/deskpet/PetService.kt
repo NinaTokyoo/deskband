@@ -400,6 +400,32 @@ class PetService : Service(), PetView.Host {
 
     // ---------------------------------------------------------------- 悬浮窗
 
+    /**
+     * 取当前角色对应的 sprite，取不到返回 null（调用方负责收尾）。
+     *
+     * ⚠️ 角色没变就**复用已有的 sprite**，不要每次都重新解码。
+     *
+     * 收起走的只是 removePet()（只移除视图，sprite 字段与位图都还在），
+     * 而呼出/收起是本 App 最高频的交互 —— 无条件重新 load 的话，每次呼出都要
+     * 在主线程解码两张大图（约 11 MiB 分配 + 30~100ms）并丢弃旧位图，
+     * 内存曲线呈锯齿、呼出还掉帧。
+     *
+     * 用 isEvicted 而不是只判空：evict() 之后派生位图已被 recycle，
+     * 复用它是 "Canvas: trying to use a recycled bitmap" 崩溃。
+     *
+     * 抽成独立函数是为了让 [reloadPet] 在**收起状态**下也能拿到最新角色 ——
+     * 通知标题里的角色名来自 sprite，收起时换角色若不同步加载，
+     * 标题就会一直显示上一个角色的名字。
+     */
+    private fun acquireSprite(): PetSprite? {
+        val s = sprite?.takeIf { !it.isEvicted && it.dir == prefs.skin }
+            ?: PetSprite.load(assets, prefs.skin)
+            ?: PetSprite.load(assets, PetSprite.FALLBACK)
+            ?: PetSprite.listSkins(assets).firstOrNull()?.let { PetSprite.load(assets, it) }
+        if (s != null) sprite = s
+        return s
+    }
+
     private fun showPet(animateIn: Boolean = false) {
         // 作废所有在途的收起动画回调（见 slideOutThenStop 的说明）
         epoch++
@@ -411,24 +437,11 @@ class PetService : Service(), PetView.Host {
         // 呼出之后通知栏一直显示「<角色名> 待呼出」，直到因为别的原因才刷新
         // （实测踩到：点通知栏「呼出」后 running 已回 true，通知却还是收起态文案）。
         prefs.running = true
-        // ⚠️ 角色没变就**复用已有的 sprite**，不要每次都重新解码。
-        //
-        // 收起走的只是 removePet()（只移除视图，sprite 字段与位图都还在），
-        // 而呼出/收起是本 App 最高频的交互 —— 无条件重新 load 的话，每次呼出都要
-        // 在主线程解码两张大图（约 11 MiB 分配 + 30~100ms）并丢弃旧位图，
-        // 内存曲线呈锯齿、呼出还掉帧。
-        //
-        // 用 isEvicted 而不是只判空：evict() 之后派生位图已被 recycle，
-        // 复用它是 "Canvas: trying to use a recycled bitmap" 崩溃。
-        val s = sprite?.takeIf { !it.isEvicted && it.dir == prefs.skin }
-            ?: PetSprite.load(assets, prefs.skin)
-            ?: PetSprite.load(assets, PetSprite.FALLBACK)
-            ?: PetSprite.listSkins(assets).firstOrNull()?.let { PetSprite.load(assets, it) }
-            ?: run {
-                stopSelf()
-                return
-            }
-        sprite = s
+        val s = acquireSprite()
+        if (s == null) {
+            stopSelf()
+            return
+        }
         // 通知标题里要带形象名，而 onCreate 里第一次 startForeground 时
         // sprite 还是 null（会退回默认文案）。这里加载完立刻重发一次通知。
         runCatching { startForegroundCompat() }
@@ -596,7 +609,32 @@ class PetService : Service(), PetView.Host {
     }
 
     private fun reloadPet() {
+        // 收起状态下也要先拿到**当前角色**的 sprite，否则通知标题里的角色名
+        // 还是上一个角色的（标题文案由 sprite.displayName 提供）。
+        acquireSprite()
+
+        // 通知的标题带角色名，通知本身也分呼出/收起两种文案 ——
+        // 换角色时收起状态下也要刷新，所以这一步放在**收起判断之前**。
+        runCatching { startForegroundCompat() }
+
+        // ⚠️ 已收起时**什么都别做**，绝不能在这里把桌宠叫出来。
+        //
+        // 原来这里第一句是 `if (petView == null) { showPet(); return }`，
+        // 而"收起"的收尾正是 removePet()（它把 petView 置 null）——
+        // 于是"没有视图"被当成了"该把桌宠叫出来"：
+        // 收起状态下拖一下「外观尺寸」滑条，桌宠就自己冒出来了，
+        // 还顺带把 prefs.running 改回 true。
+        // 更糟的是界面按钮不会跟着变（它只在 onResume 的 refreshUi 里更新），
+        // 于是表现成"人物自己出现、但按钮还写着呼出"——
+        // 用户反馈的正是这个现象。
+        //
+        // 收起状态下尺寸不需要作用到窗口上（压根没有窗口），
+        // 下次呼出时 showPet() 会读最新的 prefs.sizeFraction，
+        // 所以直接返回是安全的。
+        if (!prefs.running) return
+
         if (petView == null) {
+            // 走到这里说明 running=true 但视图不在（异常状态），补建一个
             showPet()
             return
         }
