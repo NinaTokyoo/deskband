@@ -1497,14 +1497,14 @@ class PetStateTest {
 
     // ---------------------------------------------------------------- 通知标题
 
-    private val TITLE_DEFAULT = "{name} 正在陪你"
+    private val TITLE_DEFAULT = "{name} 正在陪伴你"
 
     /** 留空 -> 用默认模板 */
     @Test
     fun title_blank_uses_default() {
         for (raw in listOf(null, "", "   ", "\n")) {
             val t = PetState.buildTitle(raw, "后藤一里", TITLE_DEFAULT)
-            assertEquals("后藤一里 正在陪你", t.text)
+            assertEquals("后藤一里 正在陪伴你", t.text)
             assertEquals(0, t.hlFrom)
             assertEquals("后藤一里".length, t.hlTo)
         }
@@ -1589,8 +1589,8 @@ class PetStateTest {
     /** 默认模板自身也走同一条替换路径（不能写死"角色名一定在开头"） */
     @Test
     fun title_default_template_goes_through_same_path() {
-        val t = PetState.buildTitle("", "后藤一里", "{name} 正在陪你")
-        assertEquals("后藤一里 正在陪你", t.text)
+        val t = PetState.buildTitle("", "后藤一里", "{name} 正在陪伴你")
+        assertEquals("后藤一里 正在陪伴你", t.text)
         assertEquals(0, t.hlFrom)
         assertEquals("后藤一里".length, t.hlTo)
     }

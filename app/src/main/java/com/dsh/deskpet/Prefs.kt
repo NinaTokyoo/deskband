@@ -293,7 +293,7 @@ class Prefs(context: Context) {
      * 标题的默认文案。`{name}` 是占位符，会被替换成当前角色名。
      * 与 strings.xml 里的 notif_title_default 保持一致。
      */
-    const val NOTIFY_TITLE_DEFAULT = "{name} 正在陪你"
+    const val NOTIFY_TITLE_DEFAULT = "{name} 正在陪伴你"
 
     /** 标题里的角色名占位符 */
     const val NOTIFY_NAME_TOKEN = "{name}"
