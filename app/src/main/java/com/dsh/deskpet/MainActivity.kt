@@ -94,6 +94,10 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         prefs = Prefs(this)
+        // 冷启动纠正一次残留标志：进程被从最近任务划掉时服务已死，
+        // 但持久化的 running 还是 true，会让按钮显示"收起"却没有桌宠。
+        // 只在这里做，绝不放进 refreshUi()（那里会和异步启停产生竞态）。
+        if (!PetService.alive) prefs.running = false
         // 分区几何用 PetState 里的固定默认值（A 区尺寸调节功能已取消）
 
         rowOverlay = findViewById(R.id.rowOverlay)
@@ -254,13 +258,14 @@ class MainActivity : Activity() {
         //
         // prefs.running 是持久化的：进程被从最近任务里划掉时服务已经死了，
         // 但那个布尔值还留着 true —— 冷启动后界面显示"收起"、实际没有桌宠。
-        // 只在服务**确实已经不在**时把标志纠回 false。
+        // ⚠️ 这里**不能**再纠正 prefs.running！
         //
-        // ⚠️ 不能写成 `prefs.running = PetService.alive`：点「收起」时
-        // PetService.stop() 是异步的，此刻 onDestroy 还没跑、alive 仍是 true，
-        // 赋值会把 running 又改回 true —— 表现就是"点了收起没反应、按钮还是收起"。
-        // 方向只能是"true -> false"，永远不要在这里把它翻回 true。
-        if (!PetService.alive && prefs.running) prefs.running = false
+        // 点「呼出」时 PetService.start() 是异步的：refreshUi() 跑的这一刻
+        // 服务 onCreate 还没执行、PetService.alive 仍是 false，
+        // 于是 "!alive && running" 成立，会把刚设好的 running 打回 false ——
+        // 表现就是"按钮一直显示呼出"、"收起动画不触发"（第二次点击被当成启动）。
+        //
+        // 残留标志的纠正只在 onCreate() 里做一次（那才是"冷启动"的语义）。
 
         // 权限行：已开启 -> 绿勾，未开启 -> 红叉
         setPermMark(markOverlay, Settings.canDrawOverlays(this))

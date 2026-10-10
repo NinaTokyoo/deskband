@@ -585,14 +585,27 @@ class PetView(context: Context) : View(context) {
                 anchorX = slideFromX + (slideToX - slideFromX) * e
                 anchorY = slideFromY + (slideToY - slideFromY) * e
                 if (t >= 1f) {
-                    anchorX = slideToX
-                    anchorY = slideToY
-                    sliding = false
-                    val d = slideDone
-                    slideDone = null
-                    // 先置 sliding=false 再回调：回调里会 removeView，
-                    // 若那时 sliding 仍为 true，后续清理路径会被误挡。
-                    d?.invoke()
+                    if (slideHasPhase2) {
+                        // 第一段（冲到过冲点）结束 -> 平滑收回最终落点。
+                        // 第二段用回弹时长，量级和边框回弹一致，观感统一。
+                        slideHasPhase2 = false
+                        slideFromX = slideToX
+                        slideFromY = slideToY
+                        slideToX = slideEndX
+                        slideToY = slideEndY
+                        slideStart = now
+                        slideMs = prefs.bounceBackMs.toFloat().coerceAtLeast(80f)
+                        need = true
+                    } else {
+                        anchorX = slideToX
+                        anchorY = slideToY
+                        sliding = false
+                        val d = slideDone
+                        slideDone = null
+                        // 先置 sliding=false 再回调：回调里会 removeView，
+                        // 若那时 sliding 仍为 true，后续清理路径会被误挡。
+                        d?.invoke()
+                    }
                 }
                 need = true
             }
@@ -623,6 +636,11 @@ class PetView(context: Context) : View(context) {
     private var slideStart = 0L
     private var slideMs = SLIDE_MS
     private var slideDone: (() -> Unit)? = null
+
+    /** 呼出回弹的第二段：过冲点 -> 最终落点（有值时才走第二段） */
+    private var slideEndX = 0f
+    private var slideEndY = 0f
+    private var slideHasPhase2 = false
 
     /** 当前锚点（素材中心屏幕坐标）—— 呼出动画要拿它当滑入目标 */
     fun anchorXNow(): Float = anchorX
@@ -682,16 +700,37 @@ class PetView(context: Context) : View(context) {
         dragOffsetX = 0f
         dragOffsetY = 0f
         syncWindow()
-        startSlide(from[0], from[1], targetX, targetY, null)
+
+        // 呼出回弹：先沿进场方向**冲过**落点一点，再收回落点。
+        // 过冲量用固定像素（和边框回弹同源），不是按行程比例 ——
+        // 行程是"整个屏幕外"，按比例算会冲出天文数字。
+        val dx = targetX - from[0]
+        val dy = targetY - from[1]
+        val len = kotlin.math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
+        val overX: Float
+        val overY: Float
+        if (len > 1f) {
+            val amp = if (prefs.bounceEnabled) prefs.bouncePx else 0f
+            overX = targetX + dx / len * amp
+            overY = targetY + dy / len * amp
+        } else {
+            overX = targetX
+            overY = targetY
+        }
+        startSlide(from[0], from[1], overX, overY, null, targetX, targetY)
     }
 
     private fun startSlide(
-        fromX: Float, fromY: Float, toX: Float, toY: Float, onDone: (() -> Unit)?
+        fromX: Float, fromY: Float, toX: Float, toY: Float, onDone: (() -> Unit)?,
+        endX: Float = toX, endY: Float = toY
     ) {
         slideFromX = fromX
         slideFromY = fromY
         slideToX = toX
         slideToY = toY
+        slideEndX = endX
+        slideEndY = endY
+        slideHasPhase2 = (endX != toX || endY != toY)
         slideStart = SystemClock.uptimeMillis()
         slideMs = SLIDE_MS
         slideDone = onDone
