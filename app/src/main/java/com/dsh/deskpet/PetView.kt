@@ -2221,8 +2221,14 @@ class PetView(context: Context) : View(context) {
             if (footLeft != null && footTop != null) {
                 // 有存档：窗口位置直接由存档反算 —— 与随后 restore→placeWindow
                 // 得到的结果**逐像素相同**，所以不会有"先出现在别处再被挪走"
-                x = footLeft - HOP_PAD_X - footOffX
-                y = footTop - pad - footOffY
+                //
+                // 存档本身可能越界（老版本存过屏幕外坐标），那就会先按越界位置画一帧、
+                // 再被 restore() 的夹取拉回来 —— 同样是一闪。这里按"整只宠物留在屏幕内"
+                // 先夹一次（与 restore 的夹取语义一致：素材中心≈足迹中心）。
+                val fl = footLeft.coerceIn(0, (screen.width() - tw).coerceAtLeast(0))
+                val ft = footTop.coerceIn(0, (screen.height() - th).coerceAtLeast(0))
+                x = fl - HOP_PAD_X - footOffX
+                y = ft - pad - footOffY
             } else {
                 val trackLeft = if (PetState.isLeft(state)) 0 else screen.width() - tw
                 val trackTop = when (PetState.vertForState(state)) {
