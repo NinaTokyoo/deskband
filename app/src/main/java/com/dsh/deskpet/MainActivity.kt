@@ -276,7 +276,7 @@ class MainActivity : Activity() {
         //
         // 残留标志的纠正只在 onCreate() 里做一次（那才是"冷启动"的语义）。
 
-        // 权限行：已开启 -> 绿勾，未开启 -> 红叉
+        // 权限行：字形区分（已开启 ✓ / 未开启 ✗），颜色一律黑白（见 setPermMark）
         setPermMark(markOverlay, Settings.canDrawOverlays(this))
         setPermMark(markNotify, hasNotificationPermission())
 
@@ -293,10 +293,17 @@ class MainActivity : Activity() {
         bindResetKeep()
     }
 
-    /** 小标记：已开启绿勾，未开启红叉 */
+    /**
+     * 小标记：已开启 ✓，未开启 ✗。
+     *
+     * ⚠️ **颜色不在这里定**：两个标记都是**黑白**（浅色模式黑、深色模式白），
+     * 由 [AccentTheme.apply] 按明暗模式统一上色，是否已开启只靠**字形**区分。
+     *
+     * 这里若写死颜色，切主题 / 切形象重绘时会被 AccentTheme 覆盖，
+     * 反而变成"有时彩色有时黑白"。
+     */
     private fun setPermMark(tv: TextView, ok: Boolean) {
         tv.text = getString(if (ok) R.string.perm_granted_mark else R.string.perm_missing_mark)
-        tv.setTextColor(if (ok) COLOR_OK else COLOR_BAD)
     }
 
     /**
@@ -634,12 +641,6 @@ class MainActivity : Activity() {
     }
 
     private companion object {
-        /** 权限已开启的绿勾颜色 */
-        const val COLOR_OK = 0xFF4CD964.toInt()
-
-        /** 权限未开启的红叉颜色 */
-        const val COLOR_BAD = 0xFFFF453A.toInt()
-
         /** 量文字宽度用的基准字号（px）：取得够大，量完再按比例缩 */
         const val PROBE_TEXT_PX = 400f
     }

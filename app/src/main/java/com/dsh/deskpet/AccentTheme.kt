@@ -175,6 +175,11 @@ object AccentTheme {
                     R.id.txtPermOverlay,
                     R.id.txtPermNotify -> v.setTextColor(p.textPrimary)
 
+                    // 权限标记（✓ / ✗）：**黑白**，不用绿/红、也不跟强调色
+                    // （用户要求）。已开启与否只靠字形区分：浅色模式黑、深色模式白。
+                    R.id.markOverlay,
+                    R.id.markNotify -> v.setTextColor(p.textPrimary)
+
                     else -> v.setTextColor(p.textPrimary)
                 }
             }
