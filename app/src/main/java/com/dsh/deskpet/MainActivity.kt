@@ -1009,6 +1009,7 @@ class MainActivity : Activity() {
     }
 
     private companion object {
+
         /** 量文字宽度用的基准字号（px）：取得够大，量完再按比例缩 */
         const val PROBE_TEXT_PX = 400f
 

@@ -66,9 +66,12 @@ android {
         //   2.0.10 -> 20010（撤掉开屏（用户：冷启动很快，没必要）；
         //                     图标改成**不裁切**：自适应图标用"纯色铺底 + 整图缩进安全区"，
         //                     老式位图用整图铺满；两处都不再裁图）
+        //   2.0.11 -> 20011（修浅色模式冷启动闪两帧藏青：AppTheme 的 windowBackground
+        //                     换成 @color/launch_bg —— values 里纯白、values-night 里
+        //                     保持深藏青。窗口一建出来就是对的颜色，没有"先闪再改"）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏。
-        val vName = "2.0.10"
+        val vName = "2.0.11"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()

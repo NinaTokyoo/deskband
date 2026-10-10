@@ -11,13 +11,13 @@
     <color name="on_accent">#0E1116</color>
 
     <!--
-      开屏底色。用户明确要求：**浅色模式白、深色模式黑**。
-      深色那份放在 values-night/colors.xml 里（同名覆盖），系统切换主题时
-      由资源系统自动选，不需要代码判断。
+      冷启动时的**窗口底色**（Activity 内容画出来之前那一小段）。
+      浅色模式要纯白：不然会先闪几帧 AppTheme 原本的深藏青（用户反馈过）。
+      深色那份放在 values-night/colors.xml 里覆盖成同一个深藏青。
 
-      ⚠️ 跟随的是**系统**深浅色，不是 App 内的"外观模式"设置 ——
-         windowBackground 在 Activity 创建之前就要用，那时还读不到
-         SharedPreferences，只能交给资源限定符。
+      ⚠️ 为什么不在代码里改窗口背景：那几帧出现在 onCreate **之前** ——
+         窗口是用主题建的，那时已经是主题的 windowBackground 了，
+         在 onCreate 里再改晚了一步（实测仍会闪两帧藏青）。
     -->
-    <color name="splash_bg">#FFFFFF</color>
+    <color name="launch_bg">#FFFFFF</color>
 </resources>
