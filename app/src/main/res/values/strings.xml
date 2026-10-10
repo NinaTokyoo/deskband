@@ -78,5 +78,7 @@
     <string name="notif_title_fmt">%1$s 正在陪伴你</string>
     <string name="notif_title_fallback">桌宠正在陪伴你</string>
     <string name="notif_text">点这里回到设置，或直接收起桌宠</string>
+    <!-- 已收起（服务仍在跑）时的通知正文 -->
+    <string name="notif_text_collapsed">桌宠已收起，点这里回到设置</string>
     <string name="action_stop">收起</string>
 </resources>

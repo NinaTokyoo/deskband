@@ -664,6 +664,36 @@ class PetView(context: Context) : View(context) {
     fun restX(): Float = slideRestX
     fun restY(): Float = slideRestY
 
+    /**
+     * 看门狗：强制把宠物放回 (x, y)。
+     *
+     * 滑入动画依赖 Choreographer 帧回调；一旦帧回调因为任何原因没跑起来
+     * （被 setPaused 摘掉、窗口在屏幕外时系统不给帧等），宠物就会
+     * **永远停在屏幕外** —— 表现是"窗口在、按钮显示收起，但看不见人物，
+     * 而复位又能救回来"（用户反馈）。
+     * 所以动画启动后由一个延时任务兜底：到时若还没归位，直接落位。
+     */
+    fun ensureAt(x: Float, y: Float) {
+        if (sliding) return
+        if (abs(anchorX - x) < 1f && abs(anchorY - y) < 1f) return
+        anchorX = x
+        anchorY = y
+        syncWindow()
+        invalidate()
+    }
+
+    /** 强制中止动画并落到指定位置（看门狗用，即使正在 sliding 也生效） */
+    fun forceSettleAt(x: Float, y: Float) {
+        sliding = false
+        slideHasPhase2 = false
+        slidePhase2Running = false
+        slideDone = null
+        anchorX = x
+        anchorY = y
+        syncWindow()
+        invalidate()
+    }
+
     /** 动画期间不接受触摸，避免"正飞出去又被拖回来" */
     fun isSliding(): Boolean = sliding
 
@@ -1057,15 +1087,14 @@ class PetView(context: Context) : View(context) {
 
         // 把窗口夹进屏幕内。
         //
-        // 贴边/贴角时窗口（并集包络，比足迹盒大一圈）必然有一部分越出屏幕，
-        // 而系统派发触摸是按 **窗口 frame ∩ 屏幕** 算的 —— 越出那一侧收不到事件，
-        // 表现就是"靠近屏幕边缘点在宠物上，却同时操作到下面的桌面/App"。
-        //
-        // 越界多少记进 winShift*，由 cellLocalX/Y 反向补偿，
-        // 于是**宠物画出来的屏幕位置一个像素都不变**，只是窗口整体挪进了屏幕。
-        // 吸附位置、足迹盒、snapPosition 全都不用动（它们算的是足迹盒）。
+        // ⚠️ **滑动动画期间必须跳过夹取**。
+        // 夹取会把窗口拉回屏幕内，而画布又用 winShift 反向补偿把宠物画回原位 ——
+        // 动画期间"原位"本来就在屏幕外，两者叠加的结果是
+        // **窗口在屏幕内、宠物被画到屏幕外**：什么都看不见，但视图还在
+        // （用户反馈："完全收起之后再呼出，人物看不见，但是可以复位"）。
+        // 动画期间宠物本就在屏幕外，不存在"边缘点不中"的问题，跳过是安全的。
         val b = host?.bounds()
-        if (b != null) {
+        if (b != null && !sliding) {
             val cx = x.coerceIn(0, (b.width() - bboxW).coerceAtLeast(0))
             val cy = y.coerceIn(0, (b.height() - bboxH).coerceAtLeast(0))
             if (cx != x || cy != y) {
@@ -1083,6 +1112,10 @@ class PetView(context: Context) : View(context) {
                     invalidate()
                 }
             }
+        } else if (winShiftX != 0 || winShiftY != 0) {
+            // 动画期间不需要补偿；归零，避免动画结束后残留平移
+            winShiftX = 0
+            winShiftY = 0
         }
 
         if (x == lastWinX && y == lastWinY && bboxW == lastWinW && bboxH == lastWinH) return
@@ -1129,6 +1162,21 @@ class PetView(context: Context) : View(context) {
         dragOffsetX = 0f
         dragOffsetY = 0f
         cancelTween()
+        // ⚠️ 兜底：把恢复出来的锚点夹进屏幕内。
+        //
+        // 保存位置可能本身就是屏幕外的坐标（收起时锚点在滑出路径上被存了下来，
+        // 实测 pos_left=1514 > 屏宽 1440）——直接恢复到那里，人物就看不见了，
+        // 而复位不受影响（它按右边框中点重算），于是表现为
+        // "完全收起后再呼出看不见人，但复位能救回来"。
+        // 夹取后 placeWindow 也不再有越界补偿，人物必定落在屏幕内。
+        host?.bounds()?.let { b ->
+            // 夹的是**整个足迹盒**，不是素材中心 ——
+            // 只夹中心的话中心正好落在屏幕边线上，宠物会有一半在屏幕外。
+            val hw = trackW / 2f
+            val hh = trackH / 2f
+            anchorX = anchorX.coerceIn(hw, (b.width() - hw).coerceAtLeast(hw))
+            anchorY = anchorY.coerceIn(hh, (b.height() - hh).coerceAtLeast(hh))
+        }
         syncWindow()
     }
 

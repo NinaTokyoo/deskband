@@ -202,6 +202,9 @@ class PetService : Service(), PetView.Host {
      * 再 take 一次上限是防御性的 —— 万一历史存档里有超长串。
      */
     private fun notificationText(): String {
+        // 已收起（服务仍在跑，只是没有显示宠物）时给一句明确的提示，
+        // 否则常驻通知会一直说"正在陪着你"，与实际状态不符。
+        if (!prefs.running) return getString(R.string.notif_text_collapsed)
         val custom = prefs.notifyText.trim()
         return if (custom.isEmpty()) getString(R.string.notif_text)
         else custom.take(Prefs.NOTIFY_TEXT_MAX)
@@ -330,7 +333,17 @@ class PetService : Service(), PetView.Host {
 
         // 呼出：从屏幕外滑进来。目标点就是上面刚定好的位置，
         // 所以要先抓住它，再让 slideIn 把锚点瞬移到屏幕外开始滑。
-        if (animateIn) view.slideIn(view.anchorXNow(), view.anchorYNow())
+        if (animateIn) {
+            val tx = view.anchorXNow()
+            val ty = view.anchorYNow()
+            view.slideIn(tx, ty)
+            // 看门狗：动画总时长 420+150ms，留足余量后强制落位。
+            // 万一帧回调没跑起来（被暂停、或窗口在屏幕外时系统不给帧），
+            // 宠物就会永远停在屏幕外 —— 绝不能出现"看不见但按钮显示已呼出"。
+            mainHandler.postDelayed({
+                if (petView === view) view.forceSettleAt(tx, ty)
+            }, 900L)
+        }
 
         prefs.running = true
         if (!screenOn) view.setPaused(true)
@@ -354,6 +367,12 @@ class PetService : Service(), PetView.Host {
         // 新宠物已经建好，而**这个过期的回调**随后仍会 removePet()+stopSelf()，
         // 把刚呼出的人物删掉 —— 用户反馈的"连续点击呼出收起人物会消失"。
         // 用世代号让过期回调直接作废。
+        // ⚠️ 必须在**开始滑出之前**保存位置。
+        // 滑出动画会把锚点移到屏幕外，若那时才保存（见 removePet），
+        // 存下来的就是"屏幕外坐标"；下次呼出 restore() 到这个坐标
+        // 人物就看不见了 —— 而复位不受影响（它按右边框中点重算），
+        // 于是表现为"完全收起后再呼出看不见人，但复位能救回来"。
+        savePositionNow()
         val my = ++epoch
         v.slideOut {
             if (my != epoch) return@slideOut
@@ -367,14 +386,27 @@ class PetService : Service(), PetView.Host {
                 v.slideIn(v.restX(), v.restY())
                 return@slideOut
             }
+            // ⚠️ 只移除视图，**不再 stopSelf()**。
+            //
+            // 原来这里销毁服务，于是"收起 → 再呼出"要走一次
+            // stopService/stopSelf 与 startForegroundService 的抢跑：
+            // 真机上这两者会互相踩，服务被停掉后没起来，
+            // 表现就是"先呼出、再收起、再呼出，就再也呼不出来了"。
+            // 服务保活后，呼出只是"把视图加回来"，
+            // 不存在任何启动竞态，也从根上避免了 Android 12+
+            // 后台启动前台服务的限制。
             removePet()
-            stopSelf()
+            // 通知改成"已收起"状态（服务还在，仍在后台常驻）
+            runCatching { startForegroundCompat() }
         }
     }
 
     private fun removePet() {
         val v = petView ?: return
-        savePositionNow()
+        // ⚠️ 正在滑出时**不能**保存位置：那一刻锚点在屏幕外，
+        // 存下去就成了"上次位置在屏幕外"，下次呼出 restore() 过去就看不见人。
+        // 正常情况下的位置已经在 slideOutThenStop() 里提前存过了。
+        if (!v.isSliding()) savePositionNow()
         try {
             wm.removeView(v)
         } catch (e: Exception) {
