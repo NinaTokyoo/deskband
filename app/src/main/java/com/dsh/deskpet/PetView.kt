@@ -1317,12 +1317,26 @@ class PetView(context: Context) : View(context) {
             canvas.scale(squash, 1f, cx, cy)
         }
 
-        // 用**预缩放**好的位图：每帧 1:1 贴图，省掉整幅缩放采样
-        val bmp = scaledBitmap(state) ?: run {
+        // 用**原图 + src/dst 矩形**绘制，让 GPU 去做缩放。
+        //
+        // 原来走 scaledBitmap(state)：Bitmap.createScaledBitmap 在 CPU 上重采样
+        // 并**分配一块新位图**，缓存 key 含 cellW/cellH，所以进 A 区
+        // （素材纵横比变化 -> cellW 变）就会 cache miss，于是在拖拽的绘制里
+        // 同步做一次大图重采样 —— 用户反馈的"拖到 A 区切换素材明显卡顿"就是它。
+        // 反复 miss 还会反复分配大块内存，带来 GC 压力。
+        //
+        // drawBitmap(bmp, src, dst, paint) 由 GPU 采样，paint 已带
+        // FILTER_BITMAP_FLAG，质量一致，但**不再创建任何位图**。
+        val bmp = bitmapFor(state) ?: run {
             canvas.restoreToCount(save)
             return
         }
-        canvas.drawBitmap(bmp, cellLocalX(), cellLocalY(), paint)
+        src.set(0, 0, bmp.width, bmp.height)
+        dst.set(
+            cellLocalX(), cellLocalY(),
+            cellLocalX() + cellW, cellLocalY() + cellH
+        )
+        canvas.drawBitmap(bmp, src, dst, paint)
         canvas.restoreToCount(save)
     }
 
