@@ -2,6 +2,7 @@ package com.dsh.deskpet
 
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -1644,5 +1645,125 @@ class PetStateTest {
         val r = PetState.fillNotifyTexts("桌宠在线", "", "后藤一里", TITLE_DEFAULT)
         assertEquals("桌宠在线", r.title)
         assertEquals("桌宠在线", r.body)
+    }
+
+    // ------------------------------------------- 标题的显示 / 存储互转
+
+    /** 存储模板 -> 显示时解析成实际名字 */
+    @Test
+    fun title_display_resolves_token() {
+        assertEquals(
+            "后藤一里 正在陪伴你",
+            PetState.titleForDisplay("{name} 正在陪伴你", "后藤一里", TITLE_DEFAULT)
+        )
+    }
+
+    /** 存储为空 -> 显示默认模板解析后的文字 */
+    @Test
+    fun title_display_blank_uses_default() {
+        assertEquals(
+            "山田凉 正在陪伴你",
+            PetState.titleForDisplay("", "山田凉", TITLE_DEFAULT)
+        )
+    }
+
+    /** 显示文字 -> 存储时把当前角色名换成 {name} */
+    @Test
+    fun title_store_replaces_name_with_token() {
+        assertEquals(
+            "{name} 正在陪伴你",
+            PetState.titleForStore("后藤一里 正在陪伴你", "后藤一里")
+        )
+    }
+
+    /**
+     * 往返一致：解析出来的显示文字，反向换回去必须还是同一个模板。
+     * 这条就是"换角色后标题还对不对"的核心保证。
+     */
+    @Test
+    fun title_round_trip_is_stable() {
+        for (tpl in listOf(
+            "{name} 正在陪伴你",
+            "你的 {name} 已上线",
+            "{name} 来了，{name} 陪你"
+        )) {
+            val shown = PetState.titleForDisplay(tpl, "喜多郁代", TITLE_DEFAULT)
+            val back = PetState.titleForStore(shown, "喜多郁代")
+            assertEquals("模板 $tpl 往返后应保持不变", tpl, back)
+        }
+    }
+
+    /** 换了角色后，同一个模板要解析出新名字（不会残留旧名字） */
+    @Test
+    fun title_display_follows_new_name() {
+        val tpl = PetState.titleForStore("后藤一里 正在陪伴你", "后藤一里")
+        assertEquals("{name} 正在陪伴你", tpl)
+        assertEquals(
+            "山田凉 正在陪伴你",
+            PetState.titleForDisplay(tpl, "山田凉", TITLE_DEFAULT)
+        )
+    }
+
+    /** 标题里没有角色名 -> 存储时原样保留 */
+    @Test
+    fun title_store_without_name_is_unchanged() {
+        assertEquals("桌宠在线", PetState.titleForStore("桌宠在线", "后藤一里"))
+    }
+
+    /** 角色名为空时不能乱替换（否则会在每个字符之间插入 {name}） */
+    @Test
+    fun title_store_with_blank_name_is_safe() {
+        assertEquals("后藤一里 正在陪伴你",
+            PetState.titleForStore("后藤一里 正在陪伴你", ""))
+        assertEquals("", PetState.titleForStore("", ""))
+        assertEquals("abc", PetState.titleForStore("abc", null))
+    }
+
+    // ------------------------------------------- 历史值的迁移
+
+    /** 字面名字 -> 模板 */
+    @Test
+    fun migrate_literal_name_becomes_token() {
+        assertEquals(
+            "{name} 正在陪伴你",
+            PetState.migrateTitleToTemplate("喜多郁代 正在陪伴你", "喜多郁代")
+        )
+    }
+
+    /** 已经是模板 -> 不动（返回 null 表示"无需迁移"） */
+    @Test
+    fun migrate_existing_template_is_skipped() {
+        assertNull(PetState.migrateTitleToTemplate("{name} 正在陪伴你", "喜多郁代"))
+    }
+
+    /** 与角色无关的自定义标题 -> 不碰 */
+    @Test
+    fun migrate_unrelated_title_is_untouched() {
+        assertNull(PetState.migrateTitleToTemplate("桌宠在线", "喜多郁代"))
+    }
+
+    /** 空值 / 空名字 -> 不迁移 */
+    @Test
+    fun migrate_blank_inputs_are_safe() {
+        assertNull(PetState.migrateTitleToTemplate("", "喜多郁代"))
+        assertNull(PetState.migrateTitleToTemplate(null, "喜多郁代"))
+        assertNull(PetState.migrateTitleToTemplate("喜多郁代 正在陪伴你", ""))
+        assertNull(PetState.migrateTitleToTemplate("喜多郁代 正在陪伴你", null))
+    }
+
+    /** 幂等：迁移一次之后再调就不会再动 */
+    @Test
+    fun migrate_is_idempotent() {
+        val once = PetState.migrateTitleToTemplate("喜多郁代 正在陪伴你", "喜多郁代")
+        assertEquals("{name} 正在陪伴你", once)
+        assertNull(PetState.migrateTitleToTemplate(once, "喜多郁代"))
+    }
+
+    /** 迁移后再换角色，显示要跟着变 */
+    @Test
+    fun migrate_then_switch_name_follows() {
+        val tpl = PetState.migrateTitleToTemplate("喜多郁代 正在陪伴你", "喜多郁代")!!
+        assertEquals("山田凉 正在陪伴你",
+            PetState.titleForDisplay(tpl, "山田凉", TITLE_DEFAULT))
     }
 }

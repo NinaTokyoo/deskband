@@ -899,4 +899,51 @@ object PetState {
         }
         return NotifyTexts(title, body)
     }
+
+    /**
+     * 把存下来的标题模板解析成**要显示在输入框里的文字**。
+     *
+     * 留空 -> 用 [default]；然后一律把 {name} 换成 [name]。
+     * 这样输入框里看到的永远是实际名字，用户不需要懂占位符语法。
+     */
+    fun titleForDisplay(raw: String?, name: String?, default: String): String =
+        buildTitle(raw, name, default).text
+
+    /**
+     * 把输入框里的文字**反向**转成要存储的模板：当前角色名 -> {name}。
+     *
+     * 为什么要反向替换：显示的是实际名字，直接存下来就等于把角色名写死了，
+     * 换角色后标题不会跟着变（这正是方案 2 原本的 bug）。
+     * 转成模板后，无论用户是手敲名字还是（理论上）写了 {name}，存储都统一。
+     *
+     * ⚠️ 名字为空时原样返回 —— 否则 `replace("", token)` 会在每个字符之间插东西。
+     */
+    fun titleForStore(displayed: String?, name: String?): String {
+        val t = displayed.orEmpty()
+        val n = name.orEmpty()
+        return if (n.isEmpty()) t else t.replace(n, NAME_TOKEN)
+    }
+
+    /**
+     * 把**历史遗留的字面名字**转成 {name} 模板（一次性迁移，反复调用安全）。
+     *
+     * 背景：本功能的上一版把标题解析成名字后**存了下来**，于是存储里是
+     * `喜多郁代 正在陪伴你` 这种字面值。它不含 {name}，换角色时不会跟着变 ——
+     * 正是要修掉的那个 bug。
+     *
+     * 转换条件（够严，避免误伤用户自己写的内容）：
+     *   · 非空、且不含 {name}（已经是模板就不用动）
+     *   · **含当前角色名** —— 含才换。用户故意写「桌宠在线」这类与角色无关的
+     *     标题时，绝不能把其中的字换成占位符。
+     *
+     * 幂等：转完含 {name}，下次调用直接短路返回。
+     */
+    fun migrateTitleToTemplate(stored: String?, name: String?): String? {
+        val s = stored ?: return null
+        val n = name.orEmpty()
+        if (s.isEmpty() || n.isEmpty()) return null
+        if (s.contains(NAME_TOKEN)) return null
+        if (!s.contains(n)) return null
+        return s.replace(n, NAME_TOKEN)
+    }
 }

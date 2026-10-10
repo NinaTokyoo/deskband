@@ -983,12 +983,7 @@ class MainActivity : Activity() {
      * 通知正文在 startForegroundCompat 里读取，因此需要一次通知刷新）。
      */
     private fun setupNotifyControls() {
-        // 标题：留空表示用默认，所以框里显示的是"已保存的值"而不是默认值 ——
-        // 默认值只作为 hint 提示（hint 里就写明了 {name} 的用法）。
-        editNotifyTitle.setText(prefs.notifyTitle)
-        editNotify.setText(prefs.notifyText)
-        updateNotifyCount()
-        updateNotifyTitleCount()
+        refreshNotifyFields()
 
         editNotifyTitle.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
@@ -1012,19 +1007,21 @@ class MainActivity : Activity() {
          *     例如「后藤一里 正在陪伴你」）。这样通知里正文不会是一片空白。
          */
         val applyNotify = {
+            val name = currentSkinName()
             val filled = PetState.fillNotifyTexts(
                 editNotifyTitle.text.toString(),
                 editNotify.text.toString(),
-                currentSkinName(),
+                name,
                 Prefs.NOTIFY_TITLE_DEFAULT
             )
-            prefs.notifyTitle = filled.title
-            prefs.notifyText = filled.body
-            // 回写一次：setter 会按上限截断，把截断后的真实值显示出来
-            editNotifyTitle.setText(prefs.notifyTitle)
-            editNotify.setText(prefs.notifyText)
-            updateNotifyCount()
-            updateNotifyTitleCount()
+            // ⚠️ 存储用**模板**：把输入框里的当前角色名反向换成 {name}。
+            //    不同步这一步的话，存下来的就是写死的名字，换角色后标题不会跟着变
+            //    （这正是方案 2 原本的 bug）。
+            prefs.notifyTitle = PetState.titleForStore(filled.title, name)
+            // 正文是按解析后的标题回填的，但存模板才有意义，所以同样反向换一次
+            prefs.notifyText = PetState.titleForStore(filled.body, name)
+            // 回写一次：setter 会按上限截断；显示时统一解析 {name}
+            refreshNotifyFields()
         }
         editNotifyTitle.setOnEditorActionListener { _, _, _ ->
             applyNotify(); clearInputFocus(); true
@@ -1042,6 +1039,39 @@ class MainActivity : Activity() {
     private fun updateNotifyCount() {
         val n = editNotify.text?.length ?: 0
         txtNotifyCount.text = getString(R.string.notify_count, n, Prefs.NOTIFY_TEXT_MAX)
+    }
+
+    /**
+     * 用**当前角色名**把通知标题与正文的模板解析出来，显示到两个输入框里。
+     *
+     * ⚠️ 三个调用时机缺一不可：打开界面、保存后回写、**换角色**。
+     *    存储里存的是模板（可能含 {name}），只有显示时才解析 ——
+     *    少调一次就会在框里露出 {name}，或者留着上一个角色的名字。
+     *
+     * ⚠️ 正文也要解析：它的内容默认就是标题（也可能带 {name}），
+     *    只解析标题的话正文框里会明晃晃地显示 {name}（踩过）。
+     */
+    private fun refreshNotifyFields() {
+        if (!::editNotifyTitle.isInitialized) return
+        val name = currentSkinName()
+
+        // 一次性迁移：把上一版存下的**字面名字**转成 {name} 模板，
+        // 否则换角色时它不会跟着变（就是用户要修的那个 bug）。
+        PetState.migrateTitleToTemplate(prefs.notifyTitle, name)?.let { prefs.notifyTitle = it }
+        PetState.migrateTitleToTemplate(prefs.notifyText, name)?.let { prefs.notifyText = it }
+
+        editNotifyTitle.setText(
+            PetState.titleForDisplay(
+                prefs.notifyTitle, name, Prefs.NOTIFY_TITLE_DEFAULT
+            )
+        )
+        editNotify.setText(
+            PetState.titleForDisplay(
+                prefs.notifyText, name, Prefs.NOTIFY_TITLE_DEFAULT
+            )
+        )
+        updateNotifyTitleCount()
+        updateNotifyCount()
     }
 
     private fun updateNotifyTitleCount() {
@@ -1178,6 +1208,10 @@ class MainActivity : Activity() {
 
         // 按钮上的文字里有形象名，名字要用强调色，所以每次都重建一次
         refreshSummonLabel()
+
+        // 通知标题与正文里都可能带角色名（存的都是 {name} 模板），
+        // 换角色后要重新解析，否则框里留着上一个角色的名字
+        refreshNotifyFields()
 
         // ⚠️ 必须放在 AccentTheme.apply 之后：三个按钮的镂空样式是那一趟发的，
         // 选中态要覆盖它才看得出来。
