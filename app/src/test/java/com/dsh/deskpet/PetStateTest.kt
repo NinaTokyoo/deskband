@@ -653,6 +653,46 @@ class PetStateTest {
         }
     }
 
+    /**
+     * 长按松手的弹起高度**与压缩程度成正比**。
+     *
+     * 用户要求："长按之后松手要向上弹起，弹起高度与压缩程度成正比。"
+     */
+    @Test
+    fun the_press_release_jump_is_proportional_to_the_squash_depth() {
+        val full = 0.5f
+        val maxFrac = 0.28f
+        // 没压 -> 不弹
+        assertEquals(0f, PetState.pressJumpFraction(0f, full, maxFrac), 0.0001f)
+        // 压满 -> 最大弹起
+        assertEquals(maxFrac, PetState.pressJumpFraction(full, full, maxFrac), 0.0001f)
+        // 一半 -> 一半（正比）
+        assertEquals(maxFrac / 2f, PetState.pressJumpFraction(full / 2f, full, maxFrac), 0.0001f)
+        // 阈值处（22% = 点一下与长按的分界）也要有可见弹起
+        val atThreshold = PetState.pressJumpFraction(0.22f, full, maxFrac)
+        assertEquals(0.22f / full * maxFrac, atThreshold, 0.0001f)
+        assertTrue("阈值处弹起太小：$atThreshold", atThreshold > 0.1f)
+        // 严格单调：压得越深弹得越高
+        var last = -1f
+        for (i in 0..100) {
+            val v = PetState.pressJumpFraction(i / 100f * full, full, maxFrac)
+            assertTrue("不是单调递增", v > last - 0.0001f)
+            // 永不超过上限
+            assertTrue("超过上限", v <= maxFrac + 0.0001f)
+            last = v
+        }
+        // 越界要夹住（压缩量不可能超过压满值；除零要安全）
+        assertEquals(maxFrac, PetState.pressJumpFraction(full * 3f, full, maxFrac), 0.0001f)
+        assertEquals(0f, PetState.pressJumpFraction(0.3f, 0f, maxFrac), 0.0001f)
+
+        // 与实际尺寸挂钩：默认 247px 高的素材，压满时弹起约 0.28*247 ≈ 69px，
+        // 必须明显高于"点一下"的轻跳（0.08*247 ≈ 20px），否则看不出是长按弹起
+        val cellH = 247f
+        val longJump = cellH * PetState.pressJumpFraction(full, full, maxFrac)
+        val tapJump = cellH * 0.08f
+        assertTrue("长按弹起($longJump)应该明显大于轻跳($tapJump)", longJump > tapJump * 2.5f)
+    }
+
     @Test
     fun attached_states_are_recognised_for_drag_damping() {
         // 吸附状态起步才加阻尼

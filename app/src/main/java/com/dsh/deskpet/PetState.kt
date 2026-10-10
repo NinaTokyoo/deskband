@@ -658,6 +658,26 @@ object PetState {
     fun squashFromBottom(state: Int): Boolean = vertForState(state) == VERT_BOTTOM
 
     /**
+     * 长按松手时的**弹起高度系数**：与压缩程度成正比。
+     *
+     * 用户要求："长按之后松手要向上弹起，弹起高度与压缩程度成正比。"
+     * 也就是压得越深、弹得越高；[depth] 为 0（没压）时不弹。
+     *
+     * @param depth 松手那一刻的压缩量（0..[fullDepth]）
+     * @param fullDepth 压满时的压缩量（= `PetView.PRESS_MAX_SQ`，0.5）
+     * @param maxFraction 压满时弹起高度占素材高度的比例
+     * @return 弹起高度占素材高度的比例（0..[maxFraction]）
+     */
+    fun pressJumpFraction(
+        depth: Float,
+        fullDepth: Float,
+        maxFraction: Float
+    ): Float {
+        if (depth <= 0f || fullDepth <= 0f) return 0f
+        return maxFraction * (depth / fullDepth).coerceIn(0f, 1f)
+    }
+
+    /**
      * 收起时往哪条边滑出去：**取最近的那条边**（纯函数，便于单测）。
      *
      * 关键点：这个函数**永远返回一个方向**，没有"都不贴边就返回某种兜底"的分支。

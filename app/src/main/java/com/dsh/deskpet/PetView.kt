@@ -109,9 +109,12 @@ class PetView(context: Context) : View(context) {
     /**
      * 轻跳的顶部余量：按素材高度**等比**给，不能用固定值 ——
      * 宠物放大后 8% 的跳幅远超固定的 48px，会被窗口切顶。
+     *
+     * ⚠️ 比例用 [HOP_PAD_FRACTION]（轻跳与长按弹起取较大者）：
+     * 长按松手的弹起比轻跳高得多，只按 8% 留余量会被切顶。
      */
     private fun topPad(): Int =
-        (cellH * HOP_FRACTION).toInt() + HOP_PAD_MIN
+        (cellH * HOP_PAD_FRACTION).toInt() + HOP_PAD_MIN
 
     /**
      * 轻跳的**底部**余量：与 [topPad] 取同一个值。
@@ -520,6 +523,17 @@ class PetView(context: Context) : View(context) {
     private var releaseStart = 0L
     private var releaseFrom = 0f
 
+    /** 松手回弹的时长（带弹起时用 [PRESS_JUMP_MS]，让"弹起 + 回弹"同时结束） */
+    private var releaseMs = PRESS_RELEASE_MS
+
+    /**
+     * 松手时**向上弹起**的高度（像素，0 = 不弹）。
+     *
+     * 长按松手时按压缩程度给：压得越深弹得越高（见 [PetState.pressJumpFraction]）。
+     * 它是**画布平移**，不参与位置记账 —— 所以不会把宠物挪走。
+     */
+    private var releaseJumpPx = 0f
+
     /**
      * 点击反馈：**先压扁再弹起**，而且压缩方向始终与人物头朝向一致。
      *
@@ -553,17 +567,34 @@ class PetView(context: Context) : View(context) {
         return PRESS_MAX_SQ * PetState.easeInArrive(u)
     }
 
-    /** 这一帧实际要画的压缩量（0 = 不压） */
+    /** 这一帧实际要画的压缩量（0 = 不压，负值 = 回弹时轻微拉伸） */
     private fun currentSquash(): Float = when {
         hopping -> squashAt(hopPhase())
         pressing -> pressSquash()
         releasing -> releaseFrom * PetState.springBack(
-            ((SystemClock.uptimeMillis() - releaseStart).toFloat() / PRESS_RELEASE_MS)
+            ((SystemClock.uptimeMillis() - releaseStart).toFloat() / releaseMs)
                 .coerceIn(0f, 1f),
             // 用更"软"的摆动系数：回弹只轻微过冲一下（最多约 16% 的拉伸），
             // 不会把人物拉得又高又瘦
             1f
         )
+        else -> 0f
+    }
+
+    /**
+     * 这一帧的**弹起位移**（像素，正数 = 朝头的方向，画的时候取负号或正号见 onDraw）。
+     *
+     *   点一下 -> 轻跳（[jumpAt]，正弦半波）
+     *   长按松手 -> 与压缩程度成正比的弹起（[releaseJumpPx]），也是正弦半波，
+     *   到点正好落回 0，所以不会残留位移。
+     */
+    private fun currentJump(): Float = when {
+        hopping -> jumpAt(hopPhase())
+        releasing && releaseJumpPx > 0f ->
+            releaseJumpPx * sin(
+                (Math.PI * ((SystemClock.uptimeMillis() - releaseStart).toFloat() / releaseMs)
+                    .coerceIn(0f, 1f)).toFloat()
+            )
         else -> 0f
     }
 
@@ -576,13 +607,21 @@ class PetView(context: Context) : View(context) {
     private fun squashPivotY(headAlongY: Boolean): Float =
         if (headAlongY && PetState.squashFromBottom(state)) cellLocalY() + cellH else pivotY()
 
-    /** 松手回弹：从当前压缩量弹回 0 */
-    private fun startSquashRelease(from: Float) {
-        if (from <= 0.001f) {
+    /**
+     * 松手回弹：从当前压缩量弹回 0，并可带一次**向上弹起**。
+     *
+     * @param from 松手时的压缩量
+     * @param jumpPx 弹起高度（像素）；>0 时用 [PRESS_JUMP_MS] 让"弹起 + 回弹"一起结束
+     */
+    private fun startSquashRelease(from: Float, jumpPx: Float = 0f) {
+        if (from <= 0.001f && jumpPx <= 0.5f) {
             releasing = false
+            releaseJumpPx = 0f
             return
         }
         releaseFrom = from
+        releaseJumpPx = jumpPx
+        releaseMs = if (jumpPx > 0f) PRESS_JUMP_MS else PRESS_RELEASE_MS
         releaseStart = SystemClock.uptimeMillis()
         releasing = true
         choreographer.removeFrameCallback(frameCallback)
@@ -829,8 +868,11 @@ class PetView(context: Context) : View(context) {
                 if (now - pressStart < PRESS_FULL_MS.toLong()) need = true
             }
             if (releasing) {
-                val t = ((now - releaseStart).toFloat() / PRESS_RELEASE_MS).coerceIn(0f, 1f)
-                if (t >= 1f) releasing = false
+                val t = ((now - releaseStart).toFloat() / releaseMs).coerceIn(0f, 1f)
+                if (t >= 1f) {
+                    releasing = false
+                    releaseJumpPx = 0f
+                }
                 need = true
             }
             // 只有真的有动画时才重绘。
@@ -1729,7 +1771,8 @@ class PetView(context: Context) : View(context) {
 
         // 反掉点击/长按动画的压扁与弹起（与 onDraw 里的变换严格对应）
         val sq = currentSquash()
-        if (sq > 0.0001f || hopping) {
+        val push = currentJump()
+        if (abs(sq) > 0.0001f || push > 0.0001f || hopping) {
             val headAlongY = abs(displayRotation()) < 45f
             val sx = if (headAlongY) 1f + sq else 1f - sq
             val sy = if (headAlongY) 1f - sq else 1f + sq
@@ -1739,7 +1782,6 @@ class PetView(context: Context) : View(context) {
             val py = squashPivotY(headAlongY)
             dx = (localX - cx) / sx
             dy = (localY - py) / sy + (py - cy)
-            val push = if (hopping) jumpAt(hopPhase()) else 0f
             val rot = displayRotation()
             if (headAlongY) {
                 // 与 onDraw 里的 canvas.translate 严格互逆：
@@ -1935,13 +1977,17 @@ class PetView(context: Context) : View(context) {
                     //   · 还没压到 [SQ_MAX]（相当于"点一下"）-> 接着播点击动画
                     //     （压缩量继续走完、再弹起落回），动画时钟按当前压缩量往前拨，
                     //     衔接不跳变，并触发点击互动；
-                    //   · 已经压得更深（长按）-> 只回弹，不弹起、**不触发点击互动**。
+                    //   · 已经压得更深（长按）-> 回弹，并按**压缩程度成正比**向上弹起
+                    //     （用户要求："长按之后松手要向上弹起，弹起高度与压缩程度成正比"）。
+                    //     仍然不触发点击互动。
                     val held = if (pressing) pressSquash() else 0f
                     pressing = false
                     if (held <= SQ_MAX) {
                         onTapped(held)
                     } else {
-                        startSquashRelease(held)
+                        val jumpPx = cellH *
+                            PetState.pressJumpFraction(held, PRESS_MAX_SQ, PRESS_JUMP_FRACTION)
+                        startSquashRelease(held, jumpPx)
                     }
                     // 点完把被打断的吸附补间补完，绝不停在半路（否则贴边会留缝）
                     resumePendingSnap()
@@ -2248,7 +2294,8 @@ class PetView(context: Context) : View(context) {
 
         // 点击/长按反馈：在人物自己的坐标系里压扁（压的方向跟着头朝向）
         val sq = currentSquash()
-        if (sq > 0.0001f || hopping) {
+        val push = currentJump()
+        if (abs(sq) > 0.0001f || push > 0.0001f || hopping) {
             // 沿"头轴"压扁。贴底/角落时头轴是 y，贴侧边（转 90°）时头轴是 x。
             val headAlongY = abs(rot) < 45f
             val sx = if (headAlongY) 1f + sq else 1f - sq
@@ -2259,8 +2306,7 @@ class PetView(context: Context) : View(context) {
             // 压扁之后向头的方向弹起：头朝上就往上，头朝左就往左。
             // 上边组是倒挂的（头朝下），所以它**向下**弹 —— 与"始终朝屏幕内侧弹"
             // 是同一件事：弹起方向永远背离吸附的那条边。
-            // 只有"点一下"才弹；长按是压住不放，松手只回弹。
-            val push = if (hopping) jumpAt(hopPhase()) else 0f
+            // 点一下是轻跳；长按松手是"与压缩程度成正比"的弹起（见 currentJump）。
             val dx = if (headAlongY) 0f else -push * (if (rot > 0f) 1f else -1f)
             val dy = if (!headAlongY) 0f else if (PetState.isTop(state)) push else -push
             canvas.translate(dx, dy)
@@ -2404,8 +2450,40 @@ class PetView(context: Context) : View(context) {
         /** 长按压满（到 [PRESS_MAX_SQ]）所需时间：按住越久压得越深 */
         private const val PRESS_FULL_MS = 1100f
 
-        /** 松手回弹时长 */
+        /** 松手回弹时长（不带弹起时） */
         private const val PRESS_RELEASE_MS = 300f
+
+        /**
+         * 长按松手时**向上弹起的最大高度**占素材高度的比例（压满时）。
+         *
+         * 用户要求："长按之后松手要向上弹起，弹起高度与压缩程度成正比。"
+         * 实际高度 = 这个比例 × (压缩量 / 压满量) × cellH，见
+         * [PetState.pressJumpFraction]。
+         *
+         * ⚠️ 窗口上下的余量必须按它留（见 [HOP_PAD_FRACTION]）：
+         * 弹起是画布平移，余量不够人物顶部就会被窗口裁掉。
+         */
+        private const val PRESS_JUMP_FRACTION = 0.28f
+
+        /**
+         * 长按松手"弹起 + 回弹"的总时长（弹起是正弦半波，到点正好落回 0）。
+         *
+         * 实测（把这一段临时放慢到 3s 后逐帧量）：压满松手后人物顶部最高到
+         * 离落点 **68~71px**（= 0.28 × 247 的等比弹起），静止后与松手前**零像素差**。
+         */
+        private const val PRESS_JUMP_MS = 380f
+
+        /**
+         * 窗口上下余量按哪个比例算 = 轻跳与长按弹起里**更大的那个**。
+         *
+         * `topPad()` / `bottomPad()` 与 `windowRectFor()` 都用它 ——
+         * 三处必须一致，否则呼出时窗口初始尺寸和随后算出来的不一样，会闪一下。
+         *
+         * ⚠️ `const` 的初值必须是编译期常量，所以不能写 `maxOf(...)`；
+         * 这里直接取长按弹起的比例（0.28 > 轻跳的 0.08）。**若以后把
+         * [HOP_FRACTION] 调得比 [PRESS_JUMP_FRACTION] 还大，必须回来改这一行。**
+         */
+        private const val HOP_PAD_FRACTION = PRESS_JUMP_FRACTION
 
         /**
          * 窗口包络里预留的**最大压缩比例**。
@@ -2479,7 +2557,7 @@ class PetView(context: Context) : View(context) {
                     envH = maxOf(envH, d2, co[1] * (1f + SQ_ENV_MAX))
                 }
             }
-            val pad = (cell[1] * HOP_FRACTION).toInt() + HOP_PAD_MIN
+            val pad = (cell[1] * HOP_PAD_FRACTION).toInt() + HOP_PAD_MIN
             val bboxW = envW.toInt() + HOP_PAD_X * 2
             val bboxH = envH.toInt() + pad + pad
 
