@@ -186,16 +186,13 @@
                                  -1dp 的 marginTop 把相接处两道描边叠成一道，
                                  这样名称框 + 菜单看起来是"一整块"。
 
-                                 ⚠️ layout_height 写 0dp、由代码在展开时一次性设成
-                                 菜单的实际高度，**之后动画只改 inner 的 translationY**。
-                                 不要改成每帧改高度的写法：那会让 ScrollView 页面
-                                 每帧重新测量所有卡片，实测掉帧 33%、95 分位 77ms。 -->
+                                 高度由内容决定（wrap_content）——
+                                 不做展开动画，开合是即时切换。 -->
                             <LinearLayout
                                 android:id="@+id/skinMenuWrap"
                                 android:layout_width="match_parent"
-                                android:layout_height="0dp"
+                                android:layout_height="wrap_content"
                                 android:layout_marginTop="-1dp"
-                                android:clipChildren="true"
                                 android:orientation="vertical"
                                 android:visibility="gone">
 

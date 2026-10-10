@@ -523,141 +523,51 @@ class MainActivity : Activity() {
         )
     }
 
-    /** 当前的展开动画（切换时先取消，避免连点互相打架） */
-    private val menuAnim = android.animation.ValueAnimator()
-    private var menuAnimating = false
-
     /**
      * 点整框：展开 / 收起二级菜单，三角同步翻转。
      *
-     * ⚠️ 动画**只能碰 translationY / alpha**，不能碰 layoutParams.height。
-     *    曾经写成每帧改高度 + requestLayout()，实测 dumpsys gfxinfo 掉帧 32.9%
-     *    （50 分位 26ms、95 分位 77ms，预算 16.7ms）—— 原因是每改一次高度，
-     *    外层 ScrollView 就要把整页所有卡片重新测量一遍。
-     *    现在高度只在展开/收起时各设一次，动画期间零布局。
+     * 这里**刻意不做动画**（用户试用后要求取消）：展开/收起都是即时切换。
+     * 顺带记一笔踩过的坑，免得以后又想加：
+     *   · 每帧改 layoutParams.height + requestLayout() 会让外层 ScrollView
+     *     把整页卡片重新测量一遍，dumpsys gfxinfo 实测掉帧 32.9%（50 分位 26ms、
+     *     95 分位 77ms，预算 16.7ms）；
+     *   · 改成动画 translationY 能做到"零布局"，但要额外维护一个固定高度的
+     *     裁剪容器，收起时还必须取对距离（取容器高度会拿到 0，表现为
+     *     "先瞬移再动画"）。
+     *   这套复杂度换来的收益不明显，所以最终选择不做。
      */
     private fun toggleSkinMenu() {
-        if (menuAnimating) return          // 动画途中忽略连点，免得状态错乱
         val open = skinMenuWrap.visibility != View.VISIBLE
-        if (open) expandSkinMenu() else collapseSkinMenu()
-    }
-
-    /**
-     * 展开：把容器高度一次性设成菜单实际高度，再让菜单从框底下滑出来。
-     *
-     * 溢出部分由卡片的 clipToOutline 裁掉，所以看上去就是"卡片被撑开"。
-     */
-    private fun expandSkinMenu() {
-        // 先让它 VISIBLE 并量高度：GONE 的视图不参与测量，量不到内容高度
-        skinMenuWrap.visibility = View.VISIBLE
-        skinMenuWrap.layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
-        applyTheme()                       // 重建菜单项（新行才谈得上淡入）
-        skinMenuWrap.post {
-            val full = skinMenu.contentHeight(skinMenuWrap)
-            if (full <= 0) {               // 没量到就不动画，别把菜单卡在 0 高
-                skinMenuWrap.layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
-                return@post
-            }
-            val rows = skinMenuRows()
-            // 顺序要紧：先把高度定死、并让菜单整体下移一整屏（藏到框后面），
-            // 再动画。反过来的话会先闪一下完整菜单。
-            skinMenuWrap.layoutParams.height = full
-            skinMenu.translationY = full.toFloat()
-            rows.forEach { it.alpha = 0f }
-            skinMenuWrap.requestLayout()
-            skinMenuWrap.invalidate()
-
-            menuAnimating = true
-            menuAnim.removeAllUpdateListeners()
-            menuAnim.removeAllListeners()
-            menuAnim.cancel()
-            menuAnim.setFloatValues(0f, 1f)
-            menuAnim.duration = MENU_OPEN_MS.toLong()
-            menuAnim.interpolator = android.view.animation.DecelerateInterpolator()
-            menuAnim.addUpdateListener { a ->
-                // 只动 translationY：纯绘制属性，不触发布局
-                skinMenu.translationY = full * (1f - a.animatedFraction)
-            }
-            menuAnim.addListener(object : android.animation.AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: android.animation.Animator) {
-                    skinMenu.translationY = 0f
-                    menuAnimating = false
-                }
-            })
-            menuAnim.start()
-
-            // 逐行淡入：错开一点点，像"依次冒出来"
-            val step = (MENU_OPEN_MS * 0.35f / rows.size.coerceAtLeast(1)).toLong()
-            rows.forEachIndexed { i, r ->
-                r.animate().alpha(1f)
-                    .setStartDelay(i * step)
-                    .setDuration(MENU_OPEN_MS - i * step)
-                    .setInterpolator(android.view.animation.DecelerateInterpolator())
-                    .start()
-            }
+        if (open) {
+            buildSkinMenu()
+            skinMenuWrap.visibility = View.VISIBLE
+            // 展开 -> 三角正立（旋转 180°）。直接设值，没有过渡动画。
+            icoSkinArrow.rotation = 180f
+        } else {
+            closeSkinMenuNow()
+            return
         }
-        icoSkinArrow.animate().rotation(180f).setDuration(MENU_OPEN_MS.toLong())
-            .setInterpolator(android.view.animation.DecelerateInterpolator()).start()
+        // ⚠️ 必须重刷一次主题，而且要在 visibility 与菜单项都就绪之后：
+        //   · 菜单项是**刚新造**的视图，不在上一次 AccentTheme.apply 的遍历里，
+        //     不补这次的话分隔线是透明的（表现："线看不见"）；
+        //   · 名称框的圆角要跟着开合变（展开 -> 下方两角直角，与菜单连成一整块）。
+        applyTheme()
     }
 
     /**
-     * 收起：菜单滑回框底下，行同步淡出；结束再真正隐藏并复位。
+     * 收起菜单并复位状态（也用于"选中角色后立即关闭"）。
      *
-     * ⚠️ 滑动距离必须取 **skinMenu.height**，不能取 skinMenuWrap.height：
-     *    容器的高度在收起时已经是 0（收起后要归 0 让卡片缩回；展开动画期间
-     *    高度也只写在 layoutParams 上，容器自身要等下一次布局才生效）。
-     *    取 0 的后果是动画距离为 0 —— 菜单瞬间跳回原位（看起来像"迅速打开"），
-     *    紧接着 translationY 那段再滑下去（"再按动画收起"）。这个 bug 踩过一次。
+     * ⚠️ 每行的 alpha / translationY 是普通 View 属性，会留到下一次展开，
+     *    必须复位，否则下次展开时那些行会带着旧值（闪一下或不显示）。
      */
-    private fun collapseSkinMenu() {
-        // 先把裁剪框设回菜单高度：容器高度为 0 的话菜单会被整块裁掉、看不见
-        val full = skinMenu.height
-        if (full <= 0) { finishCollapse(); return }
-        skinMenuWrap.layoutParams.height = full
-        skinMenuWrap.post {
-            // 等这次 resize 的布局走完再启动动画，保证第一帧就有正确的裁剪框
-            menuAnimating = true
-            menuAnim.removeAllUpdateListeners()
-            menuAnim.removeAllListeners()
-            menuAnim.cancel()
-            menuAnim.setFloatValues(0f, 1f)
-            menuAnim.duration = MENU_CLOSE_MS.toLong()
-            menuAnim.interpolator = android.view.animation.AccelerateInterpolator()
-            menuAnim.addUpdateListener { a ->
-                skinMenu.translationY = full * a.animatedFraction
-            }
-            menuAnim.addListener(object : android.animation.AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: android.animation.Animator) {
-                    finishCollapse()
-                }
-            })
-            menuAnim.start()
-            // 行一起淡出（不按顺序，收起要干脆）
-            skinMenuRows().forEach { r ->
-                r.animate().alpha(0f).setDuration(MENU_CLOSE_MS.toLong()).start()
-            }
-        }
-        icoSkinArrow.animate().rotation(0f).setDuration(MENU_CLOSE_MS.toLong())
-            .setInterpolator(android.view.animation.AccelerateInterpolator()).start()
-    }
-
-    /**
-     * 收起动画结束 / 需要立刻关闭时调用：隐藏、复位高度与每行状态、刷新主题。
-     *
-     * ⚠️ alpha / translationY 是普通 View 属性，会留到下一次展开，必须复位，
-     *    否则下次展开时那些行会带着旧值（闪一下或不显示）。
-     */
-    private fun finishCollapse() {
+    private fun closeSkinMenuNow() {
         skinMenuWrap.visibility = View.GONE
-        // 高度归 0：卡片随之收回。这一步有布局，但每次开合只发生一次，不影响动画帧率。
-        skinMenuWrap.layoutParams.height = 0
         skinMenu.translationY = 0f
         skinMenuRows().forEach { r ->
             r.animate().cancel()
             r.alpha = 1f
         }
-        skinMenuWrap.requestLayout()
-        menuAnimating = false
+        icoSkinArrow.rotation = 0f
         // 名称框的下方两角要恢复圆角（菜单收起了，不再与它相连）
         applyTheme()
     }
@@ -667,43 +577,16 @@ class MainActivity : Activity() {
         (0 until skinMenu.childCount).map { skinMenu.getChildAt(it) }
             .filter { it is TextView }
 
-    /** 没有可动画的子 View 时，量它自己的内容高度（wrap_content 下的测量高度） */
-    private fun View.contentHeight(parent: View): Int {
-        val w = parent.width
-        if (w <= 0) return height
-        measure(
-            View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-        )
-        return measuredHeight
-    }
-
-    /** dp -> px（Float 版，动画里用） */
-    private fun dpf(v: Float): Float =
-        android.util.TypedValue.applyDimension(
-            android.util.TypedValue.COMPLEX_UNIT_DIP, v, resources.displayMetrics
-        )
-
     /** 选中某个角色：换肤 + 收起菜单 + 三角复位 */
     private fun selectSkin(dir: String) {
-        // 立刻收起（不等动画）：用户已经点完选项了，这里要的是"马上给反馈"
-        skinMenuWrap.animate().cancel()
-        skinMenuRows().forEach { it.animate().cancel() }
-        menuAnim.cancel()
-        menuAnimating = false
-        icoSkinArrow.animate().rotation(0f).setDuration(MENU_CLOSE_MS.toLong())
-            .setInterpolator(android.view.animation.AccelerateInterpolator()).start()
-        if (dir == prefs.skin) {
-            finishCollapse()
-            return
-        }
+        closeSkinMenuNow()
+        if (dir == prefs.skin) return
         prefs.skin = dir
         // 换角色 -> 重新提取发色、立刻换肤；按钮名字与右下角预览同步更新
         refreshSkinBox()
         applyTheme()
         refreshCornerPreview()
         PetService.notifyChanged(this)
-        finishCollapse()
     }
 
     // ---------------------------------------------------------------- 回弹调节
@@ -1121,12 +1004,6 @@ class MainActivity : Activity() {
     }
 
     private companion object {
-        /** 形象二级菜单展开时长：与三角旋转同长，两个动作才像一个整体 */
-        const val MENU_OPEN_MS = 220
-
-        /** 收起要干脆一些 */
-        const val MENU_CLOSE_MS = 160
-
         /** 量文字宽度用的基准字号（px）：取得够大，量完再按比例缩 */
         const val PROBE_TEXT_PX = 400f
 
