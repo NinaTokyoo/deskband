@@ -12,8 +12,9 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fillViewport="true"
-    android:focusableInTouchMode="true"
     android:background="@color/bg"
+    android:overScrollMode="ifContentScrolls"
+    android:scrollbarAlwaysDrawVerticalTrack="false"
     android:scrollbars="none">
 
     <LinearLayout
@@ -194,14 +195,20 @@
                 <!-- 宽度要与上面 Spinner 的 marginEnd 配合：
                      marginEnd >= 图宽 + 8，否则会盖住 Spinner 右端的倒三角。
                      scaleType 必须是 matrix —— setImageMatrix 只在 matrix 下生效，
-                     其它 scaleType 会忽略我们算好的矩阵（踩过：素材因此没贴紧）。 -->
+                     其它 scaleType 会忽略我们算好的矩阵（踩过：素材因此没贴紧）。
+
+                     右边距/底边距 = 0.75dp = 卡片描边宽 1.5dp 的一半。
+                     描边是 STROKE 样式、以卡片边界为中心画，所以可见描边只占
+                     最外侧 0.75dp；留 0.75dp 正好让素材**紧贴描边内沿**：
+                     既没有缝隙，也不会盖住描边。（留 2dp 会被看出缝隙，
+                       留 0dp 会压住描边。） -->
                 <ImageView
                     android:id="@+id/imgCornerPreview"
                     android:layout_width="104dp"
                     android:layout_height="104dp"
                     android:layout_gravity="end|bottom"
-                    android:layout_marginEnd="2dp"
-                    android:layout_marginBottom="2dp"
+                    android:layout_marginEnd="0.75dp"
+                    android:layout_marginBottom="0.75dp"
                     android:scaleType="matrix"
                     android:clickable="false"
                     android:focusable="false"

@@ -726,10 +726,17 @@ class MainActivity : Activity() {
         }
     }
 
-    /** 位图里**非透明**像素的包围盒（可见画面）；全透明就退回整张 */
+    /**
+     * 位图里**非透明**像素的包围盒（可见画面）；全透明就退回整张。
+     *
+     * 用 step 跳采样：只为定位边界，不需要逐像素精确，跳采样能把
+     * 百万像素级的全图扫描从"肉眼可感的卡顿"降到可忽略。
+     * （角落素材常在 1000x1400 上下，逐像素在 Kotlin 里是几百万次循环。）
+     */
     private fun visibleBounds(bmp: android.graphics.Bitmap): android.graphics.Rect {
         val w = bmp.width
         val h = bmp.height
+        val step = (maxOf(w, h) / 512).coerceAtLeast(1)
         var l = w
         var t = h
         var r = -1
@@ -746,9 +753,9 @@ class MainActivity : Activity() {
                     if (y < t) t = y
                     if (y > b) b = y
                 }
-                x++
+                x += step
             }
-            y++
+            y += step
         }
         return if (r < 0) android.graphics.Rect(0, 0, w, h)
         else android.graphics.Rect(l, t, r + 1, b + 1)

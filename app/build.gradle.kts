@@ -14,12 +14,12 @@ android {
         applicationId = "com.dsh.deskpet"
         minSdk = 26
         targetSdk = 36
-        // 版本号：只改这一行 versionName，versionCode 自动派生，永远不会不同步。
-        //   1.1.02 -> 10102
+        // 版本号：只改这一行 vName，versionCode 自动派生，永远不会不同步。
+        //   1.1.03 -> 10103
         //   1.2.00 -> 10200
-        // 规律：去掉小数点当整数（单调递增）。
-        // 下次发版改这里即可，也可以跑 tools/bump_version.ps1 自动 +1。
-        val vName = "1.1.02"
+        // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
+        // ⚠️ 本机执行策略禁止运行 .ps1，所以不要用脚本自动改，手改这一行最稳。
+        val vName = "1.1.03"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()
