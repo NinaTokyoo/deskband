@@ -224,10 +224,16 @@ class MainActivity : Activity() {
             Toast.makeText(this, R.string.reset_need_running, Toast.LENGTH_SHORT).show()
             return
         }
-        // 本地也先把 UI 同步过来（服务端会写同一份 Prefs）
-        prefs.sizeScale = 1f
-        prefs.bounceAmpScale = 1f
-        prefs.bounceTimeScale = 1f
+        // ⚠️ 只有**关闭「复位保留设置」**时才在这里重置 Prefs。
+        //
+        // 原来是无条件重置，于是开了"保留"也照样被清零 ——
+        // 表现是：宠物当前画面没变（服务端 setSizeFraction 被跳过），
+        // 但外观卡片滑块/数字变回 1.0、边框回弹也失效（用户反馈）。
+        if (!prefs.resetKeepSettings) {
+            prefs.sizeScale = 1f
+            prefs.bounceAmpScale = 1f
+            prefs.bounceTimeScale = 1f
+        }
         bindSizeControls()
         bindBounceControls()
         clearInputFocus()
