@@ -14,13 +14,16 @@ android {
         applicationId = "com.dsh.deskpet"
         minSdk = 26
         targetSdk = 36
-        // versionCode 与 versionName 的对应关系（手写递增即可）：
-        //   1.1.01 -> 101
-        //   1.1.02 -> 102
-        //   1.2.00 -> 200
-        // 规律：去掉小数点当作整数，保证单调递增。
-        versionCode = 101
-        versionName = "1.1.01"
+        // 版本号：只改这一行 versionName，versionCode 自动派生，永远不会不同步。
+        //   1.1.02 -> 10102
+        //   1.2.00 -> 10200
+        // 规律：去掉小数点当整数（单调递增）。
+        // 下次发版改这里即可，也可以跑 tools/bump_version.ps1 自动 +1。
+        val vName = "1.1.02"
+        versionName = vName
+        versionCode = vName.split(".").let {
+            it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()
+        }
         // 纯平台实现，不依赖 AndroidX / Material，包体小、构建面窄
     }
 

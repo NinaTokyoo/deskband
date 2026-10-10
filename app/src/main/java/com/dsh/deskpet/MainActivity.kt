@@ -24,6 +24,7 @@ import android.widget.SeekBar
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
+import kotlin.math.log10
 import kotlin.math.roundToInt
 
 /** 控制台：授权、开关桌宠、调大小、换角色。 */
@@ -486,22 +487,26 @@ class MainActivity : Activity() {
      * 取对数后 1.0 正好落在滑条中间，两侧手感一致。
      */
     /**
-     * 滑块进度(0..1000) <-> 倍率：**线性**按上下界取比例（用户要求）。
+     * 滑块进度(0..1000) <-> 倍率：**对数**映射。
      *
-     * 原来是取对数，好处是低倍率段也能调得动，但推进位置不直观。
-     * 现在改成线性：进度 = (值 - 下界) / (上界 - 下界)，所见即所得。
-     *
-     * ⚠️ 代价：边框回弹幅度区间是 0.5 ~ 100，默认值 1.0 的进度只有
-     * (1-0.5)/(100-0.5) ≈ 0.5%，滑块会贴在**最左端**。
-     * 也就是说"小倍率"这一段几乎占不到行程 —— 用户已知悉并选择线性。
+     * 试过线性（用户要求"按上下界取比例"），但幅度区间是 0.5 ~ 100（200 倍跨度），
+     * 线性下 1.0 的进度只有 (1-0.5)/(100-0.5) ≈ 0.5%，滑块贴死最左端，
+     * 而且整个"可用区间"（0.5~12，再大就被防飞出钳制）只占行程的 12%，
+     * 一拖就冲进饱和区 —— 这正是"调了没效果"的观感来源之一。
+     * 对数映射让 0.5 / 1 / 3 / 10 / 30 / 100 在行程上均匀铺开，宽区间就该用对数。
      */
-    private fun scaleOf(progress: Int, min: Float, max: Float): Float =
-        min + (max - min) * (progress.coerceIn(0, 1000) / 1000f)
+    private fun scaleOf(progress: Int, min: Float, max: Float): Float {
+        val lo = log10(min.toDouble())
+        val hi = log10(max.toDouble())
+        val t = progress.coerceIn(0, 1000) / 1000.0
+        return Math.pow(10.0, lo + (hi - lo) * t).toFloat()
+    }
 
     private fun progressOfScale(v: Float, min: Float, max: Float): Int {
-        if (max <= min) return 0
-        val t = ((v.coerceIn(min, max) - min) / (max - min))
-        return (t * 1000f).roundToInt().coerceIn(0, 1000)
+        val lo = log10(min.toDouble())
+        val hi = log10(max.toDouble())
+        val x = log10(v.coerceIn(min, max).toDouble())
+        return (((x - lo) / (hi - lo)) * 1000.0).roundToInt().coerceIn(0, 1000)
     }
 
     private fun scaleOf(progress: Int): Float =

@@ -617,17 +617,30 @@ class PetView(context: Context) : View(context) {
             return
         }
 
-        // 过冲点：换回足迹坐标后夹一次，绝不让它跑出屏幕大半
+        // 过冲点：换回足迹坐标后夹一次，绝不让它整个跑出屏幕。
+        //
+        // ⚠️ 这里的"至少可见多少"必须**跟着幅度放宽** ——
+        // 原来固定 0.75，于是任何幅度都被夹在"最多 25% 出屏"，
+        // 幅度超过约 3.5 倍后过冲点全被夹成同一个位置，
+        // 用户实测"回弹幅度调节了没有效果"。
+        //
+        // 现在改成：允许的出屏量正好等于本次幅度 amp，
+        // 只有当它会让可见部分少于 [BOUNCE_MIN_VISIBLE] 时才夹。
+        // 这样幅度在"最多 88% 出屏"以内都是**精确生效**的。
         val b = host?.bounds()
         var overCenterX = targetCenterX + ox
         var overCenterY = targetCenterY + oy
         if (b != null) {
+            val dimX = tW.toFloat()
+            val dimY = tH.toFloat()
+            val floorX = (1f - abs(ox) / dimX).coerceAtLeast(BOUNCE_MIN_VISIBLE)
+            val floorY = (1f - abs(oy) / dimY).coerceAtLeast(BOUNCE_MIN_VISIBLE)
             val cl = PetState.clampToScreen(
                 overCenterX - centerFromTrackXSized(tW),
                 overCenterY - centerFromTrackYSized(tH),
-                tW.toFloat(), tH.toFloat(),
+                dimX, dimY,
                 b.width().toFloat(), b.height().toFloat(),
-                BOUNCE_MIN_VISIBLE
+                minOf(floorX, floorY)
             )
             overCenterX = cl[0] + centerFromTrackXSized(tW)
             overCenterY = cl[1] + centerFromTrackYSized(tH)
@@ -1351,7 +1364,7 @@ class PetView(context: Context) : View(context) {
          *
          * 防止幅度调大后被推出屏幕大半，看着像"卡进边框里消失了"。
          */
-        const val BOUNCE_MIN_VISIBLE = 0.75f
+        const val BOUNCE_MIN_VISIBLE = 0.12f
         private const val HOP_MS = 380f
         private const val HOP_FRACTION = 0.08f
 
