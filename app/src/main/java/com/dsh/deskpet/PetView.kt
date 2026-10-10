@@ -693,12 +693,17 @@ class PetView(context: Context) : View(context) {
      * 观感上才是"慢慢平移出去"。
      */
     fun slideOut(onDone: () -> Unit) {
-        if (sliding) return
+        // ⚠️ 这里**不能** if (sliding) return。
+        // 宠物正在滑入时用户点收起，如果直接返回，onDone 就永远不会注册 ——
+        // 服务不停、视图不删，宠物卡在半路，表现就是"连点后乱飞消失"。
+        // 新指令一律**接管**当前动画（startSlide 会覆盖在途状态）。
         val v = exitVector()
         val to = offScreenAnchor(v[0], v[1])
         // 记住静止位置：连点时要把宠物原路滑回来
-        slideRestX = anchorX
-        slideRestY = anchorY
+        if (!sliding) {
+            slideRestX = anchorX
+            slideRestY = anchorY
+        }
         startSlide(anchorX, anchorY, to[0], to[1], onDone)
     }
 
@@ -723,7 +728,7 @@ class PetView(context: Context) : View(context) {
      * 会看到宠物"从原地开始飞"。
      */
     fun slideIn(targetX: Float, targetY: Float) {
-        if (sliding) return
+        // 同样允许接管在途动画（例如呼出动画没播完就又被呼出一次）
         val v = exitVector()
         val from = offScreenAnchor(v[0], v[1])
         anchorX = from[0]
