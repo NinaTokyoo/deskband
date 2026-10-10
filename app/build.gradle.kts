@@ -19,7 +19,7 @@ android {
         //   1.2.00 -> 10200
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ⚠️ 本机执行策略禁止运行 .ps1，所以不要用脚本自动改，手改这一行最稳。
-        val vName = "1.1.03"
+        val vName = "1.1.04"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()

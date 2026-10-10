@@ -68,6 +68,9 @@ class MainActivity : Activity() {
     private lateinit var spinnerTheme: Spinner
 
     private var skins: List<String> = emptyList()
+
+    /** 形象目录 -> 显示名，[loadSkins] 时一次算好 */
+    private var skinNames: Map<String, String> = emptyMap()
     private var bindingSkin = false
 
     /** 通知权限是否已经弹过系统对话框（弹过之后再点就直接去设置页） */
@@ -127,6 +130,7 @@ class MainActivity : Activity() {
         refreshCornerPreview()
         setupThemeSpinner()
         fitTitleToWidth()
+        warmUpSkins()
 
         rowOverlay.setOnClickListener { openOverlaySettings() }
         rowNotify.setOnClickListener { openNotificationSettings() }
@@ -260,9 +264,14 @@ class MainActivity : Activity() {
         tv.setTextColor(if (ok) COLOR_OK else COLOR_BAD)
     }
 
-    /** 当前形象的中文显示名（pet.json 里的 name），取不到就退回目录名 */
+    /**
+     * 当前形象的中文显示名（pet.json 里的 name）。
+     *
+     * 直接查 [skinNames]，**不再每次 PetSprite.load** ——
+     * 那个会解码两张 PNG，放在切换形象的回调里就是那一卡的来源。
+     */
     private fun currentSkinName(): String =
-        PetSprite.load(assets, prefs.skin)?.displayName ?: prefs.skin
+        skinNames[prefs.skin] ?: prefs.skin
 
     private fun hasNotificationPermission(): Boolean {
         if (Build.VERSION.SDK_INT < 33) return true
@@ -348,6 +357,8 @@ class MainActivity : Activity() {
         val found = PetSprite.listSkins(assets)
         skins = if (found.isEmpty()) listOf(Prefs.DEFAULT_SKIN) else found
         val labels = skins.map { dir -> PetSprite.load(assets, dir)?.displayName ?: dir }
+        // 名字表一次算好：之后按钮文案、通知标题都查它，不再重复解码 PNG
+        skinNames = skins.indices.associate { skins[it] to labels[it] }
 
         val adapter = ThemedAdapter(this, labels)
         spinnerSkin.adapter = adapter
@@ -609,10 +620,65 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * 后台预热所有形象的重资产（大图解码 + 发色提取 + alpha 包围盒）。
+     *
+     * 这些在 UI 线程上做就是"点一下卡一下"，所以放到最低优先级线程上先算好；
+     * 用户真正切换时直接命中 [skinAssets] 缓存，几乎是瞬时的。
+     * 低优先级 + 逐张让出，不会和界面抢 CPU。
+     */
+    private fun warmUpSkins() {
+        val dirs = skins.toList()
+        Thread {
+            for (d in dirs) {
+                runCatching { assetsFor(d) }
+                Thread.yield()
+            }
+        }.apply { priority = Thread.MIN_PRIORITY }.start()
+    }
+
     // ---------------------------------------------------------------- 换肤
 
     /** 当前是否浅色模式 */
     private var lightMode = false
+
+    /**
+     * 每个形象的**重资产**缓存。
+     *
+     * 之前切换一次人物会在 UI 线程上跑：
+     *   PetSprite.load × 2（每次解码 corner.png + upright.png，都是大图）
+     *   + 提取发色的全图扫描 × 1
+     *   + 算 alpha 包围盒的全图扫描 × 1
+     * 于是"点击有延迟、一卡一卡"。现在按形象目录缓存，
+     * 同一个形象只在第一次付这个代价，之后切换（以及切明暗）都是查表。
+     */
+    private class SkinAssets(
+        val bmp: android.graphics.Bitmap?,
+        val visible: android.graphics.Rect,
+        val accentLight: Int,
+        val accentDark: Int
+    )
+
+    private val skinAssets =
+        java.util.Collections.synchronizedMap(HashMap<String, SkinAssets>())
+
+    private fun assetsFor(skin: String): SkinAssets = skinAssets.getOrPut(skin) {
+        val sprite = PetSprite.load(assets, skin)
+        val bmp = sprite?.bitmap(PetState.CORNER_BR, mirror = false, flipV = false)
+        if (bmp == null) {
+            SkinAssets(null, android.graphics.Rect(0, 0, 1, 1),
+                AccentTheme.FALLBACK, AccentTheme.FALLBACK)
+        } else {
+            // 只扫一次发色，明暗两套强调色都从它派生
+            val hair = AccentTheme.extractHairColor(bmp)
+            SkinAssets(
+                bmp,
+                visibleBounds(bmp),
+                hair?.let { AccentTheme.accentFrom(it, true) } ?: AccentTheme.FALLBACK,
+                hair?.let { AccentTheme.accentFrom(it, false) } ?: AccentTheme.FALLBACK
+            )
+        }
+    }
 
     /**
      * 重新计算强调色 + 明暗模式，并把整套配色刷到界面上。
@@ -622,9 +688,8 @@ class MainActivity : Activity() {
      */
     private fun applyTheme() {
         lightMode = AccentTheme.isLight(this, prefs.themeMode)
-        val sprite = PetSprite.load(assets, prefs.skin)
-        val bmp = sprite?.bitmap(PetState.CORNER_BR, mirror = false, flipV = false)
-        accent = AccentTheme.accentFor(bmp, lightMode)
+        val sa = assetsFor(prefs.skin)
+        accent = if (lightMode) sa.accentLight else sa.accentDark
         prefs.accentColor = accent
 
         AccentTheme.apply(this, findViewById(R.id.root), accent, lightMode)
@@ -708,15 +773,15 @@ class MainActivity : Activity() {
      * 不对素材做任何裁切 —— 只调整它在框内的缩放与位移。
      */
     private fun refreshCornerPreview() {
-        val sprite = PetSprite.load(assets, prefs.skin)
-        val bmp = sprite?.bitmap(PetState.CORNER_BR, mirror = false, flipV = false)
+        val sa = assetsFor(prefs.skin)
+        val bmp = sa.bmp
         imgCornerPreview.setImageBitmap(bmp)
         if (bmp == null) return
+        val vis = sa.visible
         imgCornerPreview.post {
             val vw = imgCornerPreview.width.toFloat()
             val vh = imgCornerPreview.height.toFloat()
             if (vw <= 0f || vh <= 0f) return@post
-            val vis = visibleBounds(bmp)
             val scale = minOf(vw / vis.width(), vh / vis.height())
             val m = android.graphics.Matrix()
             m.postScale(scale, scale)
