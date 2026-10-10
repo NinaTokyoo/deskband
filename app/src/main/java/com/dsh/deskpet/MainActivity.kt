@@ -919,12 +919,10 @@ class MainActivity : Activity() {
     /** 把当前值刷到滑块 / 文本框 / 摘要文字 */
     private fun bindSizeControls() {
         val sc = prefs.sizeScale
-        val frac = prefs.sizeFraction
         seekSize.progress = progressOfSizeScale(sc)
         editSize.setText(fmtScale(sc))
-        txtSize.text = getString(
-            R.string.size_label_value, fmtScale(sc), (frac * 100f).roundToInt()
-        )
+        // 只显示倍率，不再显示"占屏高 xx%"（用户要求，且太长会被截断）
+        txtSize.text = getString(R.string.size_label_value, fmtScale(sc))
     }
 
     /** 把当前值刷到滑块 / 文本框 / 摘要文字 */

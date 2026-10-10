@@ -26,8 +26,9 @@
 
     <!-- ③ 外观 -->
     <string name="section_look">外观大小</string>
-    <!-- 标签与当前值合并成一行，提高信息密度 -->
-    <string name="size_label_value">大小倍率　×%1$s　·　占屏高 %2$d%%</string>
+    <!-- 标签与当前值合并成一行，提高信息密度。
+         只保留倍率，去掉"占屏高 xx%"（太长会被省略号截断） -->
+    <string name="size_label_value">大小倍率　×%1$s</string>
     <string name="size_input">倍率</string>
     <string name="size_saved">大小已保存</string>
 
