@@ -250,6 +250,12 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------------- 状态刷新
 
     private fun refreshUi() {
+        // 以**服务的真实存活状态**为准，并顺手修正持久化标志。
+        //
+        // prefs.running 是持久化的：进程被从最近任务里划掉时服务已经死了，
+        // 但那个布尔值还留着 true —— 冷启动后界面显示"收起"、实际没有桌宠。
+        if (prefs.running != PetService.alive) prefs.running = PetService.alive
+
         // 权限行：已开启 -> 绿勾，未开启 -> 红叉
         setPermMark(markOverlay, Settings.canDrawOverlays(this))
         setPermMark(markNotify, hasNotificationPermission())

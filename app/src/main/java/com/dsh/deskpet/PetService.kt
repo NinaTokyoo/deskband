@@ -69,6 +69,7 @@ class PetService : Service(), PetView.Host {
 
     override fun onCreate() {
         super.onCreate()
+        alive = true
         wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         prefs = Prefs(this)
         startForegroundCompat()
@@ -124,6 +125,7 @@ class PetService : Service(), PetView.Host {
             // 忽略
         }
         prefs.running = false
+        alive = false
         try {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } catch (e: Exception) {
@@ -278,12 +280,16 @@ class PetService : Service(), PetView.Host {
         petView = view
         petParams = p
 
-        // 恢复上次的吸附状态与位置
+        // 恢复上次的吸附状态与位置。
+        //
+        // 首次使用（还没存过位置）要求出现在**右边框中点**，所以直接复用
+        // resetToRightMid()：它会把状态设成 BORDER_R 并垂直居中 —— 这和
+        // 界面上的「复位」是同一套语义，不会出现两处逻辑不一致。
         val st = prefs.snapState
         if (prefs.hasPosition) {
             view.restore(st, prefs.posLeft, prefs.posTop)
         } else {
-            view.applySnap(st)
+            view.resetToRightMid()
         }
 
         prefs.running = true
@@ -441,6 +447,20 @@ class PetService : Service(), PetView.Host {
     }
 
     companion object {
+        /**
+         * 服务是否真的活着。
+         *
+         * `prefs.running` 是**持久化**的，进程被划掉（从最近任务里清掉）时
+         * 服务已经死了但那个布尔值还留着 true —— 冷启动后界面就会显示
+         * "收起"、实际却没有桌宠（用户反馈的现象）。
+         *
+         * Activity 与 Service 在**同一个进程**里，所以用这个静态标志
+         * 判断真实存活状态最可靠：onCreate 置 true、onDestroy 置 false。
+         */
+        @Volatile
+        var alive = false
+            private set
+
         private const val CHANNEL_ID = "deskpet"
         private const val NOTIF_ID = 1001
 
