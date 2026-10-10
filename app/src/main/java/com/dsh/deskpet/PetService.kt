@@ -88,7 +88,9 @@ class PetService : Service(), PetView.Host {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
-                stopSelf()
+                // 先滑出屏幕、滑完再停服务。
+                // 不能先 stopSelf()：服务一销毁视图就被移除，动画根本没机会播。
+                slideOutThenStop()
                 return START_NOT_STICKY
             }
             ACTION_RELOAD -> {
@@ -110,7 +112,7 @@ class PetService : Service(), PetView.Host {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (petView == null) showPet()
+        if (petView == null) showPet(animateIn = true)
         return START_STICKY
     }
 
@@ -230,7 +232,7 @@ class PetService : Service(), PetView.Host {
 
     // ---------------------------------------------------------------- 悬浮窗
 
-    private fun showPet() {
+    private fun showPet(animateIn: Boolean = false) {
         val s = PetSprite.load(assets, prefs.skin)
             ?: PetSprite.load(assets, PetSprite.FALLBACK)
             ?: PetSprite.listSkins(assets).firstOrNull()?.let { PetSprite.load(assets, it) }
@@ -292,8 +294,32 @@ class PetService : Service(), PetView.Host {
             view.resetToRightMid()
         }
 
+        // 呼出：从屏幕外滑进来。目标点就是上面刚定好的位置，
+        // 所以要先抓住它，再让 slideIn 把锚点瞬移到屏幕外开始滑。
+        if (animateIn) view.slideIn(view.anchorXNow(), view.anchorYNow())
+
         prefs.running = true
         if (!screenOn) view.setPaused(true)
+    }
+
+    /**
+     * 收起：先播滑动动画，滑完再移除视图并停服务。
+     *
+     * 期间服务保持存活，所以动画可以正常跑完；`prefs.running` 立刻置 false，
+     * 界面按钮即时变成"呼出"，不用等动画结束。
+     */
+    private fun slideOutThenStop() {
+        prefs.running = false
+        val v = petView
+        if (v == null) {
+            removePet()
+            stopSelf()
+            return
+        }
+        v.slideOut {
+            removePet()
+            stopSelf()
+        }
     }
 
     private fun removePet() {

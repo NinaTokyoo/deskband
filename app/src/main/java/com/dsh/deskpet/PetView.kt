@@ -578,6 +578,24 @@ class PetView(context: Context) : View(context) {
                 }
                 need = true
             }
+            // 呼出/收起滑动：smoothstep，两头慢，观感是"慢慢平移"
+            if (sliding) {
+                val t = ((now - slideStart).toFloat() / slideMs).coerceIn(0f, 1f)
+                val e = t * t * (3f - 2f * t)
+                anchorX = slideFromX + (slideToX - slideFromX) * e
+                anchorY = slideFromY + (slideToY - slideFromY) * e
+                if (t >= 1f) {
+                    anchorX = slideToX
+                    anchorY = slideToY
+                    sliding = false
+                    val d = slideDone
+                    slideDone = null
+                    // 先置 sliding=false 再回调：回调里会 removeView，
+                    // 若那时 sliding 仍为 true，后续清理路径会被误挡。
+                    d?.invoke()
+                }
+                need = true
+            }
             // 注：flipRunning 只在真正翻转时被置 true（见 startFlip）
             if (hopping) {
                 val t = ((now - hopStart).toFloat() / HOP_MS).coerceIn(0f, 1f)
@@ -593,6 +611,92 @@ class PetView(context: Context) : View(context) {
                 scheduleFrame()
             }
         }
+    }
+
+    // ------------------------------------------------ 呼出 / 收起 滑动动画
+
+    private var sliding = false
+    private var slideFromX = 0f
+    private var slideFromY = 0f
+    private var slideToX = 0f
+    private var slideToY = 0f
+    private var slideStart = 0L
+    private var slideMs = SLIDE_MS
+    private var slideDone: (() -> Unit)? = null
+
+    /** 当前锚点（素材中心屏幕坐标）—— 呼出动画要拿它当滑入目标 */
+    fun anchorXNow(): Float = anchorX
+    fun anchorYNow(): Float = anchorY
+
+    /** 动画期间不接受触摸，避免"正飞出去又被拖回来" */
+    fun isSliding(): Boolean = sliding
+
+    /**
+     * 退出方向：贴**左右边框** -> 水平移出；**角落/底边** -> 向下移出。
+     *
+     * 正立贴边态（*_UPRIGHT）也属于左右边框，走水平。
+     */
+    private fun exitVector(): FloatArray = when (state) {
+        PetState.BORDER_L, PetState.BORDER_L_UPRIGHT -> floatArrayOf(-1f, 0f)
+        PetState.BORDER_R, PetState.BORDER_R_UPRIGHT -> floatArrayOf(1f, 0f)
+        else -> floatArrayOf(0f, 1f)
+    }
+
+    /** 让**整个窗口**都移出屏幕时，锚点（素材中心）该在哪 */
+    private fun offScreenAnchor(dirX: Float, dirY: Float): FloatArray {
+        val b = host?.bounds() ?: return floatArrayOf(anchorX, anchorY)
+        val x = when {
+            dirX > 0f -> b.width() + bboxW / 2f
+            dirX < 0f -> -bboxW / 2f
+            else -> anchorX
+        }
+        val y = if (dirY > 0f) b.height() + bboxH / 2f else anchorY
+        return floatArrayOf(x, y)
+    }
+
+    /**
+     * 收起：平滑滑出屏幕，滑完回调 [onDone]。
+     *
+     * 用 smoothstep（t²(3-2t)）而不是 easeOutCubic —— 进出两头都慢，
+     * 观感上才是"慢慢平移出去"。
+     */
+    fun slideOut(onDone: () -> Unit) {
+        if (sliding) return
+        val v = exitVector()
+        val to = offScreenAnchor(v[0], v[1])
+        startSlide(anchorX, anchorY, to[0], to[1], onDone)
+    }
+
+    /**
+     * 呼出：先瞬移到屏幕外，再平滑滑回 [targetX]/[targetY]。
+     *
+     * 注意瞬移那一步必须 syncWindow()，否则窗口还停在屏幕内、
+     * 会看到宠物"从原地开始飞"。
+     */
+    fun slideIn(targetX: Float, targetY: Float) {
+        if (sliding) return
+        val v = exitVector()
+        val from = offScreenAnchor(v[0], v[1])
+        anchorX = from[0]
+        anchorY = from[1]
+        dragOffsetX = 0f
+        dragOffsetY = 0f
+        syncWindow()
+        startSlide(from[0], from[1], targetX, targetY, null)
+    }
+
+    private fun startSlide(
+        fromX: Float, fromY: Float, toX: Float, toY: Float, onDone: (() -> Unit)?
+    ) {
+        slideFromX = fromX
+        slideFromY = fromY
+        slideToX = toX
+        slideToY = toY
+        slideStart = SystemClock.uptimeMillis()
+        slideMs = SLIDE_MS
+        slideDone = onDone
+        sliding = true
+        scheduleFrame()
     }
 
     private fun cancelTween() {
@@ -1482,6 +1586,9 @@ class PetView(context: Context) : View(context) {
         private const val FRAME_MS = 16L
         private const val HIT_ALPHA_MIN = 16
         private const val SNAP_MS = 220f
+
+        /** 呼出/收起滑出滑入的时长（"慢慢平移"，比吸附慢得多） */
+        private const val SLIDE_MS = 420f
         private const val FLIP_MS = 260f
         private const val ROT_MS = 180f
 
