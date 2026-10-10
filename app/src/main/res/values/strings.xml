@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">桌宠 DeskPet</string>
+    <string name="app_name">DeskBand</string>
     <string name="subtitle">让它待在桌面上陪着你。点一下它会开心跳一下，拖起来能换边。</string>
 
     <!-- 页面标题 -->
@@ -52,7 +52,12 @@
     <string name="notify_count">已输入 %1$d / %2$d 字符</string>
     <string name="notify_saved">通知内容已保存</string>
 
-    <string name="tip">小提示：\n· 点一下 → 它会先压扁再弹起（方向跟着头的朝向）\n· 按住拖动 → 严格跟手，松手吸附到最近的角或边框\n· 贴侧边 → 自动旋转躺倒，头朝屏幕内侧\n· 拖过屏幕中线 → 立刻镜像翻个身\n· 桌面上的它不能改设置，只能点、只能拖</string>
+    <!-- ⑥ 明暗模式 -->
+    <string name="section_theme">外观模式</string>
+    <string name="theme_system">跟随系统</string>
+    <string name="theme_light">浅色</string>
+    <string name="theme_dark">深色</string>
+
 
     <!-- 通知 -->
     <string name="notif_channel">桌宠</string>

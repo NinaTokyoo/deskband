@@ -135,15 +135,29 @@ class PetService : Service(), PetView.Host {
     // ---------------------------------------------------------------- 通知
 
     /**
-     * 通知标题：「<当前形象名>正在陪伴你」。
+     * 通知标题：「<当前形象名> 正在陪伴你」。
      *
      * 形象名取 sprite 的 displayName（pet.json 里的 name），
      * 还没加载出 sprite 时退回通用文案。
+     *
+     * 形象名那一段单独上强调色（与界面里的"收起 山田凉"保持一致）。
+     * 通知标题支持 Spannable，颜色通常会被系统渲染出来；
+     * 万一某个 ROM 不认，也只是退化成普通文字，不影响可读性。
      */
-    private fun notificationTitle(): String {
+    private fun notificationTitle(): CharSequence {
         val name = sprite?.displayName
-        return if (name.isNullOrBlank()) getString(R.string.notif_title_fallback)
-        else getString(R.string.notif_title_fmt, name)
+        if (name.isNullOrBlank()) return getString(R.string.notif_title_fallback)
+        val text = getString(R.string.notif_title_fmt, name)
+        val sp = android.text.SpannableString(text)
+        val i = text.indexOf(name)
+        if (i >= 0) {
+            sp.setSpan(
+                android.text.style.ForegroundColorSpan(prefs.accentColor),
+                i, i + name.length,
+                android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+        return sp
     }
 
     /**

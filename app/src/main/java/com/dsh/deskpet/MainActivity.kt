@@ -1,8 +1,10 @@
 package com.dsh.deskpet
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.graphics.Paint
 import android.net.Uri
 import android.os.Build
@@ -10,6 +12,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.util.TypedValue
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.inputmethod.InputMethodManager
 import android.widget.AdapterView
@@ -57,11 +60,20 @@ class MainActivity : Activity() {
     private lateinit var txtNotifyCount: TextView
     private lateinit var btnSaveNotify: Button
 
+    /** 切换形象卡片右下角的素材预览（不可交互） */
+    private lateinit var imgCornerPreview: android.widget.ImageView
+
+    /** 明暗模式选择 */
+    private lateinit var spinnerTheme: Spinner
+
     private var skins: List<String> = emptyList()
     private var bindingSkin = false
 
     /** 通知权限是否已经弹过系统对话框（弹过之后再点就直接去设置页） */
     private var notifyAsked = false
+
+    /** 回填明暗模式下拉框时抑制回调 */
+    private var bindingTheme = false
 
     /** 当前强调色（由角色发色推出） */
     private var accent = AccentTheme.FALLBACK
@@ -103,11 +115,15 @@ class MainActivity : Activity() {
         editNotify = findViewById(R.id.editNotify)
         txtNotifyCount = findViewById(R.id.txtNotifyCount)
         btnSaveNotify = findViewById(R.id.btnSaveNotify)
+        imgCornerPreview = findViewById(R.id.imgCornerPreview)
+        spinnerTheme = findViewById(R.id.spinnerTheme)
 
         applyEdgeToEdge()
         setupBounceControls()
         setupNotifyControls()
-        applyAccentFromSkin()
+        applyTheme()
+        refreshCornerPreview()
+        setupThemeSpinner()
         fitTitleToWidth()
 
         rowOverlay.setOnClickListener { openOverlaySettings() }
@@ -224,12 +240,9 @@ class MainActivity : Activity() {
         setPermMark(markOverlay, Settings.canDrawOverlays(this))
         setPermMark(markNotify, hasNotificationPermission())
 
-        // 开关按钮：呼出/收起 + **当前形象名**。
+        // 开关按钮：呼出/收起 + **当前形象名**（名字用强调色，见 refreshSummonLabel）。
         // 名字跟着下拉框走，与桌宠是否在运行无关。
-        btnToggle.text = getString(
-            if (prefs.running) R.string.btn_dismiss else R.string.btn_summon,
-            currentSkinName()
-        )
+        refreshSummonLabel()
 
         bindingSkin = true
         val idx = skins.indexOf(prefs.skin).coerceAtLeast(0)
@@ -334,9 +347,14 @@ class MainActivity : Activity() {
         skins = if (found.isEmpty()) listOf(Prefs.DEFAULT_SKIN) else found
         val labels = skins.map { dir -> PetSprite.load(assets, dir)?.displayName ?: dir }
 
-        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, labels)
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        val adapter = ThemedAdapter(this, labels)
         spinnerSkin.adapter = adapter
+        // 下拉列表整体下移到控件下方，避免盖住卡片里已选中的名字（用户要求）。
+        // 高度要等布局完成才知道，所以 post 一次。
+        spinnerSkin.post {
+            val gap = (spinnerSkin.height * 0.15f).toInt()
+            spinnerSkin.dropDownVerticalOffset = spinnerSkin.height + gap
+        }
         spinnerSkin.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
                 parent: AdapterView<*>?, view: View?, position: Int, id: Long
@@ -345,13 +363,9 @@ class MainActivity : Activity() {
                 val dir = skins.getOrNull(position) ?: return
                 if (dir == prefs.skin) return
                 prefs.skin = dir
-                // 按钮上的名字要立刻跟着换（与是否运行无关）
-                btnToggle.text = getString(
-                    if (prefs.running) R.string.btn_dismiss else R.string.btn_summon,
-                    labels.getOrNull(position) ?: dir
-                )
-                // 换角色 -> 重新提取发色并立刻换肤
-                applyAccentFromSkin()
+                // 换角色 -> 重新提取发色、立刻换肤；按钮名字与右下角预览同步更新
+                applyTheme()
+                refreshCornerPreview()
                 PetService.notifyChanged(this@MainActivity)
             }
 
@@ -558,18 +572,195 @@ class MainActivity : Activity() {
 
     // ---------------------------------------------------------------- 换肤
 
+    /** 当前是否浅色模式 */
+    private var lightMode = false
+
     /**
-     * 从当前角色素材里提取发色，推出强调色并应用到整个界面。
+     * 重新计算强调色 + 明暗模式，并把整套配色刷到界面上。
      *
-     * 取的是**角落素材**（头最大、发色面积最多），提取效果比正立素材稳。
-     * 取不到就退回默认青蓝，绝不会因为素材异常而让界面失去配色。
+     * 强调色取自**角落素材**（头最大、发色面积最多，提取最稳）。
+     * 明暗切换是"就地重绘"，不重建 Activity，所以立刻生效。
      */
-    private fun applyAccentFromSkin() {
+    private fun applyTheme() {
+        lightMode = AccentTheme.isLight(this, prefs.themeMode)
         val sprite = PetSprite.load(assets, prefs.skin)
         val bmp = sprite?.bitmap(PetState.CORNER_BR, mirror = false, flipV = false)
-        accent = AccentTheme.accentFor(bmp)
+        accent = AccentTheme.accentFor(bmp, lightMode)
         prefs.accentColor = accent
-        AccentTheme.apply(this, findViewById(R.id.root), accent)
+
+        AccentTheme.apply(this, findViewById(R.id.root), accent, lightMode)
+
+        // 下拉弹窗也要跟着换底色与描边。
+        // 注意 setter 是 setPopupBackgroundDrawable（getter 叫 popupBackground），
+        // 所以这里不能用合成属性赋值。
+        val popup = AccentTheme.dropdownBackground(this, accent, lightMode)
+        spinnerSkin.setPopupBackgroundDrawable(popup.constantState?.newDrawable()?.mutate())
+        spinnerTheme.setPopupBackgroundDrawable(popup.constantState?.newDrawable()?.mutate())
+
+        // 按钮上的文字里有形象名，名字要用强调色，所以每次都重建一次
+        refreshSummonLabel()
+
+        // 下拉框条目由适配器现造、不在视图树里，明暗切换后要主动让它重新取色，
+        // 否则会留着上一次的文字色（浅色模式下会变成看不见的浅灰）。
+        (spinnerSkin.adapter as? ThemedAdapter)?.notifyDataSetChanged()
+        (spinnerTheme.adapter as? ThemedAdapter)?.notifyDataSetChanged()
+    }
+
+    /**
+     * 呼出/收起按钮的文字：**形象名部分用强调色**，其余保持中性。
+     *
+     * 用 SpannableString 给名字那一段单独上色 ——
+     * AccentTheme 只设视图的基础文字色，span 会盖在它上面。
+     */
+    private fun refreshSummonLabel() {
+        val name = currentSkinName()
+        val text = getString(
+            if (prefs.running) R.string.btn_dismiss else R.string.btn_summon, name
+        )
+        val sp = android.text.SpannableString(text)
+        val i = text.indexOf(name)
+        if (i >= 0) {
+            sp.setSpan(
+                android.text.style.ForegroundColorSpan(accent),
+                i, i + name.length,
+                android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+        btnToggle.text = sp
+    }
+
+    /**
+     * 下拉框用的适配器：**自己给条目上文字色**。
+     *
+     * Spinner 的条目视图是适配器现造的，不在视图树里，
+     * AccentTheme 遍历时看不到它们 —— 所以必须在这里按明暗模式着色，
+     * 否则浅色模式下条目会是几乎看不见的浅灰。
+     */
+    private inner class ThemedAdapter(
+        ctx: Context, items: List<String>
+    ) : ArrayAdapter<String>(ctx, android.R.layout.simple_spinner_item, items) {
+
+        init {
+            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        }
+
+        private fun tint(v: View): View {
+            (v as? TextView)?.setTextColor(
+                if (lightMode) android.graphics.Color.BLACK else android.graphics.Color.WHITE
+            )
+            return v
+        }
+
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View =
+            tint(super.getView(position, convertView, parent))
+
+        override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View =
+            tint(super.getDropDownView(position, convertView, parent))
+    }
+
+    /**
+     * 切换形象卡片右下角的预览图：当前角色的「右下角」素材。
+     *
+     * 关键点：素材 PNG 通常带**透明边距**，如果只靠 fitEnd 对齐的是整张位图，
+     * 可见画面就会离卡片边框还差几个像素。所以这里按**可见区域（alpha 包围盒）**
+     * 算矩阵，把可见画面的右下角精确压到卡片的右边框与底边框上，
+     * 于是素材的右下角会被卡片圆角切掉（用户确认这是允许且期望的）。
+     *
+     * 不对素材做任何裁切 —— 只调整它在框内的缩放与位移。
+     */
+    private fun refreshCornerPreview() {
+        val sprite = PetSprite.load(assets, prefs.skin)
+        val bmp = sprite?.bitmap(PetState.CORNER_BR, mirror = false, flipV = false)
+        imgCornerPreview.setImageBitmap(bmp)
+        if (bmp == null) return
+        imgCornerPreview.post {
+            val vw = imgCornerPreview.width.toFloat()
+            val vh = imgCornerPreview.height.toFloat()
+            if (vw <= 0f || vh <= 0f) return@post
+            val vis = visibleBounds(bmp)
+            val scale = minOf(vw / vis.width(), vh / vis.height())
+            val m = android.graphics.Matrix()
+            m.postScale(scale, scale)
+            // 可见区域的右下角 -> 视图的右下角
+            m.postTranslate(vw - vis.right * scale, vh - vis.bottom * scale)
+            imgCornerPreview.imageMatrix = m
+        }
+    }
+
+    /** 位图里**非透明**像素的包围盒（可见画面）；全透明就退回整张 */
+    private fun visibleBounds(bmp: android.graphics.Bitmap): android.graphics.Rect {
+        val w = bmp.width
+        val h = bmp.height
+        var l = w
+        var t = h
+        var r = -1
+        var b = -1
+        val row = IntArray(w)
+        var y = 0
+        while (y < h) {
+            if (!runCatching { bmp.getPixels(row, 0, w, 0, y, w, 1) }.isSuccess) break
+            var x = 0
+            while (x < w) {
+                if (((row[x] ushr 24) and 0xFF) >= 16) {
+                    if (x < l) l = x
+                    if (x > r) r = x
+                    if (y < t) t = y
+                    if (y > b) b = y
+                }
+                x++
+            }
+            y++
+        }
+        return if (r < 0) android.graphics.Rect(0, 0, w, h)
+        else android.graphics.Rect(l, t, r + 1, b + 1)
+    }
+
+    // ---------------------------------------------------------------- 明暗模式
+
+    /**
+     * 明暗模式下拉框：跟随系统 / 浅色 / 深色。
+     *
+     * 选中后立刻 applyTheme()，是"就地重绘"，不重建 Activity。
+     */
+    private fun setupThemeSpinner() {
+        val labels = listOf(
+            getString(R.string.theme_system),
+            getString(R.string.theme_light),
+            getString(R.string.theme_dark)
+        )
+        val adapter = ThemedAdapter(this, labels)
+        spinnerTheme.adapter = adapter
+
+        bindingTheme = true
+        spinnerTheme.setSelection(prefs.themeMode.coerceIn(0, 2), false)
+        bindingTheme = false
+
+        spinnerTheme.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?, view: View?, position: Int, id: Long
+            ) {
+                if (bindingTheme) return
+                prefs.themeMode = position
+                applyTheme()
+                refreshCornerPreview()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
+    }
+
+    /**
+     * 跟随系统时，系统切换深色/浅色要立刻跟上。
+     *
+     * 需要 AndroidManifest 里声明 android:configChanges="uiMode"，
+     * 否则 Activity 会被重建（虽然结果也对，但会丢掉滚动位置）。
+     */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (prefs.themeMode == AccentTheme.MODE_SYSTEM) {
+            applyTheme()
+            refreshCornerPreview()
+        }
     }
 
     // ---------------------------------------------------------------- 大小调节

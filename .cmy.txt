@@ -1,0 +1,65 @@
+明暗模式；变色范围收窄到标题+名字+边框；复位移位；下拉描边；右下角素材预览
+
+应用名改为 DeskBand，版本 1.1.01（versionCode 101）。
+
+## 1) 明暗模式（新增，卡片放在最下方）
+
+Prefs.themeMode：0=跟随系统 / 1=浅色 / 2=深色，用下拉框选择。
+AccentTheme.isLight() 综合 mode 与 Configuration.UI_MODE_NIGHT_MASK 判定。
+切换是**就地重绘**（applyTheme 重新下发配色），不重建 Activity，立刻生效。
+跟随系统时由 onConfigurationChanged 响应（manifest 已有 ui_mode）。
+
+浅色模式：背景白色、文字黑色、卡片白底。
+深色模式：维持原来的深色底。
+
+## 2) 变色范围收窄（用户要求）
+
+原来什么都跟着发色变，现在只保留：
+  - 最上方标题 DeskBand by NinaTokyoo
+  - 各种**边框**：卡片边框、按钮边框、下拉弹窗边框
+  - **人物名字本身**（SpannableString 给名字那一段单独上色），
+    例如"收起 **山田凉**"里只有"山田凉"是强调色
+其余一律中性：深色模式白字、浅色模式黑字。
+通知标题里的名字用同一个办法上色（SpannableString）。
+强调色按明暗取不同明度：深色底要够亮，浅色底要够深，否则描边糊在白底上。
+
+## 3) 复位键移位
+
+从"当前形象"卡片移到**呼出/收起按钮右边**（即它的上一张卡片），
+按草图做成左宽(weight 2)右窄(weight 1)、等高。
+
+## 4) 形象下拉框
+
+- 加一圈描边：Spinner.setPopupBackgroundDrawable(AccentTheme.dropdownBackground(...))
+  ⚠️ setter 叫 setPopupBackgroundDrawable，getter 叫 popupBackground，
+     所以不能用合成属性赋值（编译报 'val' cannot be reassigned）
+- 列表整体下移到控件下方（dropDownVerticalOffset = 控件高 + 15%），
+  不再盖住卡片里已选中的名字
+- 条目文字色：Spinner 条目由适配器现造、不在视图树里，AccentTheme 遍历看不到，
+  改用 ThemedAdapter 自己按明暗着色，并在 applyTheme 里 notifyDataSetChanged
+
+## 5) 切换形象卡片右下角的素材预览
+
+- 用 FrameLayout 叠一层 ImageView，layout_gravity=end|bottom，
+  负外边距 -13dp 抵消卡片内边距，贴到卡片边框
+- 卡片 clipToOutline=true（卡片是 GradientDrawable，自带圆角 outline），
+  于是素材右下角被卡片 r 角切掉（用户确认允许）
+- 不可交互：clickable/focusable=false、importantForAccessibility=no
+  （不消费触摸，点它仍会落到下面的 Spinner 上）
+- 按**可见区域（alpha 包围盒）**算 Matrix，把可见画面的右下角精确压到
+  卡片的右边框与底边框上 —— 避免 PNG 自带透明边距导致留缝。
+  不对素材做任何裁切，只调缩放与位移。
+
+## 6) 其它
+
+去掉最下方小提示（布局 + tip 字符串）。
+
+## 实测（模拟器 pet36，均为截图确认）
+
+浅色模式：白底黑字；标题金色；卡片与按钮描边金色；
+  "收起 伊地知虹夏"中"收起"黑色、"伊地知虹夏"金色；
+  复位键在呼出按钮右侧；右下角素材预览已被圆角切割；
+  权限文字黑色、绿勾正常；滑条中性灰。
+下拉框：金色描边，列表在控件下方，卡片里已选名字仍可见。
+
+25 个单测全绿。

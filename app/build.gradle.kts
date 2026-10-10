@@ -14,8 +14,13 @@ android {
         applicationId = "com.dsh.deskpet"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.1"
+        // versionCode 与 versionName 的对应关系（手写递增即可）：
+        //   1.1.01 -> 101
+        //   1.1.02 -> 102
+        //   1.2.00 -> 200
+        // 规律：去掉小数点当作整数，保证单调递增。
+        versionCode = 101
+        versionName = "1.1.01"
         // 纯平台实现，不依赖 AndroidX / Material，包体小、构建面窄
     }
 

@@ -118,54 +118,82 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- 呼出/收起：通栏大按钮。
-                 文字含形象名，用 maxLines=1 保证绝不换行；
-                 通栏宽度足够（最长名字 5 字 ≈ 500px，可用宽约 1380px），
-                 所以不需要 autoSize —— 那个在实测中收敛不准，标题上已踩过坑。 -->
-            <Button
-                android:id="@+id/btnToggle"
-                style="@style/BigButton"
-                android:layout_marginTop="12dp"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:text="@string/btn_summon" />
-        </LinearLayout>
-
-        <!-- ② 形象与复位 -->
-        <LinearLayout style="@style/Card" android:tag="card" android:layout_marginStart="16dp" android:layout_marginEnd="16dp">
-
-            <TextView
-                style="@style/CardTitle"
-                android:text="@string/section_skin" />
-
+            <!-- 呼出/收起 + 复位：并排，左宽右窄（按草图）。
+                 呼出/收起的文字含形象名，用 maxLines=1 保证绝不换行。 -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
                 android:orientation="horizontal"
-                android:gravity="center_vertical">
+                android:baselineAligned="false">
 
-                <Spinner
-                    android:id="@+id/spinnerSkin"
+                <Button
+                    android:id="@+id/btnToggle"
+                    style="@style/BigButton"
                     android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1" />
+                    android:layout_height="match_parent"
+                    android:layout_weight="2"
+                    android:layout_marginTop="0dp"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="@string/btn_summon" />
 
                 <Button
                     android:id="@+id/btnReset"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
+                    style="@style/BigButton"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:layout_marginTop="0dp"
                     android:layout_marginStart="12dp"
-                    android:paddingStart="22dp"
-                    android:paddingEnd="22dp"
-                    android:paddingTop="10dp"
-                    android:paddingBottom="10dp"
-                    android:textSize="15sp"
-                    android:textStyle="bold"
-                    android:textColor="@color/on_accent"
-                    android:stateListAnimator="@null"
+                    android:maxLines="1"
                     android:text="@string/btn_reset" />
             </LinearLayout>
+        </LinearLayout>
+
+        <!-- ② 形象：右下角实时显示当前角色的「右下角」素材。
+             clipToOutline 让素材的右下角被卡片的圆角切掉（用户要求）。
+             素材不可交互：clickable/focusable 全关。 -->
+        <LinearLayout
+            style="@style/Card"
+            android:tag="card"
+            android:clipToOutline="true"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp">
+
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        style="@style/CardTitle"
+                        android:text="@string/section_skin" />
+
+                    <Spinner
+                        android:id="@+id/spinnerSkin"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp" />
+                </LinearLayout>
+
+                <!-- 负外边距抵消卡片内边距，让素材贴到卡片的右下边缘 -->
+                <ImageView
+                    android:id="@+id/imgCornerPreview"
+                    android:layout_width="128dp"
+                    android:layout_height="128dp"
+                    android:layout_gravity="end|bottom"
+                    android:layout_marginEnd="-13dp"
+                    android:layout_marginBottom="-13dp"
+                    android:scaleType="fitEnd"
+                    android:clickable="false"
+                    android:focusable="false"
+                    android:importantForAccessibility="no" />
+            </FrameLayout>
         </LinearLayout>
 
         <!-- ③ 外观 -->
@@ -356,11 +384,22 @@
                 android:text="@string/save_apply" />
         </LinearLayout>
 
-        <TextView
-            style="@style/StatusLine"
-            android:layout_marginTop="18dp"
+        <!-- ⑥ 明暗模式：放在最下方（用户要求） -->
+        <LinearLayout
+            style="@style/Card"
+            android:tag="card"
             android:layout_marginStart="16dp"
-            android:layout_marginEnd="16dp"
-            android:text="@string/tip" />
+            android:layout_marginEnd="16dp">
+
+            <TextView
+                style="@style/CardTitle"
+                android:text="@string/section_theme" />
+
+            <Spinner
+                android:id="@+id/spinnerTheme"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp" />
+        </LinearLayout>
     </LinearLayout>
 </ScrollView>

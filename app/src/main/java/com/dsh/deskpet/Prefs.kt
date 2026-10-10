@@ -143,6 +143,14 @@ class Prefs(context: Context) {
         get() = sp.getInt(KEY_ACCENT, 0xFF5FD3F3.toInt())
         set(v) { sp.edit().putInt(KEY_ACCENT, v).apply() }
 
+    /**
+     * 明暗模式：[AccentTheme.MODE_SYSTEM] / [MODE_LIGHT][AccentTheme.MODE_LIGHT]
+     * / [AccentTheme.MODE_DARK]。
+     */
+    var themeMode: Int
+        get() = sp.getInt(KEY_THEME_MODE, AccentTheme.MODE_SYSTEM)
+        set(v) { sp.edit().putInt(KEY_THEME_MODE, v).apply() }
+
     companion object {
         private const val NAME = "deskpet"
         private const val KEY_RUNNING = "running"
@@ -159,6 +167,7 @@ class Prefs(context: Context) {
         private const val KEY_BOUNCE_TIME = "bounce_time_scale"
         private const val KEY_NOTIFY_TEXT = "notify_text"
         private const val KEY_ACCENT = "accent_color"
+        private const val KEY_THEME_MODE = "theme_mode"
 
         /** 通知栏自定义内容的字符上限（用户指定 40） */
         const val NOTIFY_TEXT_MAX = 40
