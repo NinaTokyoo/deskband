@@ -550,7 +550,10 @@ class PetService : Service(), PetView.Host {
     private fun savePosition() {
         val v = petView ?: return
         prefs.snapState = v.state
-        prefs.savePosition(v.currentLeft(), v.currentTop())
+        // 用**锚点反算**的足迹位置，而不是 currentLeft/currentTop。
+        // 后者由当前窗口推出，动画中/后可能拿到屏幕外或中间态坐标，
+        // 存下去会让下次 restore() 落到错误位置（表现为位置漂移、首次不在右边框中点）。
+        prefs.savePosition(v.footLeft(), v.footTop())
     }
 
     private fun savePositionNow() {

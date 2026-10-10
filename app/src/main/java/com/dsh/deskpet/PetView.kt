@@ -665,6 +665,20 @@ class PetView(context: Context) : View(context) {
     fun restY(): Float = slideRestY
 
     /**
+     * 足迹盒左上角（**由锚点反算**）。
+     *
+     * 与 [restore] 里的 `anchor = left + centerFromTrack*()` 严格互为逆运算，
+     * 所以"存 → 取"能精确还原，不会每次循环漂一点。
+     *
+     * ⚠️ 不能用 `currentLeft()/currentTop()`：那是**当前窗口**推出来的位置，
+     * 保存动作若发生在动画过程中/之后，拿到的是中间态甚至屏幕外坐标，
+     * 存下去就成了脏数据（用户反馈："首次呼出不在右边框中点，
+     * 多呼入收起几次位置也变了"）。
+     */
+    fun footLeft(): Int = (anchorX - centerFromTrackX()).roundToInt()
+    fun footTop(): Int = (anchorY - centerFromTrackY()).roundToInt()
+
+    /**
      * 看门狗：强制把宠物放回 (x, y)。
      *
      * 滑入动画依赖 Choreographer 帧回调；一旦帧回调因为任何原因没跑起来
@@ -1085,38 +1099,18 @@ class PetView(context: Context) : View(context) {
         var x = (curCenterX() - centerInWindowX()).roundToInt()
         var y = (curCenterY() - centerInWindowY()).roundToInt()
 
-        // 把窗口夹进屏幕内。
+        // ⚠️ 这里**不做窗口夹取**（曾经加过，已移除）。
         //
-        // ⚠️ **滑动动画期间必须跳过夹取**。
-        // 夹取会把窗口拉回屏幕内，而画布又用 winShift 反向补偿把宠物画回原位 ——
-        // 动画期间"原位"本来就在屏幕外，两者叠加的结果是
-        // **窗口在屏幕内、宠物被画到屏幕外**：什么都看不见，但视图还在
-        // （用户反馈："完全收起之后再呼出，人物看不见，但是可以复位"）。
-        // 动画期间宠物本就在屏幕外，不存在"边缘点不中"的问题，跳过是安全的。
-        val b = host?.bounds()
-        if (b != null && !sliding) {
-            val cx = x.coerceIn(0, (b.width() - bboxW).coerceAtLeast(0))
-            val cy = y.coerceIn(0, (b.height() - bboxH).coerceAtLeast(0))
-            if (cx != x || cy != y) {
-                val nx = cx - x
-                val ny = cy - y
-                x = cx
-                y = cy
-                // ⚠️ 只有补偿量**真的变了**才重画。
-                // placeWindow() 是从 onDraw() 里调的，无条件 invalidate() 会变成
-                // onDraw -> placeWindow -> invalidate -> onDraw ... 的**死循环**：
-                // CPU 跑满、整个 App 卡到被系统干掉（用户反馈点收起把 App 关了）。
-                if (nx != winShiftX || ny != winShiftY) {
-                    winShiftX = nx
-                    winShiftY = ny
-                    invalidate()
-                }
-            }
-        } else if (winShiftX != 0 || winShiftY != 0) {
-            // 动画期间不需要补偿；归零，避免动画结束后残留平移
-            winShiftX = 0
-            winShiftY = 0
-        }
+        // 夹取会把窗口拉回屏幕内，再用画布平移反向补偿。问题在于
+        // **窗口移动是异步的、比画布平移慢一帧** —— 滑动期间跳过夹取、
+        // 滑完立刻恢复夹取的交接处，就会看到一帧跳变/闪烁
+        // （用户反馈："呼入收起的时候会有闪烁现象"）。
+        // 它还造成过"窗口在、宠物画到屏幕外看不见"。
+        //
+        // 贴边时窗口有一部分在屏幕外，系统只对 **窗口 frame ∩ 屏幕** 派发触摸，
+        // 这是可接受的；换取动画完全平滑、位置绝不漂移。
+        winShiftX = 0
+        winShiftY = 0
 
         if (x == lastWinX && y == lastWinY && bboxW == lastWinW && bboxH == lastWinH) return
         lastWinX = x
