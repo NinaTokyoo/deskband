@@ -495,6 +495,17 @@ class PetView(context: Context) : View(context) {
         choreographer.removeFrameCallback(frameCallback)
         choreographer.postFrameCallback(frameCallback)
     }
+
+    /**
+     * 延后 [delayMs] 毫秒再排一帧。
+     *
+     * 用在"呼吸晃动"的启动上：静止满 `BREATH_DELAY_MS` 才呼吸，
+     * 而那段时间 ticker 已经空转结束了 —— 不预约一次唤醒就永远不会开始。
+     */
+    private fun scheduleFrameDelayed(delayMs: Long) {
+        choreographer.removeFrameCallback(frameCallback)
+        choreographer.postFrameCallbackDelayed(frameCallback, delayMs.coerceAtLeast(0L))
+    }
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
     private val src = Rect()
     private val dst = RectF()
@@ -543,6 +554,19 @@ class PetView(context: Context) : View(context) {
     private var landing = false
     private var landStart = 0L
     private var landSq = 0f
+
+    /**
+     * **上一次"还在动"的时刻**：所有动画标志与拖动都会把它推到当前时间。
+     * 静止满 [BREATH_DELAY_MS] 后开始呼吸晃动（见 [currentBreath]）。
+     */
+    private var idleSince = 0L
+
+    /**
+     * 这一帧是否处于"呼吸晃动"状态：完全静止满 [BREATH_DELAY_MS] 后为 true，
+     * 一旦有任何动画或被手指按住就立刻回到 false。
+     * 由 ticker 每帧维护，绘制与命中判定统一走 [currentBreath]。
+     */
+    private var breathing = false
 
     /** 这次回弹结束时要接上的落地回弹深度（长按按按住时长线性给） */
     private var releaseLandSq = 0f
@@ -614,6 +638,24 @@ class PetView(context: Context) : View(context) {
                     .coerceIn(0f, 1f)).toFloat()
             )
         else -> 0f
+    }
+
+    /**
+     * **呼吸晃动**波形（-1..1，0 = 不呼吸）。
+     *
+     * 用户要求："当人物处于吸附 0.5s 后，给人物增加微微的呼吸晃动效果，
+     * 原则是素材吸附边不得离开手机被吸附边。"
+     *
+     * 实现要点：
+     *   · 只有"完全静止"（没有任何动画、也没被手指按着）满 [BREATH_DELAY_MS] 才开始；
+     *   · 起点严格是 0（见 [PetState.breathWave]），所以开始的那一刻不跳变；
+     *   · "不离开吸附边"靠**支点**保证：绘制时绕吸附边缩放、沿吸附边平移，
+     *     所以贴边那条边无论怎么呼吸都不会离开屏幕边（见 [squashPivotLocalY]）。
+     */
+    private fun currentBreath(): Float {
+        if (!breathing) return 0f
+        val elapsed = (SystemClock.uptimeMillis() - idleSince).toFloat()
+        return PetState.breathWave(elapsed, BREATH_DELAY_MS, BREATH_PERIOD_MS)
     }
 
     /**
@@ -927,12 +969,37 @@ class PetView(context: Context) : View(context) {
                 if (t >= 1f) landing = false
                 need = true
             }
+            // ---- 呼吸晃动：完全静止满 BREATH_DELAY_MS 后才开始 ----
+            // "还在动"包括所有动画以及被手指按着（拖动/长按都算被按住）。
+            val moving = hopping || pressing || releasing || landing || sliding ||
+                tweening || rotAnimRunning || flipRunning || flipVRunning || dragging
+            if (moving) {
+                idleSince = now
+                breathing = false
+            } else {
+                val idle = now - idleSince
+                val wasBreathing = breathing
+                breathing = idle >= BREATH_DELAY_MS.toLong()
+                if (breathing) {
+                    // 只有呼吸这一件事在动时**隔帧重绘**：波形周期 2.6s，
+                    // 30fps 完全够看，能省掉一半的绘制。
+                    if ((now / 16L) % 2L == 0L) need = true
+                } else if (!wasBreathing) {
+                    // 还差一会儿才开始呼吸：正好在那一刻再来一帧去启动它，
+                    // 否则 ticker 空转结束后就再也没人唤醒（呼吸永远不开始）
+                    scheduleFrameDelayed((BREATH_DELAY_MS - idle).toLong())
+                }
+            }
+
             // 只有真的有动画时才重绘。
             // 原来无条件 invalidate()，于是每段动画结束都会多画一帧、
             // 而且和 App 主界面共用主线程的 Choreographer —— 用户反馈
             // "呼出桌宠时上下滑动不如收起时跟手"，少画一帧是一帧。
             if (need) {
                 invalidate()
+                scheduleFrame()
+            } else if (breathing) {
+                // 呼吸期间要持续排帧（只是不一定每帧都重绘）
                 scheduleFrame()
             }
         }
@@ -1821,19 +1888,23 @@ class PetView(context: Context) : View(context) {
         var dx = localX - cx
         var dy = localY - cy
 
-        // 反掉点击/长按动画的压扁与弹起（与 onDraw 里的变换严格对应）
+        // 反掉点击/长按动画与呼吸晃动的变换（与 onDraw 里的变换严格对应）
         val sq = currentSquash()
         val push = currentJump()
-        if (abs(sq) > 0.0001f || push > 0.0001f || hopping) {
-            // 与 onDraw 同一套：法线方向压缩 (1+sq, 1-sq)，支点在吸附边上
+        val br = currentBreath()
+        if (abs(sq) > 0.0001f || push > 0.0001f || abs(br) > 0.0001f || hopping) {
+            // 与 onDraw 同一套：法线方向 (1-sq)(1+br*BREATH_SQ)、
+            // 切向 (1+sq)(1-br*BREATH_TANGENT)，支点在吸附边上。
             // ⚠️ 支点不是素材中心（贴顶是格子上缘、其余是下缘）——
             // 先相对支点反缩放，再换算回"相对素材中心"的偏移，
             // 因为后面的旋转、换格子坐标都以素材中心为参考。
+            val breathN = br * BREATH_SQ
+            val breathT = -breathN * BREATH_TANGENT
+            val sx = (1f + sq) * (1f + breathT)
+            val sy = (1f - sq) * (1f + breathN)
             val py = squashPivotLocalY()
-            dx = (localX - cx) / (1f + sq)
-            dy = (localY - py) / (1f - sq) + (py - cy)
-            // 与 onDraw 里的 canvas.translate 严格互逆
-            dy -= PetState.jumpSignY(state) * push
+            dx = (localX - cx) / sx - br * BREATH_SWAY_PX
+            dy = (localY - py) / sy + (py - cy) - PetState.jumpSignY(state) * push
         }
 
         // 反掉翻转动画的水平压缩
@@ -2343,22 +2414,32 @@ class PetView(context: Context) : View(context) {
         // 旋转绕格子中心；只改变换、不动格子尺寸 -> 比例不变
         if (abs(rot) > 0.01f) canvas.rotate(rot, cx, cy)
 
-        // 点击/长按反馈：在人物自己的坐标系里压扁（压的方向跟着**吸附边**走）
+        // 点击/长按反馈 + 呼吸晃动：都在人物自己的坐标系里做
         val sq = currentSquash()
         val push = currentJump()
-        if (abs(sq) > 0.0001f || push > 0.0001f || hopping) {
-            // 沿"吸附边"的**法线**压缩：吸附边不动，另一侧压过来；
-            // 切向同时撑大 (1+sq) 做体积感。
+        val br = currentBreath()
+        if (abs(sq) > 0.0001f || push > 0.0001f || abs(br) > 0.0001f || hopping) {
+            // 压缩：沿"吸附边"的**法线** (1-sq)、切向 (1+sq)；
+            // 呼吸：同样绕吸附边缩放（幅度极小），再沿吸附边平移一点点做出晃动。
             //
             // ⚠️ 四条边共用这一套（贴底/贴顶/贴左右边框）：贴左右边框时素材是旋转
-            // 90° 画的，画布的 y 轴正好指向屏幕的左右方向，所以法线在画布上仍是 y
-            // —— 旋转已经作用在 canvas 上了。支点见 [squashPivotLocalY]，
-            // 与 hitsPet 里的逆变换必须完全一致。
-            canvas.scale(1f + sq, 1f - sq, cx, squashPivotLocalY())
-            // 弹起方向：背离吸附边、朝屏幕内侧，同样是画布 y 轴上的符号
+            // 90° 画的，画布的 y 轴正好指向屏幕的左右方向，所以法线在画布上仍是 y。
+            // 支点见 [squashPivotLocalY] —— 压缩与呼吸都绕它做，
+            // **吸附边因此永远不离开屏幕边**（用户硬要求）。
+            // 同样必须与 hitsPet 里的逆变换完全一致。
+            //
+            // ⚠️ 呼吸幅度必须先乘 [BREATH_SQ] 再乘切向比例：
+            // 直接写 `1 - br * BREATH_TANGENT` 会得到 ±35% 的横向缩放（踩过这个坑，
+            // 实测人物一顿一顿地变大变小，而不是"微微呼吸"）。
+            val breathN = br * BREATH_SQ
+            val breathT = -breathN * BREATH_TANGENT
+            val sx = (1f + sq) * (1f + breathT)
+            val sy = (1f - sq) * (1f + breathN)
+            canvas.scale(sx, sy, cx, squashPivotLocalY())
+            // 弹起方向：背离吸附边、朝屏幕内侧，同为画布 y 轴上的符号
             //（贴顶往下弹，其余三种往上/朝屏幕内弹）。
-            // 点一下是轻跳；长按松手是"与压缩程度成正比"的弹起（见 currentJump）。
-            canvas.translate(0f, PetState.jumpSignY(state) * push)
+            // 呼吸则沿画布 x 轴（= 沿吸附边）滑动，绝不垂直离开。
+            canvas.translate(br * BREATH_SWAY_PX, PetState.jumpSignY(state) * push)
         }
 
         // 跨半屏的镜像翻转：中途压成一条线再展开，做出"翻面"观感
@@ -2542,6 +2623,41 @@ class PetView(context: Context) : View(context) {
          * 两者结束后都与初始画面**零像素差**。
          */
         private const val PRESS_LAND_MS = 260f
+
+        /**
+         * 吸附静止多久之后开始**呼吸晃动**（用户要求 0.5s）。
+         *
+         * 这段时间里 ticker 已经空转结束，所以必须预约一次唤醒（见
+         * [scheduleFrameDelayed]），否则呼吸永远不会开始。
+         */
+        private const val BREATH_DELAY_MS = 500f
+
+        /** 呼吸周期：2.6s 一次，接近平静呼吸的频率 */
+        private const val BREATH_PERIOD_MS = 2600f
+
+        /**
+         * 呼吸幅度：法线方向 ±1.5%（247px 的素材约 ±3.7px，符合"微微"）。
+         *
+         * ⚠️ 无论放大还是缩小，绘制都是**绕吸附边**做的（见 [squashPivotLocalY]），
+         * 所以贴边那条边永远不动 —— 这就是"素材吸附边不得离开手机被吸附边"。
+         */
+        private const val BREATH_SQ = 0.015f
+
+        /**
+         * 呼吸时切向的反向缩放比例（吸气变高就收窄一点，体积感）。
+         *
+         * ⚠️ 这是**比例**，乘的是已经缩放过的法线幅度（`br * BREATH_SQ`），
+         * 实际切向只有 ±0.53%（≈±1.3px）。曾经误写成直接乘 `br`，
+         * 结果横向缩放到了 ±35%，人物一顿一顿地变大变小。
+         */
+        private const val BREATH_TANGENT = 0.35f
+
+        /**
+         * 呼吸时**沿吸附边**的平移幅度（像素）。
+         *
+         * 只沿吸附边滑动、绝不垂直离开 —— 这样"吸附边不离开屏幕边"天然成立。
+         */
+        private const val BREATH_SWAY_PX = 1.5f
 
         /**
          * 窗口上下余量按哪个比例算 = 轻跳与长按弹起里**更大的那个**。

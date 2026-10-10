@@ -753,6 +753,31 @@ object PetState {
     }
 
     /**
+     * 静止吸附一段时间后的**呼吸晃动**波形（纯函数，便于单测）。
+     *
+     * 用户要求："当人物处于吸附 0.5s 后，给人物增加微微的呼吸晃动效果，
+     * 原则是素材吸附边不得离开手机被吸附边。"
+     *
+     * 约定：
+     *   · `elapsed < delayMs` 时严格返回 **0** —— 静止不满 delay 不呼吸，
+     *     而且开始的那一刻正好在 0 上，所以**不会跳变**；
+     *   · 之后是标准正弦，取值 `[-1, 1]`；
+     *   · "不离开吸附边"由**绘制时的支点**保证（绕吸附边缩放、沿吸附边平移，
+     *     见 `PetView.squashPivotLocalY`）—— 波形本身只负责"微微"。
+     *
+     * @param elapsedMs 距上一次"有动画/被按住"结束的毫秒数
+     * @param delayMs 静止多久之后开始呼吸（= `PetView.BREATH_DELAY_MS`，500ms）
+     * @param periodMs 呼吸周期（= `PetView.BREATH_PERIOD_MS`）
+     * @return -1..1；未到 delay 或参数非法时为 0
+     */
+    fun breathWave(elapsedMs: Float, delayMs: Float, periodMs: Float): Float {
+        if (periodMs <= 0f) return 0f
+        if (elapsedMs <= delayMs) return 0f
+        val u = (elapsedMs - delayMs) / periodMs
+        return kotlin.math.sin((2.0 * Math.PI * u).toFloat())
+    }
+
+    /**
      * 收起时往哪条边滑出去：**取最近的那条边**（纯函数，便于单测）。
      *
      * 关键点：这个函数**永远返回一个方向**，没有"都不贴边就返回某种兜底"的分支。

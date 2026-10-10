@@ -790,6 +790,36 @@ class PetStateTest {
         assertEquals(tap, PetState.landSquashDepth(500f, 0f, tap, max), 0.0001f)
     }
 
+    /**
+     * 呼吸晃动波形：静止满 0.5s 才开始，起点严格为 0（不跳变），且永远不发散。
+     *
+     * 用户要求："当人物处于吸附 0.5s 后，给人物增加微微的呼吸晃动效果，
+     * 原则是素材吸附边不得离开手机被吸附边。"
+     * （"不离开吸附边"由绘制支点保证：绕吸附边缩放、沿吸附边平移。）
+     */
+    @Test
+    fun the_breathing_wave_starts_flat_and_never_drifts() {
+        val delay = 500f
+        val period = 2600f
+        // 没到 0.5s：一动不动
+        assertEquals(0f, PetState.breathWave(0f, delay, period), 0.0001f)
+        assertEquals(0f, PetState.breathWave(delay - 1f, delay, period), 0.0001f)
+        // 刚到 0.5s：仍在 0 上 —— 开始的那一刻不跳变
+        assertEquals(0f, PetState.breathWave(delay, delay, period), 0.0001f)
+        // 四分之一周期后到达峰值 +1，四分之三周期到 -1
+        assertEquals(1f, PetState.breathWave(delay + period / 4f, delay, period), 0.001f)
+        assertEquals(-1f, PetState.breathWave(delay + period * 3f / 4f, delay, period), 0.001f)
+        // 一个周期后回到起点（周期正确）
+        assertEquals(0f, PetState.breathWave(delay + period, delay, period), 0.001f)
+        // 长时间运行也不发散：始终在 [-1, 1]
+        for (i in 0..2000) {
+            val v = PetState.breathWave(i * 37f, delay, period)
+            assertTrue("呼吸波形越界: $v", v >= -1.0001f && v <= 1.0001f)
+        }
+        // 参数非法（周期为 0）时安全返回 0，不产生 NaN
+        assertEquals(0f, PetState.breathWave(9999f, delay, 0f), 0.0001f)
+    }
+
     @Test
     fun attached_states_are_recognised_for_drag_damping() {
         // 吸附状态起步才加阻尼
