@@ -730,6 +730,43 @@ class PetStateTest {
         assertTrue("过冲过大：$deepest", deepest > -0.35f)
     }
 
+    /**
+     * 落地回弹深度：单击最轻，长按**与按压时间成正比**。
+     *
+     * 用户要求："单击时的回弹效果轻一点；长按落地时的回弹效果与按压时间成正比。"
+     */
+    @Test
+    fun the_landing_depth_grows_linearly_with_the_press_time() {
+        val full = 1100f
+        val tap = 0.07f
+        val max = 0.14f
+        // 没按住（单击）-> 最轻的那一档
+        assertEquals(tap, PetState.landSquashDepth(0f, full, tap, max), 0.0001f)
+        // 按满 -> 最深
+        assertEquals(max, PetState.landSquashDepth(full, full, tap, max), 0.0001f)
+        // 按一半 -> 正好在中间（线性）
+        assertEquals((tap + max) / 2f, PetState.landSquashDepth(full / 2f, full, tap, max), 0.0001f)
+        // 严格线性：等长时间间隔的增量相等
+        val d1 = PetState.landSquashDepth(200f, full, tap, max)
+        val d2 = PetState.landSquashDepth(400f, full, tap, max)
+        val d3 = PetState.landSquashDepth(600f, full, tap, max)
+        assertEquals("不是线性", d2 - d1, d3 - d2, 0.0001f)
+        // 单调递增、且有上界；超时夹住
+        var last = -1f
+        for (i in 0..200) {
+            val v = PetState.landSquashDepth(i * 10f, full, tap, max)
+            assertTrue("不是单调递增", v >= last - 0.0001f)
+            assertTrue("超过上限", v <= max + 0.0001f)
+            assertTrue("低于单击档", v >= tap - 0.0001f)
+            last = v
+        }
+        assertEquals(max, PetState.landSquashDepth(full * 5f, full, tap, max), 0.0001f)
+        // 单击档必须**明显轻于**按满档（用户要求"轻一点"）
+        assertTrue("单击档不够轻", tap < max * 0.6f)
+        // fullMs = 0 不能除零
+        assertEquals(tap, PetState.landSquashDepth(500f, 0f, tap, max), 0.0001f)
+    }
+
     @Test
     fun attached_states_are_recognised_for_drag_damping() {
         // 吸附状态起步才加阻尼

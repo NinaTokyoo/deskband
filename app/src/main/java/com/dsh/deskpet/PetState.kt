@@ -700,6 +700,26 @@ object PetState {
     }
 
     /**
+     * 落地回弹的压缩**深度**（占素材高度的比例）。
+     *
+     * 用户要求："单击时的回弹效果轻一点；长按落地时的回弹效果与按压时间成正比。"
+     *
+     *   · 单击（几乎没按住）：用最轻的 [tapSq]；
+     *   · 长按：从 [tapSq] 起，随**按住时长**线性增长，按满（[fullMs]）时到 [maxSq]。
+     *
+     * 起点取 [tapSq] 而不是 0，是为了让"刚好够长按"和"点一下"衔接得上 ——
+     * 否则刚过长按阈值那一下的回弹会比单击还轻，手感是断的。
+     *
+     * @param heldMs 按住时长（毫秒）
+     * @param fullMs 压满所需时长（= `PetView.PRESS_FULL_MS`）
+     */
+    fun landSquashDepth(heldMs: Float, fullMs: Float, tapSq: Float, maxSq: Float): Float {
+        if (fullMs <= 0f || heldMs <= 0f) return tapSq
+        val t = (heldMs / fullMs).coerceIn(0f, 1f)
+        return tapSq + (maxSq - tapSq) * t
+    }
+
+    /**
      * 收起时往哪条边滑出去：**取最近的那条边**（纯函数，便于单测）。
      *
      * 关键点：这个函数**永远返回一个方向**，没有"都不贴边就返回某种兜底"的分支。

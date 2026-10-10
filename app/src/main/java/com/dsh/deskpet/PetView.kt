@@ -538,6 +538,9 @@ class PetView(context: Context) : View(context) {
     private var landStart = 0L
     private var landSq = 0f
 
+    /** 这次回弹结束时要接上的落地回弹深度（长按按按住时长线性给） */
+    private var releaseLandSq = 0f
+
     /**
      * 点击反馈：**先压扁再弹起**，而且压缩方向始终与人物头朝向一致。
      *
@@ -621,8 +624,9 @@ class PetView(context: Context) : View(context) {
      *
      * @param from 松手时的压缩量
      * @param jumpPx 弹起高度（像素）；>0 时用 [PRESS_JUMP_MS] 让"弹起 + 回弹"一起结束
+     * @param landSq 落地回弹的深度（只在这次带弹起时用；见 [PetState.landSquashDepth]）
      */
-    private fun startSquashRelease(from: Float, jumpPx: Float = 0f) {
+    private fun startSquashRelease(from: Float, jumpPx: Float = 0f, landSq: Float = 0f) {
         if (from <= 0.001f && jumpPx <= 0.5f) {
             releasing = false
             releaseJumpPx = 0f
@@ -630,6 +634,7 @@ class PetView(context: Context) : View(context) {
         }
         releaseFrom = from
         releaseJumpPx = jumpPx
+        releaseLandSq = landSq
         releaseMs = if (jumpPx > 0f) PRESS_JUMP_MS else PRESS_RELEASE_MS
         releaseStart = SystemClock.uptimeMillis()
         releasing = true
@@ -640,11 +645,15 @@ class PetView(context: Context) : View(context) {
     /**
      * 落地回弹：轻跳 / 长按弹起**落地那一下**压一下再弹回来。
      *
-     * 用户要求："长按弹起落地之后加一个回弹效果"，以及"还有单击也是"。
+     * 用户要求："长按弹起落地之后加一个回弹效果"、"还有单击也是"，
+     * 以及"单击时的回弹效果轻一点；长按落地时的回弹效果与按压时间成正比"。
      * 曲线用 [PetState.landSquash]：快速压下去 → 轻微过冲到拉伸 → 落定，
      * 结束后压缩量严格为 0，不会残留变形。
+     *
+     * @param sq 落地压缩深度：单击传最轻的 [PRESS_LAND_SQ_TAP]；
+     *   长按按住得越久越深（[PetState.landSquashDepth]，按满 = [PRESS_LAND_SQ_MAX]）
      */
-    private fun startLanding(sq: Float = PRESS_LAND_SQ) {
+    private fun startLanding(sq: Float = PRESS_LAND_SQ_TAP) {
         if (sq <= 0.001f) return
         landSq = sq
         landStart = SystemClock.uptimeMillis()
@@ -902,8 +911,8 @@ class PetView(context: Context) : View(context) {
                     val hadJump = releaseJumpPx > 0f
                     releasing = false
                     releaseJumpPx = 0f
-                    // 弹起落地 -> 落地回弹
-                    if (hadJump) startLanding()
+                    // 弹起落地 -> 落地回弹（深度按这次按住多久给的）
+                    if (hadJump) startLanding(releaseLandSq)
                 }
                 need = true
             }
@@ -2019,13 +2028,19 @@ class PetView(context: Context) : View(context) {
                     //     （用户要求："长按之后松手要向上弹起，弹起高度与压缩程度成正比"）。
                     //     仍然不触发点击互动。
                     val held = if (pressing) pressSquash() else 0f
+                    val heldMs =
+                        if (pressing) (SystemClock.uptimeMillis() - pressStart).toFloat() else 0f
                     pressing = false
                     if (held <= SQ_MAX) {
                         onTapped(held)
                     } else {
                         val jumpPx = cellH *
                             PetState.pressJumpFraction(held, PRESS_MAX_SQ, PRESS_JUMP_FRACTION)
-                        startSquashRelease(held, jumpPx)
+                        // 落地回弹深度与**按压时间成正比**（单击那一档最轻）
+                        val landSq = PetState.landSquashDepth(
+                            heldMs, PRESS_FULL_MS, PRESS_LAND_SQ_TAP, PRESS_LAND_SQ_MAX
+                        )
+                        startSquashRelease(held, jumpPx, landSq)
                     }
                     // 点完把被打断的吸附补间补完，绝不停在半路（否则贴边会留缝）
                     resumePendingSnap()
@@ -2511,13 +2526,16 @@ class PetView(context: Context) : View(context) {
         private const val PRESS_JUMP_MS = 380f
 
         /**
-         * 落地回弹的压缩深度（占素材高度）。
+         * 落地回弹的压缩深度：**单击**用这个最轻的值。
          *
-         * 用户要求："长按弹起落地之后加一个回弹效果"，"还有单击也是"。
-         * 轻跳与长按弹起**共用**这一个深度：它是"落地那一下"的冲击感，
-         * 跟弹起多高关系不大，固定值反而更稳（0.14 × 247 ≈ 35px，看得清）。
+         * 用户要求："单击时的回弹效果轻一点；长按落地时的回弹效果与按压时间成正比。"
+         * 长按从它起步、随按住时间线性加深到 [PRESS_LAND_SQ_MAX]
+         * （见 [PetState.landSquashDepth]）。
          */
-        private const val PRESS_LAND_SQ = 0.14f
+        private const val PRESS_LAND_SQ_TAP = 0.07f
+
+        /** 长按**按满**时的落地回弹深度（按压时间越长越深） */
+        private const val PRESS_LAND_SQ_MAX = 0.14f
 
         /**
          * 落地回弹时长（压下去 + 弹回来）。
