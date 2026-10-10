@@ -426,25 +426,33 @@ class PetView(context: Context) : View(context) {
 
         cacheSizes()
 
-        // 以**吸附边**为基准缩放：
-        //   贴底 / 角落 -> 底边不动（否则缩小后会浮空）
-        //   贴侧边      -> 吸附的那一侧不动（否则放大后会超出屏幕）
+        // 以**吸附边**为基准缩放。
+        //
+        // ⚠️ 这里改成**直接用记下的那条边的坐标反算中心**，不再走
+        //    `oldRight - trackW + centerFromTrackX()` 那种绕一层的写法。
+        //    旧写法隐含依赖"缩放前后 centerFromTrackX 与新 trackW 的关系"，
+        //    而 cacheSizes() 之后 trackW/trackH/artU/artV 全都换成了新值，
+        //    读起来很难确认锚到的到底是哪条边。
+        //    现在写成"让新足迹的那条边落在缩放前的位置上"，一眼可验：
+        //      贴右：新右边 == 旧右边   ->  center = oldRight - (newTrackW - offset)
+        //      贴下：新下边 == 旧下边
+        //    贴左 / 贴上沿同理。
         val b = host?.bounds()
         if (b != null) {
-            // 横向：贴左则左边不动，贴右则右边不动
+            val offX = centerFromTrackX()
+            val offY = centerFromTrackY()
+            // 横向：贴左 -> 左边不动；贴右（含四个角里的右侧两个）-> 右边不动
             anchorX = if (PetState.isLeft(state)) {
-                oldLeft + centerFromTrackX()
+                oldLeft + offX
             } else {
-                oldRight - trackW + centerFromTrackX()
+                oldRight - (trackW - offX)
             }
-            // 纵向：以**吸附边**为基准缩放 ——
-            //   贴上沿 / 上角 -> 顶边不动（否则缩小后会离屏幕顶一条缝）
-            //   躺侧边        -> 垂直居中，中心不动
-            //   贴底 / 下角   -> 底边不动（否则缩小后会浮空）
+            // 纵向：贴上沿 / 上角 -> 顶边不动；躺侧边 -> 垂直居中（中心不动）；
+            //       贴底 / 下角 -> 底边不动
             anchorY = when {
-                PetState.isTop(state) -> oldTop + centerFromTrackY()
+                PetState.isTop(state) -> oldTop + offY
                 state == PetState.BORDER_R || state == PetState.BORDER_L -> oldCenterY
-                else -> oldBottom - trackH + centerFromTrackY()
+                else -> oldBottom - (trackH - offY)
             }
 
             // 放大后可能把宠物顶到屏幕外（侧边形态是垂直居中的），
