@@ -300,7 +300,16 @@ class PetService : Service(), PetView.Host {
         //
         // 现在窗口贴合宠物外接矩形，窗口之外的触摸由 Android 直接派发给桌面/应用，
         // 天然不遮挡；窗口内部再由 PetView 做逐像素 alpha 判定。
-        val zero = PetView.windowRectFor(s, prefs.snapState, prefs.sizeFraction, b)
+        // ⚠️ 有存档时按存档算初始窗口位置：窗口是 addView 那一下就定好位置的，
+        // 随后 restore→placeWindow 才把它挪到正确位置 —— 中间那一帧宠物会画在
+        // "状态的标准位置"上（躺侧边的标准位置是垂直居中，而贴右边框时若算成
+        // 屏幕底部，就是用户反馈的"顺着右边框往下走"那一闪）。
+        val saved = prefs.hasPosition
+        val zero = PetView.windowRectFor(
+            s, prefs.snapState, prefs.sizeFraction, b,
+            if (saved) prefs.posLeft else null,
+            if (saved) prefs.posTop else null
+        )
         val p = WindowManager.LayoutParams(
             zero[2], zero[3],
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,

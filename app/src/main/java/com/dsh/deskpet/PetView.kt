@@ -1447,9 +1447,15 @@ class PetView(context: Context) : View(context) {
         cacheSizes()
         // 先算足迹盒左上角，再换算成中心点（anchor 存的是中心点）
         val trackLeft = if (PetState.isLeft(newState)) 0f else (b.width() - trackW).toFloat()
-        // 纵向：由状态自己决定挂在哪条水平边上（贴上沿 -> 顶边贴 0）
+        // 纵向"标准位置"由状态自己决定：
+        //   上边组 -> 贴顶
+        //   躺侧边（VERT_NONE，纵向自由）、正立变体 -> **垂直居中**
+        //   其余（下角 / 贴下沿）-> 贴底
+        // ⚠️ 躺侧边**不能**掉进贴底分支：那会让贴右边框的人物"往右下角跑"
+        // （用户反馈："复位之后吸附到右边框其他位置，快速点击会顺着右边框往下走"）。
         val trackTop = when (PetState.vertForState(newState)) {
             PetState.VERT_TOP -> 0f
+            PetState.VERT_NONE -> ((b.height() - trackH) / 2f)
             else -> if (PetState.isZoneless(newState)) ((b.height() - trackH) / 2f)
             else (b.height() - trackH).toFloat()
         }
@@ -2149,12 +2155,33 @@ class PetView(context: Context) : View(context) {
          */
         const val HOP_PAD_MIN = 8
 
-        /** 服务在 addView 前算初始窗口用 */
+        /**
+         * 服务在 addView 前算初始窗口用。
+         *
+         * @param footLeft/footTop **存档的足迹左上角**；没有存档时传 null，
+         *   这时才退回"该状态的标准位置"。
+         *
+         * ⚠️ 两个坑都在这里（都会表现成"每次呼出闪一下 / 顺着边框往下走一节"）：
+         *
+         *   ① **有存档就必须按存档摆窗口**。窗口是 addView 时就定好位置的，
+         *      随后 `restore() → placeWindow()` 才把它挪到正确位置 ——
+         *      中间那一帧宠物就画在"标准位置"上。
+         *   ② **标准位置里躺侧边(纵向自由)必须是垂直居中**，绝不能贴底：
+         *      贴右边框的人物标准位置若算成屏幕底部，呼出时就会先在右下角闪一下
+         *      （用户反馈："复位之后吸附到右边框其他位置，快速点击收起呼入，
+         *      就会顺着右边框往下走"）。
+         *
+         * 包络公式与 [cacheSizes] **完全一致**（含两套素材的并集）——
+         * 只按当前状态算的话，角落状态会算出 360 而 cacheSizes 是 380，
+         * 于是每次呼出都要先按小窗口画一帧再 resize，同样会闪。
+         */
         fun windowRectFor(
             s: PetSprite,
             state: Int,
             sizeFrac: Float,
-            screen: Rect
+            screen: Rect,
+            footLeft: Int? = null,
+            footTop: Int? = null
         ): IntArray {
             val screenH = screen.height().toFloat()
             val cell = PetState.scaledSize(
@@ -2166,28 +2193,50 @@ class PetView(context: Context) : View(context) {
             val tw = if (rotated) cell[1] else cell[0]
             val th = if (rotated) cell[0] else cell[1]
 
-            // 与 cacheSizes 用同一套包络公式，保证不裁切
+            // 与 cacheSizes 用同一套包络公式（含并集），保证不裁切、且尺寸一致
             val diag = kotlin.math.hypot(cell[0].toDouble(), cell[1].toDouble()).toFloat()
-            val envW = maxOf(diag, cell[0] * (1f + SQ_MAX)).toInt()
-            val envH = maxOf(diag, cell[1] * (1f + SQ_MAX)).toInt()
+            var envW = maxOf(diag, cell[0] * (1f + SQ_MAX))
+            var envH = maxOf(diag, cell[1] * (1f + SQ_MAX))
+            run {
+                val other = if (PetState.isZoneless(state)) PetState.CORNER_BR else PetState.BORDER_R
+                if (other != state) {
+                    val co = PetState.scaledSize(
+                        s.naturalWidth(other), s.naturalHeight(other), screenH * sizeFrac
+                    )
+                    val d2 = kotlin.math.hypot(co[0].toDouble(), co[1].toDouble()).toFloat()
+                    envW = maxOf(envW, d2, co[0] * (1f + SQ_MAX))
+                    envH = maxOf(envH, d2, co[1] * (1f + SQ_MAX))
+                }
+            }
             val pad = (cell[1] * HOP_FRACTION).toInt() + HOP_PAD_MIN
+            val bboxW = envW.toInt() + HOP_PAD_X * 2
+            val bboxH = envH.toInt() + pad + pad
 
-            // 足迹盒在包络里的位置（居中）
-            val footOffX = (envW - tw) / 2
-            val footOffY = (envH - th) / 2
+            // 足迹盒在包络里的位置（居中，与 cacheSizes 一致）
+            val footOffX = (bboxW - HOP_PAD_X * 2 - tw) / 2
+            val footOffY = (bboxH - pad - pad - th) / 2
 
-            val x = if (PetState.isLeft(state)) 0 else screen.width() - tw
-            // 纵向：上边组贴顶，躺侧边垂直居中，其余贴底
-            val y = when (PetState.vertForState(state)) {
-                PetState.VERT_TOP -> 0
-                else -> if (PetState.isZoneless(state)) (screen.height() - th) / 2
-                else screen.height() - th
+            val x: Int
+            val y: Int
+            if (footLeft != null && footTop != null) {
+                // 有存档：窗口位置直接由存档反算 —— 与随后 restore→placeWindow
+                // 得到的结果**逐像素相同**，所以不会有"先出现在别处再被挪走"
+                x = footLeft - HOP_PAD_X - footOffX
+                y = footTop - pad - footOffY
+            } else {
+                val trackLeft = if (PetState.isLeft(state)) 0 else screen.width() - tw
+                val trackTop = when (PetState.vertForState(state)) {
+                    PetState.VERT_TOP -> 0
+                    // 躺侧边：纵向自由 -> 标准位置是**垂直居中**
+                    PetState.VERT_NONE -> (screen.height() - th) / 2
+                    else -> if (PetState.isZoneless(state)) (screen.height() - th) / 2
+                    else screen.height() - th
+                }
+                x = trackLeft - HOP_PAD_X - footOffX
+                y = trackTop - pad - footOffY
             }
 
-            return intArrayOf(
-                x - HOP_PAD_X - footOffX, y - pad - footOffY,
-                envW + HOP_PAD_X * 2, envH + pad * 2
-            )
+            return intArrayOf(x, y, bboxW, bboxH)
         }
     }
 }
