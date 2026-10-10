@@ -109,9 +109,14 @@
     <string name="notify_title_label">标题</string>
     <string name="notify_body_label">正文</string>
     <string name="notify_title_count">标题已输入 %1$d / %2$d 字符</string>
-    <string name="notif_title_fallback">桌宠正在陪伴你</string>
+        <string name="notif_title_fallback">桌宠正在陪伴你</string>
+    <!-- 已收起时的标题：**固定**为「<角色名> 待呼出」，App 内自定义只作用于呼出状态 -->
+    <string name="notif_title_collapsed">%1$s 待呼出</string>
+    <!-- 通知栏动作按钮：按状态在「收起」/「呼出」之间切换 -->
+    <string name="notif_action_summon">呼出</string>
     <string name="notif_text">点这里回到设置，或直接收起桌宠</string>
     <!-- 已收起（服务仍在跑）时的通知正文 -->
-    <string name="notif_text_collapsed">桌宠已收起，点这里回到设置</string>
+        <!-- 已收起时的正文：**固定**文案，App 内的自定义正文只作用于呼出状态 -->
+    <string name="notif_text_collapsed">点击回到应用</string>
     <string name="action_stop">收起</string>
 </resources>

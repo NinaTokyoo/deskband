@@ -163,6 +163,11 @@ class PetService : Service(), PetView.Host {
                 refreshNotificationOnly()
                 return START_STICKY
             }
+            ACTION_SUMMON -> {
+                // 落到下面那条"把桌宠叫出来"的公共路径（与 App 内部呼出完全同一套：
+                // 窗口 attach 判据、reverseSlide/restoreRest 兜底都在那里）。
+                // 这里**不 return**，让它继续往下走。
+            }
         }
 
         if (!Settings.canDrawOverlays(this)) {
@@ -260,6 +265,16 @@ class PetService : Service(), PetView.Host {
         val name = sprite?.displayName
         if (name.isNullOrBlank()) return getString(R.string.notif_title_fallback)
 
+        // ⚠️ **已收起时标题是固定的**：「<角色名> 待呼出」。
+        //
+        // 用户要求："标题固定修改为 xxx 待呼出，也就是说 app 里面自定义
+        // 只能自定义呼出状态下的标题。"
+        // 所以自定义模板（prefs.notifyTitle）只在**呼出状态**下生效 ——
+        // 否则收起后标题还写着"正在陪你"，与屏幕上一个桌宠都没有的状态自相矛盾。
+        if (!prefs.running) {
+            return getString(R.string.notif_title_collapsed, name)
+        }
+
         // 标题可在 App 内自定义，用 {name} 表示角色名；拼接规则在 PetState.buildTitle
         // 里（纯函数、有单测），这里只负责把结果套上强调色。
         val t = PetState.buildTitle(
@@ -291,6 +306,8 @@ class PetService : Service(), PetView.Host {
      * take 一次上限是防御性的 —— 万一历史存档里有超长串。
      */
     private fun notificationText(): String {
+        // 已收起 -> 固定文案「点击回到应用」（用户要求）。
+        // 同样地，App 内自定义的正文只作用于**呼出状态**。
         if (!prefs.running) return getString(R.string.notif_text_collapsed)
 
         val name = sprite?.displayName
@@ -326,9 +343,20 @@ class PetService : Service(), PetView.Host {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-        val stopIntent = PendingIntent.getService(
-            this, 1,
-            Intent(this, PetService::class.java).setAction(ACTION_STOP),
+        // 按钮按状态切换：
+        //   已呼出 -> 「收起」（发 ACTION_STOP，走滑出动画）
+        //   已收起 -> 「呼出」（发 ACTION_SUMMON，与 App 内部呼出一致）
+        //
+        // ⚠️ 原来恒为「收起」+ ACTION_STOP：已收起时点它等于"再收起一次"，
+        //    完全没法从通知栏把桌宠叫回来（用户截图反馈的现象）。
+        //
+        // requestCode 用 1 与 2 区分：两个 PendingIntent 的 action 不同，
+        // 但显式给不同 requestCode 更稳妥（避免某些 ROM 上按 action 合并）。
+        val running = prefs.running
+        val actionIntent = PendingIntent.getService(
+            this, if (running) 1 else 2,
+            Intent(this, PetService::class.java)
+                .setAction(if (running) ACTION_STOP else ACTION_SUMMON),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
@@ -352,8 +380,10 @@ class PetService : Service(), PetView.Host {
             builder.addAction(
                 Notification.Action.Builder(
                     Icon.createWithResource(this, R.drawable.ic_pet_notify),
-                    getString(R.string.action_stop),
-                    stopIntent
+                    getString(
+                        if (running) R.string.action_stop else R.string.notif_action_summon
+                    ),
+                    actionIntent
                 ).build()
             )
         } catch (e: Exception) {
@@ -373,6 +403,14 @@ class PetService : Service(), PetView.Host {
     private fun showPet(animateIn: Boolean = false) {
         // 作废所有在途的收起动画回调（见 slideOutThenStop 的说明）
         epoch++
+        // ⚠️ `prefs.running` 必须在**构建通知之前**就置为 true。
+        //
+        // 通知的标题与正文都按 `prefs.running` 分状态（收起 -> 「待呼出」/
+        // 「点击回到应用」；呼出 -> 自定义文案），而下面那句 startForegroundCompat()
+        // 在函数中部就执行了。原来置位留在函数末尾，于是通知按"已收起"构建 ——
+        // 呼出之后通知栏一直显示「<角色名> 待呼出」，直到因为别的原因才刷新
+        // （实测踩到：点通知栏「呼出」后 running 已回 true，通知却还是收起态文案）。
+        prefs.running = true
         // ⚠️ 角色没变就**复用已有的 sprite**，不要每次都重新解码。
         //
         // 收起走的只是 removePet()（只移除视图，sprite 字段与位图都还在），
@@ -484,7 +522,9 @@ class PetService : Service(), PetView.Host {
             }, watchdogMs)
         }
 
-        prefs.running = true
+        // 注意：`prefs.running = true` 已经在函数**开头**设过了 ——
+        // 因为通知要在本函数中部就按最新状态构建（见开头那段注释），
+        // 放这里就晚了。
         if (!screenOn) view.setPaused(true)
     }
 
@@ -753,6 +793,9 @@ class PetService : Service(), PetView.Host {
         const val ACTION_RELOAD = "com.dsh.deskpet.action.RELOAD"
         const val ACTION_RESET = "com.dsh.deskpet.action.RESET"
         const val ACTION_NOTIFY = "com.dsh.deskpet.action.NOTIFY"
+
+        /** 通知栏的「呼出」按钮。效果与 [start]（App 内部的呼出）一致。 */
+        const val ACTION_SUMMON = "com.dsh.deskpet.action.SUMMON"
 
         /** App 里改了通知栏自定义内容：只刷新通知，不动桌宠位置 */
         fun refreshNotification(context: Context) {
