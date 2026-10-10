@@ -277,8 +277,10 @@ class PetView(context: Context) : View(context) {
     }
 
     /** 素材格子在窗口内的左上角（含轻跳余量） */
-    private fun cellLocalX(): Float = (boxOffX + cellOffX).toFloat()
-    private fun cellLocalY(): Float = (boxOffY + cellOffY).toFloat()
+    // 减去 winShift*：窗口被夹进屏幕挪了多少，格子在窗口内就反着挪多少，
+    // 于是宠物在屏幕上的位置恒定不变（见 placeWindow 的说明）。
+    private fun cellLocalX(): Float = (boxOffX + cellOffX - winShiftX).toFloat()
+    private fun cellLocalY(): Float = (boxOffY + cellOffY - winShiftY).toFloat()
 
     /** 素材中心点在窗口内的偏移（相对窗口左上角） */
     private fun centerInWindowX(): Float = cellLocalX() + artU * cellW
@@ -840,8 +842,38 @@ class PetView(context: Context) : View(context) {
      */
     private fun placeWindow() {
         // 以**素材中心点**反推窗口位置：中心点定点不动，尺寸变了也不会横移
-        val x = (curCenterX() - centerInWindowX()).roundToInt()
-        val y = (curCenterY() - centerInWindowY()).roundToInt()
+        //
+        // ⚠️ 顺序很重要：必须先按"不夹取"算出 x/y，再夹取并记录补偿量。
+        //    因为 centerInWindowX() 依赖 cellLocalX()，而 cellLocalX() 又依赖
+        //    winShiftX —— 先清零再算，得到的才是"未夹取"的窗口位置。
+        winShiftX = 0
+        winShiftY = 0
+        var x = (curCenterX() - centerInWindowX()).roundToInt()
+        var y = (curCenterY() - centerInWindowY()).roundToInt()
+
+        // 把窗口夹进屏幕内。
+        //
+        // 贴边/贴角时窗口（并集包络，比足迹盒大一圈）必然有一部分越出屏幕，
+        // 而系统派发触摸是按 **窗口 frame ∩ 屏幕** 算的 —— 越出那一侧收不到事件，
+        // 表现就是"靠近屏幕边缘点在宠物上，却同时操作到下面的桌面/App"。
+        //
+        // 越界多少记进 winShift*，由 cellLocalX/Y 反向补偿，
+        // 于是**宠物画出来的屏幕位置一个像素都不变**，只是窗口整体挪进了屏幕。
+        // 吸附位置、足迹盒、snapPosition 全都不用动（它们算的是足迹盒）。
+        val b = host?.bounds()
+        if (b != null) {
+            val cx = x.coerceIn(0, (b.width() - bboxW).coerceAtLeast(0))
+            val cy = y.coerceIn(0, (b.height() - bboxH).coerceAtLeast(0))
+            if (cx != x || cy != y) {
+                winShiftX = cx - x
+                winShiftY = cy - y
+                x = cx
+                y = cy
+                // 补偿量变了必须重画：空闲时不会有帧回调，不 invalidate 就会停一拍
+                invalidate()
+            }
+        }
+
         if (x == lastWinX && y == lastWinY && bboxW == lastWinW && bboxH == lastWinH) return
         lastWinX = x
         lastWinY = y
