@@ -47,75 +47,6 @@
         <LinearLayout style="@style/Card" android:tag="card" android:layout_marginStart="12dp" android:layout_marginEnd="12dp">
 
             <!-- 两个权限入口并排：文字靠左、标记靠右（两端对齐） -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:baselineAligned="false">
-
-                <LinearLayout
-                    android:id="@+id/rowOverlay"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:background="?android:attr/selectableItemBackground"
-                    android:paddingTop="8dp"
-                    android:paddingBottom="8dp">
-
-                    <TextView
-                        android:id="@+id/txtPermOverlay"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:maxLines="1"
-                        android:ellipsize="end"
-                        android:text="@string/perm_overlay"
-                        android:textColor="@color/accent"
-                        android:textSize="15sp" />
-
-                    <TextView
-                        android:id="@+id/markOverlay"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="3dp"
-                        android:textSize="16sp"
-                        android:textStyle="bold"
-                        android:text="@string/perm_missing_mark" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/rowNotify"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="20dp"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:background="?android:attr/selectableItemBackground"
-                    android:paddingTop="8dp"
-                    android:paddingBottom="8dp">
-
-                    <TextView
-                        android:id="@+id/txtPermNotify"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:maxLines="1"
-                        android:ellipsize="end"
-                        android:text="@string/perm_notify"
-                        android:textColor="@color/accent"
-                        android:textSize="15sp" />
-
-                    <TextView
-                        android:id="@+id/markNotify"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="3dp"
-                        android:textSize="16sp"
-                        android:textStyle="bold"
-                        android:text="@string/perm_missing_mark" />
-                </LinearLayout>
-            </LinearLayout>
 
             <!-- 呼出/收起 + 复位：并排，左宽右窄（按草图）。
                  呼出/收起的文字含形象名，用 maxLines=1 保证绝不换行。 -->
@@ -644,6 +575,78 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:popupAnimationStyle="@style/SpinnerPopupAnim" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/Card" android:tag="card" android:layout_marginStart="12dp" android:layout_marginEnd="12dp">
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:baselineAligned="false">
+
+                <LinearLayout
+                    android:id="@+id/rowOverlay"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="8dp">
+
+                    <TextView
+                        android:id="@+id/txtPermOverlay"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        android:text="@string/perm_overlay"
+                        android:textColor="@color/accent"
+                        android:textSize="15sp" />
+
+                    <TextView
+                        android:id="@+id/markOverlay"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="3dp"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:text="@string/perm_missing_mark" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/rowNotify"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="20dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="8dp">
+
+                    <TextView
+                        android:id="@+id/txtPermNotify"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        android:text="@string/perm_notify"
+                        android:textColor="@color/accent"
+                        android:textSize="15sp" />
+
+                    <TextView
+                        android:id="@+id/markNotify"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="3dp"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:text="@string/perm_missing_mark" />
+                </LinearLayout>
+            </LinearLayout>
         </LinearLayout>
     </LinearLayout>
 </ScrollView>
