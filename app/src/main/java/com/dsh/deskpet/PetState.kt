@@ -34,6 +34,20 @@ object PetState {
     const val BORDER_R_UPRIGHT = 5
     const val BORDER_L_UPRIGHT = 6
 
+    /**
+     * **上方角落**（与下方的 CORNER_BR/CORNER_BL 完全对称）。
+     *
+     * 吸附规则与下方角落一致（贴侧 + 贴垂直边），区别只在：
+     *   · 垂直方向贴上沿（见 [snapPosition] 的 nearTop）
+     *   · 素材**上下翻转**（见 [isTop]）
+     *   · 收起时向**上**滑出（见 PetView.exitVector）
+     */
+    const val CORNER_TR = 7
+    const val CORNER_TL = 8
+
+    /** 是否属于"上边组"（上方角落）：决定素材上下翻转与收起方向 */
+    fun isTop(state: Int): Boolean = state == CORNER_TR || state == CORNER_TL
+
     // ---------------------------------------------------------------- A 区尺寸（可调）
 
     const val A_W_DEFAULT = 200f
@@ -76,7 +90,7 @@ object PetState {
 
     // ---------------------------------------------------------------- 状态判定
 
-    fun isCorner(state: Int) = state == CORNER_BR || state == CORNER_BL
+    fun isCorner(state: Int) = state == CORNER_BR || state == CORNER_BL || state == CORNER_TR || state == CORNER_TL
 
     fun isBorder(state: Int) = state == BORDER_R || state == BORDER_L
 
@@ -91,17 +105,19 @@ object PetState {
      * 用来决定从该状态起拖时要不要加阻尼 —— 贴边的宠物才需要"脱开"手感。
      */
     fun isAttachedState(state: Int): Boolean = when (state) {
-        BORDER_R, BORDER_L, BORDER_R_UPRIGHT, BORDER_L_UPRIGHT, CORNER_BR, CORNER_BL -> true
+        BORDER_R, BORDER_L, BORDER_R_UPRIGHT, BORDER_L_UPRIGHT,
+            CORNER_BR, CORNER_BL, CORNER_TR, CORNER_TL -> true
         else -> false
     }
 
     fun isLeft(state: Int): Boolean = when (state) {
+        CORNER_TL,
         CORNER_BL, BORDER_L, BORDER_L_UPRIGHT -> true
         else -> false
     }
 
     /** 是否用「角落」那套素材 */
-    fun usesCornerArt(state: Int) = state == CORNER_BR || state == CORNER_BL
+    fun usesCornerArt(state: Int) = state == CORNER_BR || state == CORNER_BL || state == CORNER_TR || state == CORNER_TL
 
     /** 是否用「正立素材」那套图 */
     fun usesBorderArt(state: Int) = !usesCornerArt(state)
@@ -216,8 +232,9 @@ object PetState {
      *   C 区 -> 正立素材，正立（贴底，头朝上）
      *   E 区 -> 正立素材；是否旋转由 [rotationForE] 看右侧有没有越界
      */
-    fun stateForZone(zone: Int, leftHalf: Boolean): Int = when (zone) {
-        ZONE_A -> if (leftHalf) CORNER_BL else CORNER_BR
+    fun stateForZone(zone: Int, leftHalf: Boolean, nearTop: Boolean = false): Int = when (zone) {
+        ZONE_A -> if (nearTop) { if (leftHalf) CORNER_TL else CORNER_TR }
+            else { if (leftHalf) CORNER_BL else CORNER_BR }
         ZONE_B -> if (leftHalf) BORDER_L else BORDER_R
         ZONE_C -> if (leftHalf) BORDER_L_UPRIGHT else BORDER_R_UPRIGHT
         else -> if (leftHalf) BORDER_L_UPRIGHT else BORDER_R_UPRIGHT
@@ -240,6 +257,22 @@ object PetState {
     /** 离底边的距离（两侧相同） */
     fun bottomDist(y: Float, h: Float, screenH: Float): Float =
         (screenH - (y + h)).coerceAtLeast(0f)
+
+    /** 离**上沿**的距离（与 [bottomDist] 完全对称） */
+    fun topDist(y: Float, h: Float, screenH: Float): Float = y.coerceAtLeast(0f)
+
+    /**
+     * 到**较近的那条水平边**的距离（上沿或下沿取小）。
+     *
+     * 分区判定统一用这个当"垂直轴距离"，于是上边组与下边组
+     * 共用同一套 A/B/E 判定，天然对称。
+     */
+    fun vertDist(y: Float, h: Float, screenH: Float): Float =
+        minOf(topDist(y, h, screenH), bottomDist(y, h, screenH))
+
+    /** 是否离上沿更近（决定贴上还是贴下、素材是否上下翻转、收起方向） */
+    fun nearerEdgeIsTop(y: Float, h: Float, screenH: Float): Boolean =
+        topDist(y, h, screenH) <= bottomDist(y, h, screenH)
 
     /**
      * 离**本侧吸附边**的距离 —— 左半屏量左边，右半屏量右边。
@@ -265,7 +298,9 @@ object PetState {
         db: Float, dr: Float,
         screenW: Float, screenH: Float,
         leftHalf: Boolean,
-        zone: Int = -1
+        zone: Int = -1,
+        /** 垂直方向该贴上沿(true)还是下沿(false)。与底边完全对称。 */
+        nearTop: Boolean = false
     ): FloatArray {
         // 分区优先用调用方判定好的 zone（与状态判定保持同一套规则）；
         // 没传时退化为按边缘距离现算（仅旧调用方会走到这里）。
@@ -278,7 +313,7 @@ object PetState {
         }
         var nx = x
         var ny = y
-        if (edges[0] == 1) ny = screenH - trackH
+        if (edges[0] == 1) ny = if (nearTop) 0f else screenH - trackH
         if (edges[1] == 1) nx = if (leftHalf) 0f else screenW - trackW
         return floatArrayOf(nx, ny)
     }
