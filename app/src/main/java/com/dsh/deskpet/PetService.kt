@@ -126,9 +126,23 @@ class PetService : Service(), PetView.Host {
             // 宠物已经在（可能正在播收起动画）。这是**一次新的呼出请求**：
             //  1) 作废在途的收起回调 —— 否则它随后会 removePet()+stopSelf()，
             //     把人物删掉（用户反馈"连续点击呼出收起人物会消失"）。
-            //  2) 如果它正滑出去，原路滑回来，否则会停在屏幕外看不见。
+            //  2) 如果它正滑出去，原路滑回来；否则**兜底重新吸附回屏幕内**。
+            //
+            // 第 2 条的 else 分支很关键：收起动画已经播完、但视图因为时序原因
+            // 还没被移除时，锚点停在**屏幕外**，此时 reverseSlide() 会因为
+            // sliding==false 直接返回，人物就永远看不见了
+            // （用户反馈"呼出→收起→再呼出，人物消失"）。
+            // applySnap() 会按当前状态重新算一个合法的贴边位置，直接拉回来。
             epoch++
-            petView?.let { v -> if (v.isSliding()) v.reverseSlide() }
+            val v = petView
+            if (v != null) {
+                if (v.isSliding()) {
+                    v.reverseSlide()
+                } else {
+                    v.applySnap(v.state)
+                    v.syncWindow()
+                }
+            }
         }
         return START_STICKY
     }
