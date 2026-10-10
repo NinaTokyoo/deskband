@@ -1428,7 +1428,14 @@ class PetView(context: Context) : View(context) {
         //
         // drawBitmap(bmp, src, dst, paint) 由 GPU 采样，paint 已带
         // FILTER_BITMAP_FLAG，质量一致，但**不再创建任何位图**。
-        val bmp = bitmapFor(state) ?: run {
+        // ⚠️ 必须判 isRecycled。
+        //
+        // 这里用的是 PetSprite 持有的**原图**；收起桌宠时服务销毁、
+        // 那批位图会被回收，而窗口往往还会再走一帧 traversal ——
+        // 直接画就会抛 "Canvas: trying to use a recycled bitmap"，
+        // 整个进程崩溃（用户看到的"点收起把 APP 关了"）。
+        // 改用原图之前用的 scaledBitmap 自带这个检查，换过来时漏掉了。
+        val bmp = bitmapFor(state)?.takeIf { !it.isRecycled } ?: run {
             canvas.restoreToCount(save)
             return
         }
