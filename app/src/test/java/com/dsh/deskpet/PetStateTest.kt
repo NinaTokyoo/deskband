@@ -1852,4 +1852,77 @@ class PetStateTest {
             PetState.titleForDisplay(storedBody, name, TITLE_DEFAULT)
         )
     }
+
+    /**
+     * 「吸附至角落时不生效」：角落对**任意**倍率都返回 1.0。
+     *
+     * 用户要求："吸附至四个角的时候调节不生效，按照当前版本的交互区域来"，
+     * 界面标题后也注明了这句（`hit_corner_note`）。
+     *
+     * 与 [only_non_corner_states_get_the_smaller_hit_box] 的区别：
+     * 那条用几个固定值抽查，这条把**整个倍率区间**（含上下限与越界值）都扫一遍，
+     * 防止以后有人给角落加个"稍微缩一点"的软化处理。
+     */
+    @Test
+    fun corner_hit_area_ignores_the_setting_entirely() {
+        val corners = intArrayOf(
+            PetState.CORNER_BR, PetState.CORNER_BL,
+            PetState.CORNER_TR, PetState.CORNER_TL
+        )
+        // 0.4 ~ 1.6 是滑条实际能产生的系数（0.5~2 倍 x 基准 0.8），
+        // 另加两个越界值确认也不会被"夹"出别的东西
+        val scales = floatArrayOf(0.4f, 0.6f, 0.8f, 1f, 1.2f, 1.6f, 0.05f, 2f)
+        val b = intArrayOf(10, 20, 210, 220)
+        for (c in corners) {
+            for (sc in scales) {
+                assertEquals(
+                    "角落 $c 在系数 $sc 下必须完全不缩",
+                    1f, PetState.hitBoxScaleFor(c, sc), 0.0001f
+                )
+                // 框必须与原框逐值一致（锚定在 1.0 时是恒等变换）
+                val box = PetState.hitBox(b, PetState.hitBoxScaleFor(c, sc), c)
+                assertEquals(10f, box[0], 0.001f)
+                assertEquals(20f, box[1], 0.001f)
+                assertEquals(210f, box[2], 0.001f)
+                assertEquals(220f, box[3], 0.001f)
+            }
+        }
+    }
+
+    /**
+     * 交互区域是**包含式容器**：框外不响应、框内响应。
+     *
+     * 这条约束的是 hitBox 的几何语义 —— hitsPet 里"先判框、框外一律 return false"
+     * 依赖它：框必须是**吸附边锚定**且**包含**住那侧的人物，
+     * 否则调小之后连吸附边那一侧都点不到了。
+     *
+     * 这里用一个模拟"人物占满整个外接框"的场景，验证：
+     *   · 调大时框向外扩张（人物旁边的空白也能点中 —— 用户要的效果）
+     *   · 调小时框向内收（非吸附边那侧的人物边缘点不到 —— 用户要的效果）
+     *   · 无论怎么调，**吸附边始终在框边界上**
+     */
+    @Test
+    fun the_hit_box_is_a_growing_or_shrinking_container_anchored_at_the_attached_edge() {
+        val b = intArrayOf(100, 100, 300, 300) // 200 x 200，模拟素材外接框
+
+        // 贴右边框：右边（300）恒定，左边随系数移动
+        val small = PetState.hitBox(b, 0.4f, PetState.BORDER_R)
+        assertEquals("吸附边不动", 300f, small[2], 0.001f)
+        assertEquals("框宽 = 200 * 0.4", 80f, small[2] - small[0], 0.001f)
+        // 收紧后，原框左边那一带（100..220）已经在框外 —— 那正是"点不到"的区域
+        assertTrue("原本可点的靠左区域应收紧到框外", 150f < small[0])
+
+        val big = PetState.hitBox(b, 1.6f, PetState.BORDER_R)
+        assertEquals("吸附边不动", 300f, big[2], 0.001f)
+        assertEquals("框宽 = 200 * 1.6", 320f, big[2] - big[0], 0.001f)
+        // 放大后框越过原框左边界 —— 人物旁边空白也能点中
+        assertTrue("放大后应覆盖到原框之外", big[0] < b[0])
+
+        // 系数 1.0 时与原框完全一致（四边都对齐）
+        val one = PetState.hitBox(b, 1f, PetState.BORDER_R)
+        assertEquals(100f, one[0], 0.001f)
+        assertEquals(100f, one[1], 0.001f)
+        assertEquals(300f, one[2], 0.001f)
+        assertEquals(300f, one[3], 0.001f)
+    }
 }
