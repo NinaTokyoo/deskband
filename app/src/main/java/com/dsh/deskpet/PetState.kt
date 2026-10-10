@@ -221,6 +221,35 @@ object PetState {
         else -> 0f
     }
 
+    /**
+     * 这两个状态是不是"**同一张图水平镜像**"的关系：贴右边框 <-> 贴左边框。
+     *
+     * 可以证明（也是实机观感）：
+     *   rotate(+90) ∘ mirror  ≡  mirror ∘ rotate(-90)
+     * 所以 [BORDER_L] 画出来的东西**正好是** [BORDER_R] 的水平镜像。
+     *
+     * 于是左右互切时**根本不需要转 180°** —— 换图本身就是镜像，
+     * 硬转只会让人物先立正再倒下、白转一大圈。剩下的交给镜像翻转动画。
+     */
+    fun isSideMirrorPair(a: Int, b: Int): Boolean =
+        (a == BORDER_R && b == BORDER_L) || (a == BORDER_L && b == BORDER_R)
+
+    /**
+     * 从一个状态转到另一个状态，**最少**要转多少度（带符号，最短弧）。
+     *
+     * 用户要求："需要旋转的时候无论方向旋转最小角度"。
+     *   · 0 <-> ∓90  -> ±90
+     *   · 左右边框互切 -> **0**（互为水平镜像，见 [isSideMirrorPair]）
+     *   · 其余（旋转角相同）-> 0
+     */
+    fun rotationDelta(fromState: Int, toState: Int): Float {
+        if (isSideMirrorPair(fromState, toState)) return 0f
+        var d = (rotationForSnap(toState) - rotationForSnap(fromState)) % 360f
+        if (d > 180f) d -= 360f
+        if (d <= -180f) d += 360f
+        return d
+    }
+
     // ---------------------------------------------------------------- 垂直基准
 
     fun topDist(y: Float, h: Float, screenH: Float): Float = y.coerceAtLeast(0f)

@@ -403,6 +403,7 @@ class PetView(context: Context) : View(context) {
         dragOffsetY = 0f
         cancelTween()
         syncWindow()
+        markRest(anchorX, anchorY)
     }
 
     fun setState(newState: Int) {
@@ -586,10 +587,14 @@ class PetView(context: Context) : View(context) {
                     tweening = false
                     if (bouncePending) {
                         // 第一段（冲到过冲点）结束 -> 平滑回到贴边位置
+                        // 注意：这一段结束时停在**过冲点**上，还不是落点，
+                        // 所以不能在这里 markRest（落点已由 settleInternal 记好）
                         bouncePending = false
                         animateTo(bounceToX, bounceToY, prefs.bounceBackMs.toLong())
                     } else {
                         // 补间走完才换状态，避免中途改尺寸导致的跳变
+                        // 到这里才真正停稳 —— 落点就是这里
+                        markRest(anchorX, anchorY)
                         applyPendingState()
                     }
                 }
@@ -698,17 +703,39 @@ class PetView(context: Context) : View(context) {
     /** 是否正处于"回弹收回"那一段（决定用哪条缓动曲线） */
     private var slidePhase2Running = false
 
-    /** 本次滑出开始时的静止位置（素材中心屏幕坐标），供反向滑回使用 */
-    private var slideRestX = 0f
-    private var slideRestY = 0f
+    /**
+     * **真实静止位置**（素材中心屏幕坐标）—— 最近一次"停稳"的地方。
+     *
+     * ⚠️ 与 [anchorX]/[anchorY] 是**两个不同的概念**，别混用：
+     *   · anchor 是"当前这一帧画在哪"：回弹补间途中它在过冲点上，
+     *     收起/呼出动画里它已经跑到屏幕外；
+     *   · 这个 rest 是"最终会停在哪"：补间/滑动结束后的落点。
+     *
+     * 保存位置、以及"收起被打断要滑回哪里"一律用 rest，否则存下去的是中间态 ——
+     * 用户反馈的"多次快速点击收起/呼入位置会变化"就是这么来的：
+     *   ① 拖动后 400ms 的延迟保存撞上回弹补间 -> 存了过冲点附近的位置；
+     *   ② 收起滑完 removePet 又存一次 -> 那时 anchor 已在屏幕外，靠夹取兜底；
+     *   ③ 连点时的"滑回哪里"以前是在开始滑出那一刻按当时 anchor 现记的，
+     *      若那一刻正在回弹，记下的同样是过冲点。
+     * 现在这些路径全部落在同一个 rest 上，整条链路只认"落点"。
+     */
+    private var restCenterX = 0f
+    private var restCenterY = 0f
+    private var hasRestCenter = false
+
+    private fun markRest(x: Float, y: Float) {
+        restCenterX = x
+        restCenterY = y
+        hasRestCenter = true
+    }
 
     /** 当前锚点（素材中心屏幕坐标）—— 呼出动画要拿它当滑入目标 */
     fun anchorXNow(): Float = anchorX
     fun anchorYNow(): Float = anchorY
 
     /** 静止位置（素材中心屏幕坐标）—— 收起被打断时要滑回这里 */
-    fun restX(): Float = slideRestX
-    fun restY(): Float = slideRestY
+    fun restX(): Float = restCenterX
+    fun restY(): Float = restCenterY
 
     /**
      * 足迹盒左上角（**由锚点反算**）。
@@ -725,19 +752,15 @@ class PetView(context: Context) : View(context) {
     fun footTop(): Int = (anchorY - centerFromTrackY()).roundToInt()
 
     /**
-     * **静止**位置的足迹左上角 —— 动画中返回记住的静止点，否则返回当前锚点。
+     * **静止**位置的足迹左上角 —— 一律按 [restCenterX]/[restCenterY] 反算。
      *
-     * ⚠️ 保存位置一律走这个，不要用 [footLeft]/[footTop]：
-     * `onSettled` 会延迟 400ms 落盘，如果这 400ms 内用户点了收起，
-     * 延迟保存就在**滑动过程中**触发 —— 那时 anchorX 已在屏幕外，
-     * 存下去就是脏坐标，多次循环后位置越漂越远甚至跑出屏幕
-     * （实测 left: 1157 → 1212 → 1514）。
+     * ⚠️ 保存位置必须走这个，不要用 [footLeft]/[footTop]：后者是"这一帧"，
+     * 可能正处在回弹补间中或已被滑到屏幕外。
+     * 与 [restore] 的换算严格互逆，所以反复"收起/呼出"不会越漂越远。
      */
-    fun restFootLeft(): Int =
-        ((if (sliding) slideRestX else anchorX) - centerFromTrackX()).roundToInt()
+    fun restFootLeft(): Int = (restCenterX - centerFromTrackX()).roundToInt()
 
-    fun restFootTop(): Int =
-        ((if (sliding) slideRestY else anchorY) - centerFromTrackY()).roundToInt()
+    fun restFootTop(): Int = (restCenterY - centerFromTrackY()).roundToInt()
 
     /**
      * 看门狗：强制把宠物放回 (x, y)。
@@ -753,6 +776,7 @@ class PetView(context: Context) : View(context) {
         if (abs(anchorX - x) < 1f && abs(anchorY - y) < 1f) return
         anchorX = x
         anchorY = y
+        markRest(x, y)
         syncWindow()
         invalidate()
     }
@@ -765,6 +789,7 @@ class PetView(context: Context) : View(context) {
         slideDone = null
         anchorX = x
         anchorY = y
+        markRest(x, y)
         syncWindow()
         invalidate()
     }
@@ -777,11 +802,11 @@ class PetView(context: Context) : View(context) {
      * applySnap 就会把它吸到**底部**而不是原来的右边框中点
      * （用户反馈："前几次确实在右边框中点，连续快速点击几次之后就跳到右边框底部"）。
      *
-     * @return false 表示还没记录过静止位置，调用方应改用 applySnap 兜底
+     * @return false 表示还没记录过静止位置（只有视图刚建好、还没 restore 过才会）
      */
     fun restoreRest(): Boolean {
-        if (slideRestX == 0f && slideRestY == 0f) return false
-        forceSettleAt(slideRestX, slideRestY)
+        if (!hasRestCenter) return false
+        forceSettleAt(restCenterX, restCenterY)
         return true
     }
 
@@ -842,11 +867,10 @@ class PetView(context: Context) : View(context) {
         // 新指令一律**接管**当前动画（startSlide 会覆盖在途状态）。
         val v = exitVector()
         val to = offScreenAnchor(v[0], v[1])
-        // 记住静止位置：连点时要把宠物原路滑回来
-        if (!sliding) {
-            slideRestX = anchorX
-            slideRestY = anchorY
-        }
+        // ⚠️ 这里**不记**静止位置：静止位置是"落点"，由 markRest 在吸附/落位时维护。
+        // 原来是在这一刻把**当前 anchor** 记成静止点，可如果这一刻正在播回弹补间，
+        // anchor 还在过冲点上 —— 连点时就会滑回过冲点、位置也就变了
+        // （用户反馈："多次快速点击收起/呼入位置会发生变化"）。
         startSlide(anchorX, anchorY, to[0], to[1], onDone)
     }
 
@@ -866,7 +890,7 @@ class PetView(context: Context) : View(context) {
         slideDone = null
         slideHasPhase2 = false
         slidePhase2Running = false
-        startSlidingTo(slideRestX, slideRestY)
+        startSlidingTo(restX(), restY())
     }
 
     /**
@@ -876,6 +900,8 @@ class PetView(context: Context) : View(context) {
      * 行程可能是"整个屏幕外"，按比例会冲出天文数字。
      */
     private fun startSlidingTo(targetX: Float, targetY: Float) {
+        // 目标即落点：先记成静止位置，途中被打断也知道该回哪儿
+        markRest(targetX, targetY)
         val fromX = anchorX
         val fromY = anchorY
         val dx = targetX - fromX
@@ -909,8 +935,7 @@ class PetView(context: Context) : View(context) {
         // ⚠️ 先把**目标点**记为静止点，再开始滑。
         // 这样如果呼出动画中途被收起打断，之后再次呼出时
         // reverseSlide() 才知道该滑回哪里 —— 否则会用上一次的过期位置。
-        slideRestX = targetX
-        slideRestY = targetY
+        markRest(targetX, targetY)
         val from = offScreenAnchor(v[0], v[1])
         // ⚠️ 起点必须**严格**满足两点，否则会出现"斜着从角上飞进来"：
         //   1) 进场轴上一定在屏幕外（用 max/min 强制，不只是"加半个窗口"）
@@ -1067,11 +1092,25 @@ class PetView(context: Context) : View(context) {
     /**
      * 旋转动画：在 0 与 ∓90 之间平滑过渡。
      *
-     * @param durationMs 时长。拖动中切换用默认 180ms（避免分界线附近闪）；
-     *                   松手贴边前的那次旋转用 [ROT_SNAP_MS]（更快，因为要在贴边前完成）
+     * **只走最短弧**：目标先按 (±)360 规约到与起点同一圈内（差值落在 (-180, 180]），
+     * 所以永远不会绕远路（不会出现转 270° 这种）。
+     *
+     * ⚠️ 差值正好 180° 时**不转**：这只可能是"贴右边框 <-> 贴左边框"，
+     * 而这两个形态的图案互为**水平镜像**（`rotate(+90) ∘ mirror ≡ mirror ∘ rotate(-90)`，
+     * 见 [PetState.isSideMirrorPair]）—— 换图本身就是镜像，
+     * 硬转 180° 只会让人物先立正再倒下，白转一大圈。
+     * 这一下交给镜像翻转动画（[startFlip]）即可，观感也更小。
+     *
+     * @param durationMs 时长（拖动中切换用默认 180ms）
      */
     private fun startRotAnim(from: Float, to: Float, durationMs: Float = ROT_MS) {
-        if (abs(from - to) < 0.01f) {
+        // 最短弧：把差值规约到 (-180, 180]
+        var delta = (to - from) % 360f
+        if (delta > 180f) delta -= 360f
+        if (delta <= -180f) delta += 360f
+
+        if (abs(delta) < 0.01f || abs(delta) > 179f) {
+            // 0°：本来就不用转；180°：左右两侧互为水平镜像，直接换图
             shownRotation = to
             rotAnimRunning = false
             // 没真正开始转，必须立刻解冻 —— 否则尺寸会被永久锁在旧朝向
@@ -1079,7 +1118,7 @@ class PetView(context: Context) : View(context) {
             return
         }
         rotAnimFrom = from
-        rotAnimTo = to
+        rotAnimTo = from + delta
         rotAnimMs = durationMs
         rotAnimStart = SystemClock.uptimeMillis()
         rotAnimRunning = true
@@ -1312,6 +1351,7 @@ class PetView(context: Context) : View(context) {
         lastVert = PetState.vertForState(newState)
         alignFlipV(newState)
         cancelTween()
+        markRest(anchorX, anchorY)
         syncWindow()
     }
 
@@ -1342,6 +1382,7 @@ class PetView(context: Context) : View(context) {
             anchorX = anchorX.coerceIn(hw, (b.width() - hw).coerceAtLeast(hw))
             anchorY = anchorY.coerceIn(hh, (b.height() - hh).coerceAtLeast(hh))
         }
+        markRest(anchorX, anchorY)
         syncWindow()
     }
 
@@ -1370,6 +1411,7 @@ class PetView(context: Context) : View(context) {
         lastZone = PetState.ZONE_B
         lastVert = PetState.vertForState(PetState.BORDER_R)
         alignFlipV(PetState.BORDER_R)
+        markRest(anchorX, anchorY)
         syncWindow()
         host?.onSettled(state, left.roundToInt(), top.roundToInt())
     }
@@ -1740,6 +1782,11 @@ class PetView(context: Context) : View(context) {
         // 加上 frozen / rotAnimRunning 的判断，保证"正在转"时一定走本分支统一处理。
         val needRotate =
             frozen || rotAnimRunning || abs(shownRotation - wantRot) > 0.01f
+        // ---- 落点：吸附的目标就是"静止位置" ----
+        // 后面无论是补间、回弹还是被连点打断，保存与"滑回哪里"都以它为准，
+        // 不再看动画途中的 anchor（用户反馈的"位置会变"就出在这儿）。
+        markRest(targetCenterX, targetCenterY)
+
         if (needRotate) {
             frozenRot = curSizeRot
             frozen = true

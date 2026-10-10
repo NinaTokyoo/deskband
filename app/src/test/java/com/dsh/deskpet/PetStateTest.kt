@@ -256,6 +256,61 @@ class PetStateTest {
         assertEquals(90f, PetState.rotationForSnap(PetState.BORDER_L), 0.001f)
     }
 
+    /**
+     * 用户要求：**需要旋转的时候无论方向都转最小角度**。
+     *
+     *   · 正立 <-> 贴侧边        -> 90°（最小）
+     *   · 贴右边框 <-> 贴左边框  -> **0°**：这两个图案互为水平镜像
+     *     （`rotate(+90) ∘ mirror ≡ mirror ∘ rotate(-90)`），换图本身就是镜像，
+     *     硬转 180° 只会让人物先立正再倒下、白转一大圈
+     *   · 旋转角相同的状态之间   -> 0°（只换素材/镜像，不转）
+     */
+    @Test
+    fun rotation_always_takes_the_minimum_angle() {
+        val states = intArrayOf(
+            PetState.CORNER_BR, PetState.CORNER_BL, PetState.BORDER_R, PetState.BORDER_L,
+            PetState.BORDER_R_UPRIGHT, PetState.BORDER_L_UPRIGHT,
+            PetState.CORNER_TR, PetState.CORNER_TL, PetState.EDGE_TOP_R, PetState.EDGE_TOP_L
+        )
+        for (a in states) {
+            for (b in states) {
+                val d = abs(PetState.rotationDelta(a, b))
+                // 任何一次切换都不该超过 90°（180° 那种被识别成镜像，取 0）
+                assertTrue("状态 $a -> $b 要转 $d 度，超过 90°", d <= 90.001f)
+                // 最短弧：反着转的角度必须一样
+                assertEquals(
+                    "状态 $a -> $b 的正反向角度不一致",
+                    d, abs(PetState.rotationDelta(b, a)), 0.001f
+                )
+            }
+        }
+        // 具体数值（符号 = 屏幕视觉方向：正 = 顺时针）
+        // 正立 -> 贴右边框：头从"上"扫向"左"，逆时针 90°
+        assertEquals(-90f, PetState.rotationDelta(PetState.BORDER_R_UPRIGHT, PetState.BORDER_R), 0.001f)
+        // 正立 -> 贴左边框：头扫向"右"，顺时针 90°
+        assertEquals(90f, PetState.rotationDelta(PetState.BORDER_R_UPRIGHT, PetState.BORDER_L), 0.001f)
+        // 反向回正立，角度取反
+        assertEquals(90f, PetState.rotationDelta(PetState.BORDER_R, PetState.BORDER_R_UPRIGHT), 0.001f)
+        assertEquals(-90f, PetState.rotationDelta(PetState.BORDER_L, PetState.BORDER_R_UPRIGHT), 0.001f)
+        // 角落 -> 同侧贴边也是 90°
+        assertEquals(-90f, PetState.rotationDelta(PetState.CORNER_BR, PetState.BORDER_R), 0.001f)
+        assertEquals(90f, PetState.rotationDelta(PetState.CORNER_BL, PetState.BORDER_L), 0.001f)
+        // 左右互切：互为水平镜像，不转
+        assertEquals(0f, PetState.rotationDelta(PetState.BORDER_R, PetState.BORDER_L), 0.001f)
+        assertEquals(0f, PetState.rotationDelta(PetState.BORDER_L, PetState.BORDER_R), 0.001f)
+        assertTrue(PetState.isSideMirrorPair(PetState.BORDER_R, PetState.BORDER_L))
+        assertTrue(PetState.isSideMirrorPair(PetState.BORDER_L, PetState.BORDER_R))
+        assertFalse(PetState.isSideMirrorPair(PetState.BORDER_R, PetState.BORDER_R_UPRIGHT))
+        assertFalse(PetState.isSideMirrorPair(PetState.CORNER_BR, PetState.CORNER_BL))
+        // 同角度状态之间也不转（左右角、左右正立、左右上边都是镜像关系）
+        assertEquals(0f, PetState.rotationDelta(PetState.CORNER_BR, PetState.CORNER_BL), 0.001f)
+        assertEquals(
+            0f,
+            PetState.rotationDelta(PetState.BORDER_R_UPRIGHT, PetState.BORDER_L_UPRIGHT), 0.001f
+        )
+        assertEquals(0f, PetState.rotationDelta(PetState.CORNER_TR, PetState.EDGE_TOP_R), 0.001f)
+    }
+
     @Test
     fun attached_states_are_recognised_for_drag_damping() {
         // 吸附状态起步才加阻尼
