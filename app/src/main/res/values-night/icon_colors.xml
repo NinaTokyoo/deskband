@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- 图标背景色：沿图片四边取样取众数得到，让遮罩裁掉的边缘与图本身同色 -->
-    <color name="ic_launcher_bg">#293457</color>
-</resources>
