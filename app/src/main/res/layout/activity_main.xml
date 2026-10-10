@@ -25,104 +25,110 @@
         android:paddingTop="8dp"
         android:paddingBottom="28dp">
 
-        <TextView
-            android:id="@+id/txtTitle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
-            android:gravity="center"
-            android:text="@string/ui_title"
-            android:textColor="@color/text_primary"
-            android:textSize="22sp"
-            android:textStyle="bold" />
-
-        <!-- ① 开关与权限 -->
+        <!-- ① 标题 + 权限 + 开关 -->
         <LinearLayout style="@style/Card">
 
+            <!-- 标题：单行自适应，绝不换行 -->
+            <TextView
+                android:id="@+id/txtTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:autoSizeTextType="uniform"
+                android:autoSizeMinTextSize="11sp"
+                android:autoSizeMaxTextSize="21sp"
+                android:text="@string/ui_title"
+                android:textColor="@color/text_primary"
+                android:textStyle="bold" />
+
+            <!-- 两个权限入口并排：文字靠左、标记靠右（两端对齐） -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
                 android:orientation="horizontal"
                 android:baselineAligned="false">
 
-                <Button
-                    android:id="@+id/btnToggle"
-                    style="@style/BigButton"
+                <LinearLayout
+                    android:id="@+id/rowOverlay"
                     android:layout_width="0dp"
-                    android:layout_height="match_parent"
+                    android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:layout_marginTop="0dp"
-                    android:text="@string/btn_summon" />
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="8dp">
+
+                    <TextView
+                        android:id="@+id/txtPermOverlay"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        android:text="@string/perm_overlay"
+                        android:textColor="@color/accent"
+                        android:textSize="15sp" />
+
+                    <TextView
+                        android:id="@+id/markOverlay"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="6dp"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:text="@string/perm_missing_mark" />
+                </LinearLayout>
 
                 <LinearLayout
+                    android:id="@+id/rowNotify"
                     android:layout_width="0dp"
-                    android:layout_height="match_parent"
+                    android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:layout_marginStart="16dp"
-                    android:orientation="vertical"
-                    android:gravity="center_vertical">
+                    android:layout_marginStart="20dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="8dp">
 
-                    <!-- 悬浮窗权限：整行可点，右侧绿勾/红叉 -->
-                    <LinearLayout
-                        android:id="@+id/rowOverlay"
-                        android:layout_width="match_parent"
+                    <TextView
+                        android:id="@+id/txtPermNotify"
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:background="?android:attr/selectableItemBackground"
-                        android:paddingTop="6dp"
-                        android:paddingBottom="6dp">
+                        android:layout_weight="1"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        android:text="@string/perm_notify"
+                        android:textColor="@color/accent"
+                        android:textSize="15sp" />
 
-                        <TextView
-                            android:id="@+id/txtPermOverlay"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="@string/perm_overlay"
-                            android:textColor="@color/accent"
-                            android:textSize="15sp" />
-
-                        <TextView
-                            android:id="@+id/markOverlay"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="8dp"
-                            android:textSize="17sp"
-                            android:textStyle="bold"
-                            android:text="@string/perm_missing_mark" />
-                    </LinearLayout>
-
-                    <!-- 通知权限 -->
-                    <LinearLayout
-                        android:id="@+id/rowNotify"
-                        android:layout_width="match_parent"
+                    <TextView
+                        android:id="@+id/markNotify"
+                        android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:background="?android:attr/selectableItemBackground"
-                        android:paddingTop="6dp"
-                        android:paddingBottom="6dp">
-
-                        <TextView
-                            android:id="@+id/txtPermNotify"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="@string/perm_notify"
-                            android:textColor="@color/accent"
-                            android:textSize="15sp" />
-
-                        <TextView
-                            android:id="@+id/markNotify"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="8dp"
-                            android:textSize="17sp"
-                            android:textStyle="bold"
-                            android:text="@string/perm_missing_mark" />
-                    </LinearLayout>
+                        android:layout_marginStart="6dp"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:text="@string/perm_missing_mark" />
                 </LinearLayout>
             </LinearLayout>
+
+            <!-- 呼出/收起：通栏大按钮。
+                 文字带形象名，可能很长，所以单行 + 自动缩字号，
+                 绝不换行（用户要求"防止人物名字过长导致换行"）。 -->
+            <Button
+                android:id="@+id/btnToggle"
+                style="@style/BigButton"
+                android:layout_marginTop="12dp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:autoSizeTextType="uniform"
+                android:autoSizeMinTextSize="11sp"
+                android:autoSizeMaxTextSize="19sp"
+                android:text="@string/btn_summon" />
         </LinearLayout>
 
         <!-- ② 形象与复位 -->

@@ -4,7 +4,7 @@
     <string name="subtitle">让它待在桌面上陪着你。点一下它会开心跳一下，拖起来能换边。</string>
 
     <!-- 页面标题 -->
-    <string name="ui_title">Band Pet by NinaTokyoo</string>
+    <string name="ui_title">DeskBand by NinaTokyoo</string>
 
     <!-- ① 开关与权限 -->
     <string name="btn_summon">呼出%1$s</string>
