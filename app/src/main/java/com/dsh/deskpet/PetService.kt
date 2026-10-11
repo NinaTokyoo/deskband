@@ -514,6 +514,8 @@ class PetService : Service(), PetView.Host {
 
         petView = view
         petParams = p
+        // 同进程的 App 侧要能直接叫醒这个视图的动画时钟（见 wakePetAnimation）
+        liveView = view
 
         // 恢复上次的吸附状态与位置。
         //
@@ -562,6 +564,9 @@ class PetService : Service(), PetView.Host {
         // 因为通知要在本函数中部就按最新状态构建（见开头那段注释），
         // 放这里就晚了。
         if (!screenOn) view.setPaused(true)
+        // 叫醒动画时钟：不带入场动画地建窗口（例如「淡出」状态切换时的重建）
+        // 之后，视图是静止的 —— 没有这一下，呼吸要等到用户碰它才开始。
+        view.wakeAnimation()
     }
 
     /**
@@ -629,6 +634,7 @@ class PetService : Service(), PetView.Host {
         }
         petView = null
         petParams = null
+        liveView = null
     }
 
     /**
@@ -695,6 +701,9 @@ class PetService : Service(), PetView.Host {
         if (syncPassThrough()) return
         val v = petView ?: return
         v.sprite = sprite
+        // 叫醒动画时钟：呼吸开关之类的设置刚变过，而 ticker 在"呼吸关 + 静止"时
+        // 已经彻底不排帧了 —— 不叫它，打开呼吸也要等到用户点一下才开始（用户报的 bug）。
+        v.wakeAnimation()
         // 以**吸附边为基准**缩放（贴底/下角 -> 底边不动，贴侧边 -> 那一侧不动）。
         //
         // ⚠️ 就到这里为止 —— 2.1.6~2.1.9 曾在这里额外做"吸回某一侧"，结果是手机上
@@ -896,6 +905,29 @@ class PetService : Service(), PetView.Host {
 
         private const val CHANNEL_ID = "deskpet"
         private const val NOTIF_ID = 1001
+
+        /**
+         * 当前正在显示的宠物视图（收起时为 null；[showPet]/[removePet] 维护）。
+         *
+         * ⚠️ 用途只有一个：让 App 侧**叫醒动画时钟**（见 [wakePetAnimation]）。
+         *    为什么不走 Intent：没必要（Activity 与 Service 同进程），而且少一条
+         *    "后台启动服务"的路 —— 通知栏那个锁定动作就是死在那上面的。
+         */
+        @Volatile
+        private var liveView: PetView? = null
+
+        /**
+         * 叫醒形象的动画时钟。
+         *
+         * 给 App 侧那些"**每帧现读、所以故意不通知服务**"的设置用（呼吸总开关就是）：
+         * 它们不需要 `notifyChanged`（那会触发 ACTION_RELOAD，让桌宠重新落位、白跳一下），
+         * 但 ticker 在"呼吸关掉 + 完全静止"时已经**彻底不排帧**了 —— 不叫它，
+         * 用户打开呼吸后得碰一下人物才开始呼吸（用户反馈的 bug）。同进程直接调，
+         * 零延迟、不落位。
+         */
+        fun wakePetAnimation() {
+            liveView?.wakeAnimation()
+        }
 
         const val ACTION_STOP = "com.dsh.deskpet.action.STOP"
         const val ACTION_RELOAD = "com.dsh.deskpet.action.RELOAD"

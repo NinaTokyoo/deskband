@@ -272,11 +272,17 @@ android {
         //                     系统直接丢掉（getForegroundService 也救不回来）。
         //                     通知栏只留「收起 / 呼出」；要锁就在 App 里点「锁定」。
         //                     代码里注释写明了"别再往通知栏加第二个动作"）
+        //   2.1.27 -> 20127（修呼吸三个问题：① 呼吸中途停用会永久停在那副吸气/呼气的
+        //                     形变上 —— 关掉时补画一帧（那一帧 currentBreath() 已返回 0，
+        //                     人物回到原来的比例）；② 启用呼吸后要点一下人物才开始 ——
+        //                     ticker 在"呼吸关 + 静止"时彻底不排帧，新增 PetView.wakeAnimation()
+        //                     由 reloadPet/showPet 调用（BREATH_DELAY_MS=0，醒来即呼吸）；
+        //                     ③ 锁定不影响呼吸 —— 前两个修好后，锁定不再间接卡住呼吸）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
         //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
         //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
-        val vName = "2.1.26"
+        val vName = "2.1.27"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()

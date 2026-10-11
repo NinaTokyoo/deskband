@@ -531,6 +531,20 @@ class PetView(context: Context) : View(context) {
     }
 
     /**
+     * 叫醒动画时钟：设置变了（呼吸开关、呼吸倍率…）时由服务调一次。
+     *
+     * ⚠️ 必须有这个入口。ticker 在"呼吸关掉 + 完全静止"时会**彻底不再排帧**
+     *    （见 ticker 里那段说明），此时在 App 里把呼吸打开，不会有任何一帧来重新判断 ——
+     *    表现就是用户报的"启用呼吸后需要点击一下人物才进行呼吸"（点一下会排帧，于是又活了）。
+     *    `BREATH_DELAY_MS` 是 0，所以醒来这一帧就会直接进入呼吸，也就是"启用后立即呼吸"。
+     */
+    fun wakeAnimation() {
+        choreographer.removeFrameCallback(frameCallback)
+        scheduleFrame()
+        invalidate()
+    }
+
+    /**
      * 延后 [delayMs] 毫秒再排一帧。
      *
      * 用在"呼吸晃动"的启动上：静止满 `BREATH_DELAY_MS` 才呼吸，
@@ -1038,13 +1052,26 @@ class PetView(context: Context) : View(context) {
                 breathing = false
             } else {
                 // 总开关关掉时不进入呼吸态 —— 否则 ticker 会白转（每帧重绘却什么都没变）
-                breathing = prefs.breathEnabled && now - idleSince >= BREATH_DELAY_MS.toLong()
+                val wantBreath = prefs.breathEnabled && now - idleSince >= BREATH_DELAY_MS.toLong()
+                if (breathing && !wantBreath) {
+                    // ⚠️ 中途关掉呼吸：屏幕上是**这一帧的呼吸形变**（吸气/呼气），
+                    //    而下面那个分支会"彻底安静、不再排帧"，于是人物就永久停在那一帧
+                    //    （用户报的 bug："正在呼吸的时候停用呼吸，人物应回到原来的比例，
+                    //     现在是直接停到那一帧"）。所以这里补一帧：
+                    //    这一帧里 currentBreath() 已经返回 0（它要求 breathing && 开关为真），
+                    //    人物就回到了原来的比例。
+                    need = true
+                }
+                breathing = wantBreath
                 if (breathing) {
                     // 只有呼吸这一件事在动时**隔帧重绘**：波形周期 2.6s，
                     // 30fps 完全够看，能省掉一半的绘制。
                     if ((now / 16L) % 2L == 0L) need = true
                 } else if (!prefs.breathEnabled) {
-                    // 关掉呼吸：彻底安静，不再排帧
+                    // 关掉呼吸：彻底安静，不再排帧。
+                    // ⚠️ 所以**必须**有 [wakeAnimation] 这个入口：在 App 里重新打开呼吸时，
+                    //    不再有任何一帧会来重新判断，表现就是用户报的
+                    //    "启用呼吸后需要点击一下人物才进行呼吸"（点一下会排帧，于是又活了）。
                 } else {
                     // 还差一会儿才开始呼吸：正好在那一刻再来一帧去启动它
                     scheduleFrameDelayed((BREATH_DELAY_MS - (now - idleSince)).toLong())

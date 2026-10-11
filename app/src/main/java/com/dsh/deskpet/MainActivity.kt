@@ -1771,9 +1771,12 @@ class MainActivity : Activity() {
             prefs.breathEnabled = !prefs.breathEnabled
             bindBreathControls()
             clearInputFocus()
-            // ⚠️ 这里**不通知服务**：呼吸开关是 PetView 每帧现读的，
-            // 关掉后 ticker 立刻退出呼吸分支；而 notifyChanged 会触发
-            // ACTION_RELOAD，让桌宠重新落位、白跳一下（边框回弹卡也踩过）。
+            // ⚠️ 这里**不通知服务**（notifyChanged 会触发 ACTION_RELOAD，让桌宠重新落位、
+            //    白跳一下；边框回弹卡也踩过这个坑），但**必须叫醒动画时钟**：
+            //    呼吸开着时确实是"每帧现读"的，可 ticker 在"呼吸关掉 + 完全静止"时
+            //    已经彻底不排帧了 —— 不叫它，用户打开呼吸后得碰一下人物才开始呼吸
+            //    （用户反馈的 bug）。wakePetAnimation 是同进程直调，零延迟、不落位。
+            PetService.wakePetAnimation()
         }
 
         bindBreathControls()
