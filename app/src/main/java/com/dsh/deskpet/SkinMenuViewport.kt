@@ -52,7 +52,18 @@ class SkinMenuViewport @JvmOverloads constructor(
     private val barRect = RectF()
 
     private val barW = 3f * density
-    private val barPad = 2f * density
+
+    /**
+     * 指示条两端的内缩（dp）：**上下各留 [barPadV]，右沿留 [barPadH]**。
+     *
+     * ⚠️ 上下都要真的留出来。原来只在起点加了内缩、`travel` 没扣掉两端，
+     * 于是滑到底时条的**下端会顶到视口最下沿**，正好落在菜单描边的**圆角弧线之外**，
+     * 露在外面（用户截图反馈）。
+     * 右沿留 6dp 而不是 2dp：圆角半径是 10dp，条离右沿太近时它的下端仍会
+     * 探出弧线 —— 6dp 处弧线距底边只剩 0.8dp，配 4dp 的底端内缩就稳稳在里面了。
+     */
+    private val barPadV = 4f * density
+    private val barPadH = 6f * density
     private val barRadius = 1.5f * density
     private val minThumb = 24f * density
 
@@ -147,11 +158,13 @@ class SkinMenuViewport @JvmOverloads constructor(
         val contentH = content?.height ?: 0
         if (max <= 0 || height <= 0 || contentH <= 0) return
         val thumbH = (height.toFloat() * height / contentH).coerceAtLeast(minThumb)
-        val travel = height - thumbH
-        val top = barPad + travel * (scrollY.toFloat() / max)
+        // ⚠️ 行程要扣掉**两端**的内缩，否则滑到底时条的下端会越过下边界
+        //    （那里正好是菜单描边的圆角，会露在弧线外面）
+        val travel = (height - thumbH - barPadV * 2).coerceAtLeast(0f)
+        val top = barPadV + travel * (scrollY.toFloat() / max)
         barRect.set(
-            width - barPad - barW, top,
-            width - barPad, top + thumbH
+            width - barPadH - barW, top,
+            width - barPadH, top + thumbH
         )
         paint.color = indicatorColor
         canvas.drawRoundRect(barRect, barRadius, barRadius, paint)
