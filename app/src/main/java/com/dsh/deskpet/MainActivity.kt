@@ -138,6 +138,15 @@ class MainActivity : Activity() {
     private var customSaving = false
 
     /**
+     * 「管理」列表里**正处于"待确认删除"**的那个形象 id（null = 没有）。
+     *
+     * 删除是就地两步：点红错号 -> 该标签变成「确认删除」-> 再点才删。
+     * 只留一个 id 而不是每个标签各带一个布尔：否则连点几个错号会攒出一排
+     * "确认删除"，用户根本记不住哪个是哪个。
+     */
+    private var pendingDeleteId: String? = null
+
+    /**
      * 明暗模式：三个按钮（跟随系统 / 浅色 / 深色），选中的那个高亮。
      *
      * 原来是 Spinner，用户要求改成一行三个按钮。
@@ -678,7 +687,13 @@ class MainActivity : Activity() {
         btnCustomManage.text = getString(
             if (mode == CUSTOM_NONE) R.string.custom_manage else R.string.custom_cancel
         )
-        if (mode == CUSTOM_MANAGE) renderCustomTags()
+        if (mode == CUSTOM_MANAGE) {
+            renderCustomTags()
+        } else {
+            // 离开管理态（含点「取消」）：待确认删除也一并作废，
+            // 否则下次进来那个标签会直接顶着「确认删除」，一点就没了
+            pendingDeleteId = null
+        }
         if (mode != CUSTOM_ADD) {
             clearCustomForm()
             clearInputFocus()
@@ -846,7 +861,15 @@ class MainActivity : Activity() {
         }
     }
 
-    /** 一个形象标签：名字 + 右侧红色错号（点错号走二次确认删除） */
+    /**
+     * 一个形象标签：名字 + 右侧的删除控件。
+     *
+     * 删除是**就地两步**（用户要求，不要弹窗）：
+     *   红错号「✕」点一下 -> 变成红描边的「确认删除」按钮 -> 再点才真删。
+     * 同一时刻只允许一个标签处于"待确认"（[pendingDeleteId]），
+     * 去点另一个标签的错号时，前一个会自动退回「✕」—— 不会攒出一排确认按钮。
+     * 离开管理态（含「取消」）会把待确认状态一并清掉。
+     */
     private fun makeCustomTag(id: String, startMargin: Int): View {
         val tag = layoutInflater.inflate(R.layout.item_custom_skin_tag, rowsCustomManage, false)
         tag.layoutParams = android.widget.LinearLayout.LayoutParams(
@@ -859,58 +882,39 @@ class MainActivity : Activity() {
             text = name
             setTextColor(AccentTheme.skinBoxText(lightMode))
         }
+
+        val pending = id == pendingDeleteId
+        val dm = resources.displayMetrics
         tag.findViewById<TextView>(R.id.txtCustomTagDelete).apply {
-            // 错号是**固定的红**，不跟强调色（强调色可能是红的，就分不出"删除"了）
+            // 两步删除的两个形态：红错号（可选）-> 红描边按钮（确认）
+            text = getString(
+                if (pending) R.string.custom_confirm_delete else R.string.custom_delete_mark
+            )
+            // 错号是**固定的红**，不跟强调色（强调色本身可能就是红的，就分不出"删除"了）
             setTextColor(TAG_DELETE_RED)
-            setOnClickListener { confirmDeleteCustomSkin(id, name) }
+            if (pending) {
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                background = AccentTheme.accentBoxBackground(this@MainActivity, TAG_DELETE_RED, lightMode, radiusDp = 8f)
+                setPadding(dp(dm, 8f), dp(dm, 4f), dp(dm, 8f), dp(dm, 4f))
+            } else {
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
+                background = null
+                setPadding(dp(dm, 4f), dp(dm, 2f), dp(dm, 2f), dp(dm, 2f))
+            }
+            setOnClickListener {
+                if (pending) {
+                    deleteCustomSkin(id, name)
+                } else {
+                    pendingDeleteId = id
+                    renderCustomTags()
+                }
+            }
         }
         return tag
     }
 
-    /**
-     * 二次确认：「确定删除 <形象名> 吗？」
-     *
-     * ⚠️ 刻意**不用** `AlertDialog`：它的面板与按钮是 DeviceDefault 的系统样式
-     * （深色圆角面板 + 蓝紫按钮），跟整页"中性底 + 强调色描边"完全对不上
-     * （用户反馈："这个二次确认能做成跟按钮统一样式的吗"）。
-     *
-     * 改用普通 [android.app.Dialog] + 自己的内容布局，然后走 [AccentTheme.apply]
-     * 上色 —— 弹窗里的卡片背景与镂空按钮就是**同一套**配色，
-     * 换角色 / 切明暗时弹窗也跟着变，不需要另写一份颜色。
-     */
-    private fun confirmDeleteCustomSkin(id: String, name: String) {
-        val content = layoutInflater.inflate(R.layout.dialog_confirm_delete, null)
-        content.findViewById<TextView>(R.id.txtConfirmMessage).text =
-            getString(R.string.custom_delete_confirm, name)
-
-        val dialog = android.app.Dialog(this)
-        // requestWindowFeature 必须在 setContentView 之前
-        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
-        dialog.setContentView(content)
-        dialog.setCanceledOnTouchOutside(true)
-
-        // 系统那层窗口背景必须透明：圆角与描边由内容视图（tag=card）自己画，
-        // 留着不透明背景会在圆角外露出一圈方角
-        dialog.window?.setBackgroundDrawable(
-            android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT)
-        )
-        val dm = resources.displayMetrics
-        val side = (dm.density * 24f).toInt()
-        dialog.window?.setLayout(
-            (dm.widthPixels - side * 2).coerceAtLeast(1),
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        )
-
-        AccentTheme.apply(this, content, accent, lightMode)
-
-        content.findViewById<Button>(R.id.btnConfirmCancel)
-            .setOnClickListener { dialog.dismiss() }
-        content.findViewById<Button>(R.id.btnConfirmDelete).setOnClickListener {
-            dialog.dismiss()
-            deleteCustomSkin(id, name)
-        }
-        dialog.show()
-    }
+    private fun dp(dm: android.util.DisplayMetrics, v: Float): Int =
+        (v * dm.density).toInt()
 
     /**
      * 真删：素材目录、缓存、以及"删的正好是当前形象"这一种情况。
@@ -921,6 +925,7 @@ class MainActivity : Activity() {
      */
     private fun deleteCustomSkin(id: String, name: String) {
         val wasCurrent = prefs.skin == id
+        pendingDeleteId = null
         CustomSkinStore.delete(this, id)
         // 这个 id 的发色 / 包围盒 / 预览位图都是旧的了，留着会串味
         skinAssets.remove(id)

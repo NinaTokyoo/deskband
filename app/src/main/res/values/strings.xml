@@ -43,8 +43,9 @@
     <string name="custom_save_failed">保存失败，换一张图片再试</string>
     <string name="custom_bad_image">这张图片读不出来，换一张试试</string>
     <string name="custom_saved">已保存到「当前形象」，可在那里启用</string>
-    <string name="custom_delete_confirm">确定删除 %1$s 吗？</string>
-    <string name="custom_delete">删除</string>
+    <!-- 删除：就地两步（点红错号 -> 变「确认删除」-> 再点才删），没有弹窗 -->
+    <string name="custom_delete_mark">✕</string>
+    <string name="custom_confirm_delete">确认删除</string>
     <string name="custom_cancel">取消</string>
     <string name="custom_empty">尚无自定义形象，点击新增按钮以添加</string>
     <!-- 名字留空时的兜底名：后面接序号，例如「自定义人物1」 -->

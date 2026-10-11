@@ -628,6 +628,13 @@ assets/pet/<角色>/pet.json      + upright.png + corner.png
   （`applyTheme` 末尾）三处都要 `renderCustomTags()` 重建；标签描边走
   `AccentTheme.accentBoxBackground`。**错号的红色是唯一的例外**——
   固定红、不跟强调色（强调色本身可能就是红的，跟着走就认不出哪个是删除了）。
+- **删除是就地两步，没有弹窗**（用户先要"统一样式的二次确认"、随后改成这样）：
+  红错号「✕」点一下 -> 同一个控件变成红描边的「确认删除」按钮 -> 再点才真删。
+  只用一个 `pendingDeleteId` 记录"哪个标签待确认"，**不是每个标签各带一个布尔**：
+  否则连点几个错号会攒出一排"确认删除"，用户记不住哪个是哪个。
+  离开管理态（含「取消」）必须把它清空，否则下次进来那个标签会直接顶着
+  「确认删除」，一点就没了。控件形态在 `makeCustomTag` 里按 pending 分两支给
+  （文字 / 字号 / 背景 / 内边距一起换），XML 里只留位置与对齐。
 - **删除要连缓存一起清**：`skinAssets.remove(id)`（发色 / 包围盒 / 预览位图都是按
   id 缓存的，留着会串味）；删的若是**当前**形象，`loadSkins()` 会把 `prefs.skin`
   退回列表第一个，此时还要 `applyTheme` + `refreshCornerPreview` +

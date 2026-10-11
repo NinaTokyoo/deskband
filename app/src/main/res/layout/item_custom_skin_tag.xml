@@ -28,16 +28,13 @@
         android:ellipsize="end"
         android:textSize="14sp" />
 
+    <!-- 删除控件：文字、字号、背景都在 MainActivity.makeCustomTag 里按状态给
+         （「✕」<->「确认删除」），XML 里只定位置与对齐 -->
     <TextView
         android:id="@+id/txtCustomTagDelete"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginStart="6dp"
-        android:paddingStart="4dp"
-        android:paddingEnd="2dp"
-        android:paddingTop="2dp"
-        android:paddingBottom="2dp"
-        android:text="✕"
-        android:textSize="17sp"
-        android:textStyle="bold" />
+        android:gravity="center"
+        android:maxLines="1" />
 </LinearLayout>
