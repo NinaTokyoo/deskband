@@ -577,6 +577,38 @@ canvas.scale(sx, sy, cx, squashPivotLocalY())
   同理 `warmUpSkins()` 读 `skins`，原来排在 `loadSkins()` 前面 ——
   冷启动时预热的是空列表，等于没预热。
 
+### 二级菜单：一页 5 行 + 自己的滚动视口（2.1.0）
+
+角色一多，菜单会把整页拉得很长，所以菜单**一页只显示 5 行**，多出来的在菜单内部滚，
+右侧常驻一根滚动指示条。
+
+**不要用 ScrollView。** 菜单是嵌套在页面 ScrollView 里的，两个竖向滚动容器叠在一起时
+**外层总是先把拖动抢走**：实测内层 `canScrollVertically=true`、内容 1331px > 视口 810px，
+但在菜单上滑动，滚的却是整页 —— 日志里我们的手势直接收到 `ACTION_CANCEL`。
+根因是外层在 `onInterceptTouchEvent` 里比内层先拿到事件；而
+`requestDisallowInterceptTouchEvent` **不能对自己调**（那样自己也放弃拦截，就彻底滚不动了），
+"内层 ScrollView + 自己 disallow" 这条路走不通。
+
+于是 `SkinMenuViewport` 自己拿住这件事（继承 FrameLayout）：
+
+1. `ACTION_DOWN` 起**只对父链**调 disallow —— 外层再也抢不走，自己照常判定；
+2. 竖直位移超过 touchSlop 才接管手势 —— 在那之前不拦，**行的点击照常**；
+3. 接管后按位移平移内容，`scrollY` 夹在 `[0, content - viewport]`；
+4. 指示条自己画（`dispatchDraw`），颜色由 MainActivity 按当前强调色下发，
+   内容装得下时不画。
+
+⚠️ 两个坑：
+
+- **内容必须按 `UNSPECIFIED` 量**。视口高度被限制成"一页 5 行"（EXACTLY），
+  照 FrameLayout 默认做法把这个规格传给子视图，它是 `AT_MOST(视口高)` ——
+  内容会被夹到视口那么高，`maxScroll()` 恒为 0，于是**永远滚不动**。
+  所以 `onMeasure` 里自己量内容、自己定高度。
+- 视口高度**现算、不写死 dp**：行高取决于系统字号（12dp 内边距 + 15sp 文字）。
+  `measure()` 估出来的行高比真正布局的小几像素（实测 158 vs 162，会把第 5 行切掉一截），
+  所以布局完成后再用实测行高校准一次（`limitSkinMenuHeight` → `refineSkinMenuHeight`）。
+- 描边背景挂在 `skinMenuWrap`（**视口**）上，不是 `skinMenu`（内容）上 ——
+  内容比视口高，边框画在内容上会跟着滚走。
+
 ### 信息密度
 
 卡片样式集中在 `themes.xml`，一次调整全局生效：卡片内边距 16→**11dp**、

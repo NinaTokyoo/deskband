@@ -196,11 +196,22 @@
                                 android:orientation="vertical"
                                 android:visibility="gone">
 
-                                <LinearLayout
-                                    android:id="@+id/skinMenu"
+                                <!-- ⚠️ 描边背景挂在 skinMenuWrap（视口）上，不是 skinMenu
+                                     （内容）上：内容比视口高，边框画在内容上会跟着滚走。
+                                     视口不是 ScrollView 而是自绘容器，原因见
+                                     SkinMenuViewport 的类注释（嵌套 ScrollView 抢手势）。
+                                     高度上限（一页 5 行）由 MainActivity.limitSkinMenuHeight() 现算。 -->
+                                <com.dsh.deskpet.SkinMenuViewport
+                                    android:id="@+id/skinMenuScroll"
                                     android:layout_width="match_parent"
-                                    android:layout_height="wrap_content"
-                                    android:orientation="vertical" />
+                                    android:layout_height="wrap_content">
+
+                                    <LinearLayout
+                                        android:id="@+id/skinMenu"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:orientation="vertical" />
+                                </com.dsh.deskpet.SkinMenuViewport>
                             </LinearLayout>
                         </LinearLayout>
 

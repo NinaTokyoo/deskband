@@ -56,6 +56,15 @@ class MainActivity : Activity() {
     /** 二级菜单容器（默认 gone，点框展开） */
     private lateinit var skinMenu: android.widget.LinearLayout
 
+    /**
+     * 二级菜单的**视口**（一页 5 行，超出在里面拖动滚动，右侧带指示条）。
+     *
+     * 它是自绘容器而不是 ScrollView —— 嵌套 ScrollView 会被外层页面抢走手势，
+     * 见 [SkinMenuViewport] 的类注释。描边背景挂在外层 [skinMenuWrap] 上、
+     * 高度上限设在这里（见 [limitSkinMenuHeight]）。
+     */
+    private lateinit var skinMenuScroll: SkinMenuViewport
+
     /** 二级菜单的外层（负责 2/3 宽度的留白，见布局注释） */
     private lateinit var skinMenuWrap: android.widget.LinearLayout
     private lateinit var btnReset: Button
@@ -203,6 +212,7 @@ class MainActivity : Activity() {
         txtSkinName = findViewById(R.id.txtSkinName)
         icoSkinArrow = findViewById(R.id.icoSkinArrow)
         skinMenuWrap = findViewById(R.id.skinMenuWrap)
+        skinMenuScroll = findViewById(R.id.skinMenuScroll)
         skinMenu = findViewById(R.id.skinMenu)
         btnReset = findViewById(R.id.btnReset)
         btnResetKeep = findViewById(R.id.btnResetKeep)
@@ -567,6 +577,8 @@ class MainActivity : Activity() {
      */
     private fun buildSkinMenu() {
         skinMenu.removeAllViews()
+        // 每次重建都回到顶部：换角色 / 切明暗都会重建，带着上次的滚动位置会很怪
+        skinMenuScroll.resetScroll()
         val others = skins.filter { it != prefs.skin }
         android.util.Log.i("SkMenu", "buildSkinMenu: skins=${skins.size} cur=${prefs.skin} others=${others.size}")
         if (others.isEmpty()) return
@@ -583,6 +595,75 @@ class MainActivity : Activity() {
             skinMenu.addView(row)
         }
         android.util.Log.i("SkMenu", "  menu children=${skinMenu.childCount}")
+        // 行数超了就把视口压到"一页 5 行"（用户要求），多出来的在里面拖
+        limitSkinMenuHeight()
+        // 布局完成后再用**实测行高**校准一次（见 refineSkinMenuHeight 的注释）
+        skinMenu.post { refineSkinMenuHeight() }
+    }
+
+    /**
+     * 二级菜单的视口高度：**最多显示 [SKIN_MENU_VISIBLE_ROWS] 行**，多出来的滚动。
+     *
+     * 高度**现算、不写死 dp**：行高取决于系统字号（行是 12dp 内边距 + 15sp 文字），
+     * 写死会在放大字号时把第 5 行切掉一半。这里量的是"前 5 行 + 它们之间的 4 条
+     * 分隔线"的总高，正好一页。
+     *
+     * ⚠️ 用 `measure()` 而不是读 `bottom`：菜单是 GONE 时子视图没有布局过，
+     * bottom/height 全是 0（读 bottom 会在收起状态下把视口设成 0 高，
+     * 下次展开就空了）；measure 不依赖 attach 状态。
+     */
+    private fun limitSkinMenuHeight() {
+        if (!::skinMenuScroll.isInitialized) return
+        val lp = skinMenuScroll.layoutParams ?: return
+        if (skinMenuRows().size <= SKIN_MENU_VISIBLE_ROWS) {
+            setMenuViewportHeight(ViewGroup.LayoutParams.WRAP_CONTENT)
+            return
+        }
+        // 宽度给菜单的实测宽（没布局过就退回屏宽）；行是单行不换行，宽度不影响行高
+        val w = if (skinMenu.width > 0) skinMenu.width else resources.displayMetrics.widthPixels
+        val wSpec = View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY)
+        val hSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        var h = 0
+        var rows = 0
+        for (i in 0 until skinMenu.childCount) {
+            val c = skinMenu.getChildAt(i)
+            c.measure(wSpec, hSpec)
+            h += c.measuredHeight
+            if (c is TextView) {
+                rows++
+                if (rows == SKIN_MENU_VISIBLE_ROWS) break
+            }
+        }
+        if (h > 0) setMenuViewportHeight(h)
+        // 布局完成后再用**实测行高**校准一次：measure() 出来的行高比真正布局的小几个
+        // 像素（实测 158 vs 162），只按估算值会把第 5 行切掉一截。
+        skinMenu.post { refineSkinMenuHeight() }
+    }
+
+    /**
+     * 用**已经布局好的**行高重算视口高度（[limitSkinMenuHeight] 的估算值只作兜底）。
+     *
+     * 菜单收起时子视图没有布局（height 全是 0），这里直接返回、保留估算值。
+     */
+    private fun refineSkinMenuHeight() {
+        val rows = skinMenuRows()
+        if (rows.size <= SKIN_MENU_VISIBLE_ROWS) {
+            setMenuViewportHeight(ViewGroup.LayoutParams.WRAP_CONTENT)
+            return
+        }
+        val rowH = rows[0].height
+        if (rowH <= 0) return
+        val dividerH = (0 until skinMenu.childCount)
+            .map { skinMenu.getChildAt(it) }
+            .firstOrNull { it !is TextView }?.height ?: 0
+        setMenuViewportHeight(rowH * SKIN_MENU_VISIBLE_ROWS + dividerH * (SKIN_MENU_VISIBLE_ROWS - 1))
+    }
+
+    private fun setMenuViewportHeight(h: Int) {
+        val lp = skinMenuScroll.layoutParams ?: return
+        if (lp.height == h) return
+        lp.height = h
+        skinMenuScroll.layoutParams = lp
     }
 
     /**
@@ -622,6 +703,9 @@ class MainActivity : Activity() {
             skinMenuWrap.visibility = View.VISIBLE
             // 展开 -> 三角正立（旋转 180°）。直接设值，没有过渡动画。
             icoSkinArrow.rotation = 180f
+            // 展开这一刻的行高才是真的（上面那次 buildSkinMenu 时还是 GONE），
+            // 再校一次视口高度，保证第 5 行完整可见
+            skinMenu.post { refineSkinMenuHeight() }
         } else {
             closeSkinMenuNow()
             return
@@ -723,8 +807,7 @@ class MainActivity : Activity() {
         applyTheme()
     }
 
-    private fun setupCustomSkinControls() {
-        // 不在新增态时是「新增」，在新增态时是「保存」（文案在 setCustomMode 里定）
+    private fun setupCustomSkinControls() {        // 不在新增态时是「新增」，在新增态时是「保存」（文案在 setCustomMode 里定）
         btnCustomAdd.setOnClickListener {
             if (customMode == CUSTOM_ADD) saveCustomSkin() else setCustomMode(CUSTOM_ADD)
         }
@@ -1554,6 +1637,13 @@ class MainActivity : Activity() {
          */
         const val SUMMON_REF_TRAVEL_PX = 320f
 
+        /**
+         * 二级菜单一页显示几行（用户要求 5）。
+         *
+         * 超过就在菜单内部滚动（见 [limitSkinMenuHeight]），页面本身不再被拉长。
+         */
+        const val SKIN_MENU_VISIBLE_ROWS = 5
+
         // ---- 自定义形象卡 ----
         /** 收起：只有标题那一横条 */
         const val CUSTOM_NONE = 0
@@ -1692,8 +1782,11 @@ class MainActivity : Activity() {
         val menuOpen = skinMenuWrap.visibility == View.VISIBLE
         boxSkin.background =
             AccentTheme.skinBoxBackground(this, accent, lightMode, connected = menuOpen)
-        // 二级菜单**整个区域**也要被描边包住（用户明确要求：展开的部分不能没有框）
-        skinMenu.background = AccentTheme.skinMenuBackground(this, accent, lightMode)
+        // 二级菜单：描边挂在外层 skinMenuWrap（视口）上，不是 skinMenu（内容）上 ——
+        // 列表一长，内容会在视口里滚动，边框画在内容上会跟着滚走。
+        skinMenuWrap.background = AccentTheme.skinMenuBackground(this, accent, lightMode)
+        // 视口右侧的滚动指示条：颜色跟随当前强调色（内容装得下时视口自己不画）
+        skinMenuScroll.indicatorColor = (accent and 0x00FFFFFF) or (0xB3 shl 24)
         icoSkinArrow.imageTintList =
             android.content.res.ColorStateList.valueOf(AccentTheme.skinBoxText(lightMode))
         // 菜单项的横线与文字色都依赖强调色 / 明暗模式，重建一次
