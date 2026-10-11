@@ -36,33 +36,36 @@
         <item name="android:gravity">center_vertical</item>
     </style>
 
-    <!-- 标题右侧的小动作按钮（镂空，颜色由 AccentTheme 下发） -->
+    <!-- 标题右侧的小动作按钮（镂空，颜色由 AccentTheme 下发）。
+         2.1.0 按用户要求整体做大一档：字号 12->13sp、左右内边距 10->14dp、
+         上下 5->8dp（「停用 / 管理 / 取消 / 新增 / 保存」都是这个样式） -->
     <style name="CardAction">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginStart">8dp</item>
         <item name="android:textColor">@color/accent</item>
-        <item name="android:textSize">12sp</item>
-        <item name="android:paddingStart">10dp</item>
-        <item name="android:paddingEnd">10dp</item>
-        <item name="android:paddingTop">5dp</item>
-        <item name="android:paddingBottom">5dp</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:paddingStart">14dp</item>
+        <item name="android:paddingEnd">14dp</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">8dp</item>
         <item name="android:minWidth">0dp</item>
         <item name="android:minHeight">0dp</item>
         <item name="android:stateListAnimator">@null</item>
     </style>
 
     <!--
-      卡片底部的**次要整行按钮**（「恢复默认值」）：占满一行，但不抢主按钮
-      （「保存并应用」）的视觉重量 —— 字号小一号、非加粗。
-      颜色照样由 AccentTheme 下发，所以这里不设 background / textColor。
+      卡片底部那一排按钮（「保存」+「恢复默认值」）：比标题行的小按钮再大一档，
+      **宽度按文字量走**（wrap_content，用户要求"大小根据文字数量来"），
+      所以这里只给内边距和字号，不给宽度。颜色照样由 AccentTheme 下发。
     -->
-    <style name="CardWideAction" parent="CardAction">
-        <item name="android:layout_width">match_parent</item>
+    <style name="CardBottomAction" parent="CardAction">
         <item name="android:layout_marginStart">0dp</item>
-        <item name="android:layout_marginTop">8dp</item>
         <item name="android:textSize">14sp</item>
-        <item name="android:gravity">center</item>
+        <item name="android:paddingStart">18dp</item>
+        <item name="android:paddingEnd">18dp</item>
+        <item name="android:paddingTop">9dp</item>
+        <item name="android:paddingBottom">9dp</item>
     </style>
 
     <style name="StatusLine">        <item name="android:layout_width">match_parent</item>

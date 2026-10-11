@@ -62,8 +62,8 @@
     <string name="size_input">倍率</string>
     <string name="size_saved">大小已保存</string>
 
-    <!-- 两张/三张卡片的保存按钮共用同一文案 -->
-    <string name="save_apply">保存并应用</string>
+    <!-- 各卡片底部那一排两个按钮共用这两条文案 -->
+    <string name="card_save">保存</string>
     <string name="restore_default">恢复默认值</string>
     <!-- 各卡片「一横条 + 展开」交互里右上角那两个按钮（与自定义形象同一套） -->
     <string name="card_manage">管理</string>
@@ -116,6 +116,7 @@
     <string name="notify_input">留空使用当前标题</string>
     <string name="notify_count">已输入 %1$d / %2$d 字符</string>
     <string name="notify_saved">通知内容已保存</string>
+    <string name="notify_restored">通知内容已恢复默认</string>
 
     <!-- ⑥ 明暗模式 -->
     <string name="section_theme">外观模式</string>

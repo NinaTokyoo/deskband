@@ -529,16 +529,26 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content" />
 
-            <Button
-                android:id="@+id/btnSaveSize"
-                style="@style/PrimaryButton"
-                android:text="@string/save_apply" />
+                <!-- 卡片底部一排两个：保存 + 恢复默认值。
+                     宽度按文字量走（wrap_content），不做等分 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:orientation="horizontal"
+                    android:gravity="center">
 
-                <!-- 恢复默认值：挪到卡片最底下（用户要求），整行宽、次要样式 -->
-                <Button
-                    android:id="@+id/btnResetSize"
-                    style="@style/CardWideAction"
-                    android:text="@string/restore_default" />
+                    <Button
+                        android:id="@+id/btnSaveSize"
+                        style="@style/CardBottomAction"
+                        android:text="@string/card_save" />
+
+                    <Button
+                        android:id="@+id/btnResetSize"
+                        style="@style/CardBottomAction"
+                        android:layout_marginStart="10dp"
+                        android:text="@string/restore_default" />
+                </LinearLayout>
             </LinearLayout>
         </LinearLayout>
 
@@ -681,15 +691,24 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content" />
 
-            <Button
-                android:id="@+id/btnSaveSummon"
-                style="@style/PrimaryButton"
-                android:text="@string/save_apply" />
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:orientation="horizontal"
+                    android:gravity="center">
 
-                <Button
-                    android:id="@+id/btnResetSummon"
-                    style="@style/CardWideAction"
-                    android:text="@string/restore_default" />
+                    <Button
+                        android:id="@+id/btnSaveSummon"
+                        style="@style/CardBottomAction"
+                        android:text="@string/card_save" />
+
+                    <Button
+                        android:id="@+id/btnResetSummon"
+                        style="@style/CardBottomAction"
+                        android:layout_marginStart="10dp"
+                        android:text="@string/restore_default" />
+                </LinearLayout>
             </LinearLayout>
         </LinearLayout>
 
@@ -796,15 +815,24 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content" />
 
-            <Button
-                android:id="@+id/btnSaveBounce"
-                style="@style/PrimaryButton"
-                android:text="@string/save_apply" />
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:orientation="horizontal"
+                    android:gravity="center">
 
-                <Button
-                    android:id="@+id/btnResetBounce"
-                    style="@style/CardWideAction"
-                    android:text="@string/restore_default" />
+                    <Button
+                        android:id="@+id/btnSaveBounce"
+                        style="@style/CardBottomAction"
+                        android:text="@string/card_save" />
+
+                    <Button
+                        android:id="@+id/btnResetBounce"
+                        style="@style/CardBottomAction"
+                        android:layout_marginStart="10dp"
+                        android:text="@string/restore_default" />
+                </LinearLayout>
             </LinearLayout>
         </LinearLayout>
 
@@ -909,15 +937,24 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content" />
 
-            <Button
-                android:id="@+id/btnSaveBreath"
-                style="@style/PrimaryButton"
-                android:text="@string/save_apply" />
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:orientation="horizontal"
+                    android:gravity="center">
 
-                <Button
-                    android:id="@+id/btnResetBreath"
-                    style="@style/CardWideAction"
-                    android:text="@string/restore_default" />
+                    <Button
+                        android:id="@+id/btnSaveBreath"
+                        style="@style/CardBottomAction"
+                        android:text="@string/card_save" />
+
+                    <Button
+                        android:id="@+id/btnResetBreath"
+                        style="@style/CardBottomAction"
+                        android:layout_marginStart="10dp"
+                        android:text="@string/restore_default" />
+                </LinearLayout>
             </LinearLayout>
         </LinearLayout>
 
@@ -1005,11 +1042,26 @@
                 android:textColor="@color/text_secondary"
                 android:textSize="12sp" />
 
-            <Button
-                android:id="@+id/btnSaveNotify"
-                style="@style/PrimaryButton"
-                android:layout_marginTop="10dp"
-                android:text="@string/save_apply" />
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:orientation="horizontal"
+                    android:gravity="center">
+
+                    <Button
+                        android:id="@+id/btnSaveNotify"
+                        style="@style/CardBottomAction"
+                        android:text="@string/card_save" />
+
+                    <!-- 恢复默认值 = 清空两个输入框（= 回到默认文案）；
+                         这张卡现在也有了（用户要求），同样按文字量定宽 -->
+                    <Button
+                        android:id="@+id/btnResetNotify"
+                        style="@style/CardBottomAction"
+                        android:layout_marginStart="10dp"
+                        android:text="@string/restore_default" />
+                </LinearLayout>
             </LinearLayout>
         </LinearLayout>
 

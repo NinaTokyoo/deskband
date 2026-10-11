@@ -112,6 +112,7 @@ class MainActivity : Activity() {
     private lateinit var editNotify: EditText
     private lateinit var txtNotifyCount: TextView
     private lateinit var btnSaveNotify: Button
+    private lateinit var btnResetNotify: Button
 
     /** 切换形象卡片右下角的素材预览（不可交互） */
     private lateinit var imgCornerPreview: android.widget.ImageView
@@ -189,6 +190,14 @@ class MainActivity : Activity() {
     /** 通知权限是否已经弹过系统对话框（弹过之后再点就直接去设置页） */
     private var notifyAsked = false
 
+    /**
+     * 上次离开应用的时刻（[onStop] 记，用单调时钟）。
+     *
+     * 用来判断热启动要不要把卡片恢复成"全收起"：离开超过 [CARD_RESET_AFTER_MS]
+     * 再回来就重置（用户要求）。初值 0 = 还没离开过 -> 冷启动必然满足条件。
+     */
+    private var lastLeftAt = 0L
+
     /** 当前强调色（由角色发色推出） */
     private var accent = AccentTheme.FALLBACK
 
@@ -263,6 +272,7 @@ class MainActivity : Activity() {
         editNotify = findViewById(R.id.editNotify)
         txtNotifyCount = findViewById(R.id.txtNotifyCount)
         btnSaveNotify = findViewById(R.id.btnSaveNotify)
+        btnResetNotify = findViewById(R.id.btnResetNotify)
         imgCornerPreview = findViewById(R.id.imgCornerPreview)
         btnManageSize = findViewById(R.id.btnManageSize)
         btnManageSummon = findViewById(R.id.btnManageSummon)
@@ -376,6 +386,18 @@ class MainActivity : Activity() {
         bindSizeControls()
     }
 
+    /**
+     * 把自定义形象卡收回一横条（手风琴展开别的卡时调）。
+     *
+     * 与 [setCustomMode] 是同一个入口 —— 那边现在已经不刷主题了，
+     * 所以不会连带把通知栏里正在编辑的文字刷掉。
+     */
+    private fun collapseCustomCard() {
+        if (!::btnCustomManage.isInitialized) return
+        if (customMode == CUSTOM_NONE) return
+        setCustomMode(CUSTOM_NONE)
+    }
+
     // ---------------------------------------------------------------- 可展开卡片
 
     /** 一张"一横条 + 点管理展开"的卡片：展开区 + 右上角那个「管理 / 取消」按钮 */
@@ -401,12 +423,33 @@ class MainActivity : Activity() {
         setCardExpanded(body, false)
     }
 
+    /**
+     * 展/收一张卡片。
+     *
+     * **手风琴**（用户要求）：展开某一张时，其余打开的卡片（含自定义形象卡的展开区）
+     * 立刻关闭 —— 一次只留一张展开，页面高度永远可控。
+     */
     private fun setCardExpanded(body: View, expanded: Boolean) {
+        if (expanded) {
+            for (c in expandCards) if (c.body !== body) setCardExpanded(c.body, false)
+            collapseCustomCard()
+        }
         body.visibility = if (expanded) View.VISIBLE else View.GONE
         expandCards.firstOrNull { it.body === body }?.manage?.text =
             getString(if (expanded) R.string.card_cancel else R.string.card_manage)
         // 收起时收掉焦点与键盘，免得输入框在看不见的地方亮着
         if (!expanded) clearInputFocus()
+    }
+
+    /**
+     * 把所有卡片收回一横条（不含自定义形象卡的展开区，那由 [collapseCustomCard] 管）。
+     *
+     * 进入应用时调（见 [onResume]）：冷启动、或离开超过 [CARD_RESET_AFTER_MS] 再回来，
+     * 一律回到"全收起"的初始状态（用户要求）。
+     */
+    private fun collapseAllCards() {
+        for (c in expandCards) setCardExpanded(c.body, false)
+        collapseCustomCard()
     }
 
     // ---------------------------------------------------------------- 复位
@@ -446,7 +489,20 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        // 进入应用时把卡片恢复成"全收起"（用户要求）：
+        //   · 冷启动一定收起（此时 lastLeftAt 还是 0，差值为设备开机时长，必然超时）；
+        //   · 热启动（从后台回来）只在**离开超过 1 分钟**时才收起 ——
+        //     切出去看一眼、马上回来的情况保留当前展开的那张卡，不打断手上的调整。
+        if (android.os.SystemClock.elapsedRealtime() - lastLeftAt >= CARD_RESET_AFTER_MS) {
+            collapseAllCards()
+        }
         refreshUi()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // 记"离开时刻"。用 elapsedRealtime（单调时钟）：改系统时间不会影响这个判断
+        lastLeftAt = android.os.SystemClock.elapsedRealtime()
     }
 
     override fun onRequestPermissionsResult(
@@ -836,6 +892,12 @@ class MainActivity : Activity() {
      */
     private fun setCustomMode(mode: Int) {
         customMode = mode
+        // 手风琴：**自定义形象卡展开时，其余卡片也要一并收起**（用户要求）。
+        // 反方向（别的卡展开时收起这张）在 setCardExpanded 里 —— 两个方向都要写，
+        // 少一个方向就会出现"两张卡同时展开"（上一版就漏了这个方向）。
+        if (mode != CUSTOM_NONE) {
+            for (c in expandCards) setCardExpanded(c.body, false)
+        }
         panelCustomAdd.visibility = if (mode == CUSTOM_ADD) View.VISIBLE else View.GONE
         panelCustomManage.visibility = if (mode == CUSTOM_MANAGE) View.VISIBLE else View.GONE
         btnCustomAdd.text = getString(
@@ -864,11 +926,14 @@ class MainActivity : Activity() {
             clearCustomForm()
             clearInputFocus()
         }
-        // 展开区里的方块靠 tag=accentBox 上色、标签是刚重建的，都要重刷一遍主题
-        applyTheme()
+        // ⚠️ 这里**不调 applyTheme()**：展开区里的方块靠 tag=accentBox、标签由
+        //    renderCustomTags() 自己上色，上一次刷主题时就都刷好了；
+        //    而 applyTheme() 会顺带 refreshNotifyFields()，把通知栏两个输入框里
+        //    **正在编辑**的内容覆盖成存档值 —— 手风琴收起别的卡时会被误伤。
     }
 
-    private fun setupCustomSkinControls() {        // 不在新增态时是「新增」，在新增态时是「保存」（文案在 setCustomMode 里定）
+    private fun setupCustomSkinControls() {
+        // 不在新增态时是「新增」，在新增态时是「保存」（文案在 setCustomMode 里定）
         btnCustomAdd.setOnClickListener {
             if (customMode == CUSTOM_ADD) saveCustomSkin() else setCustomMode(CUSTOM_ADD)
         }
@@ -1649,6 +1714,22 @@ class MainActivity : Activity() {
             clearInputFocus()
             PetService.refreshNotification(this)
         }
+
+        /**
+         * 恢复默认值：把**当前形象**这两条自定义文案清掉。
+         *
+         * 「留空 = 用默认」本来就是这张卡的语义（提示语写着"留空使用默认文案"），
+         * 所以"恢复默认"就是清空 —— 清的是当前形象那一份（文案按形象分开存），
+         * 别的角色不受影响。清完立刻刷通知，不用再点一次保存。
+         */
+        btnResetNotify.setOnClickListener {
+            prefs.notifyTitle = ""
+            prefs.notifyText = ""
+            refreshNotifyFields()
+            clearInputFocus()
+            PetService.refreshNotification(this)
+            Toast.makeText(this, R.string.notify_restored, Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun updateNotifyCount() {
@@ -1712,6 +1793,13 @@ class MainActivity : Activity() {
          * 超过就在菜单内部滚动（见 [limitSkinMenuHeight]），页面本身不再被拉长。
          */
         const val SKIN_MENU_VISIBLE_ROWS = 5
+
+        /**
+         * 离开应用多久之后回来，把卡片恢复成"全收起"（用户要求：1 分钟）。
+         *
+         * 比这短就保留当前展开的那张卡 —— 切出去看一眼再回来不该打断手上的调整。
+         */
+        const val CARD_RESET_AFTER_MS = 60_000L
 
         // ---- 自定义形象卡 ----
         /** 收起：只有标题那一横条 */
