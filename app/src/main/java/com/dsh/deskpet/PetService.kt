@@ -152,9 +152,7 @@ class PetService : Service(), PetView.Host {
                 return START_NOT_STICKY
             }
             ACTION_RELOAD -> {
-                // 尺寸变化那条路（notifySizeChanged）额外要求"重新吸回所在的那一侧"，
-                // 换角色之类的普通重载不需要（用户要求：调大小时实时吸附）
-                reloadPet(intent.getBooleanExtra(EXTRA_RESNAP, false))
+                reloadPet()
                 return START_STICKY
             }
             ACTION_RESET -> {
@@ -610,7 +608,7 @@ class PetService : Service(), PetView.Host {
         petParams = null
     }
 
-    private fun reloadPet(resnap: Boolean = false) {
+    private fun reloadPet() {
         // 收起状态下也要先拿到**当前角色**的 sprite，否则通知标题里的角色名
         // 还是上一个角色的（标题文案由 sprite.displayName 提供）。
         acquireSprite()
@@ -648,9 +646,11 @@ class PetService : Service(), PetView.Host {
         val v = petView ?: return
         v.sprite = sprite
         // 以**吸附边为基准**缩放（贴底/下角 -> 底边不动，贴侧边 -> 那一侧不动）。
-        // resnap 时顺带横向吸回当前那一侧 —— 两件事在**同一次窗口同步**里做完，
-        // 分两次搬窗口会看出"抽搐 / 飞出去又飞回来"（见 PetView.setSizeFraction 的说明）。
-        v.setSizeFraction(prefs.sizeFraction, resnapSide = resnap)
+        //
+        // ⚠️ 就到这里为止 —— 2.1.6~2.1.9 曾在这里额外做"吸回某一侧"，结果是手机上
+        //    抖动、甚至把人物甩到另一侧。用户拍板：尺寸这块照搬 2.1.3（= 基线）。
+        //    基线这条"以附着边为基准缩放"本身就让贴边的宠物一直贴着，够用。
+        v.setSizeFraction(prefs.sizeFraction)
         // ⚠️ 这里**不要**再调 v.restore(...)。
         //
         // 曾经是"先 setSizeFraction，再 restore(state, posLeft, posTop)"。
@@ -840,12 +840,6 @@ class PetService : Service(), PetView.Host {
 
         const val ACTION_STOP = "com.dsh.deskpet.action.STOP"
         const val ACTION_RELOAD = "com.dsh.deskpet.action.RELOAD"
-
-        /**
-         * ACTION_RELOAD 的附加项：这次重载是**尺寸变化**引起的，
-         * 重载后还要把宠物横向吸回当前那一侧（用户要求：调大小时实时吸附）。
-         */
-        const val EXTRA_RESNAP = "com.dsh.deskpet.extra.RESNAP"
         const val ACTION_RESET = "com.dsh.deskpet.action.RESET"
         const val ACTION_NOTIFY = "com.dsh.deskpet.action.NOTIFY"
 
@@ -914,30 +908,11 @@ class PetService : Service(), PetView.Host {
         }
 
         /**
-         * 只改了**大小**。
+         * 换角色 / 改大小后通知正在跑的服务刷新。
          *
-         * @param resnap 是否顺便把宠物横向吸回当前那一侧。
-         *   **拖动过程中传 false**（只缩放，别每格都落位 —— 那会抽搐），
-         *   松手 / 输入停顿 / 保存 / 取消这些"定了"的时刻才传 true。
-         *
-         * 与 [notifyChanged] 分开是因为换角色那条路不该顺手把宠物挪一下。
+         * ⚠️ 尺寸路径曾经分出一个 notifySizeChanged（额外要求"吸回某一侧"），
+         *    2.1.10 按用户要求删除：尺寸这块照搬 2.1.3，走的就是这一条。
          */
-        fun notifySizeChanged(context: Context, resnap: Boolean = false) {
-            if (!alive) return
-            val i = Intent(context, PetService::class.java).setAction(ACTION_RELOAD)
-            if (resnap) i.putExtra(EXTRA_RESNAP, true)
-            try {
-                if (Build.VERSION.SDK_INT >= 26) {
-                    context.startForegroundService(i)
-                } else {
-                    context.startService(i)
-                }
-            } catch (e: Exception) {
-                // 忽略
-            }
-        }
-
-        /** 换角色 / 明暗等：只重载，不重新吸附 */
         fun notifyChanged(context: Context) {
             // 换角色 / 改大小后通知标题里的角色名要跟着变。
             //

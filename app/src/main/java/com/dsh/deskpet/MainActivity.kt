@@ -191,41 +191,6 @@ class MainActivity : Activity() {
     private var notifyAsked = false
 
     /**
-     * 程序性回写尺寸输入框时置上：挡住 [editSize] 的文本监听。
-     *
-     * 那个监听负责"边输入边生效"，而 `bindSizeControls()` 会 setText 回写 ——
-     * 不闸住就会自己触发自己。
-     */
-    private var suppressSizeWatcher = false
-
-    /**
-     * 打字调节大小时，"把新尺寸应用给桌宠"这一步压后 250ms。
-     *
-     * ⚠️ 为什么需要它：输入框是**逐字符**看的。想输 `0.8` 时，第一个字符是 `0` ——
-     *    它会被下限夹成 0.5，桌宠先缩到 0.5、再跳回 0.8，看起来就是在抖。
-     *    压后 250ms（每敲一格重新计时）就只在"这一段输完了"时应用一次，
-     *    手感上仍然是实时跟着变的。
-     * **滑条不走这条路**：拖出来的每一格都是合法值，每格直接应用 + 吸附。
-     */
-    private val sizeTypeApply = Runnable {
-        PetService.notifySizeChanged(this, resnap = true)
-    }
-
-    /**
-     * 拖滑条时两次"通知服务"之间的最小间隔（毫秒）。
-     *
-     * ⚠️ 滑条每移动一个像素就回调一次 onProgressChanged，而每一次通知都会让服务
-     *    走一遍完整重载（重新取图 + updateViewLayout 改窗口大小）。几十赫兹地重排窗口
-     *    在手机上就是"人物一直在抽搐"（用户反馈：拖动滑块抖、数字调节不抖）。
-     *    这里限到 ~12Hz：手感上仍然是实时跟着变，但窗口不会被每像素重排一次。
-     *    （松手时会无条件再发一次，所以最终的尺寸一定落到位。）
-     */
-    private var lastSizeNotifyAt = 0L
-
-    /** 拖滑条时通知服务的最小间隔，见 [lastSizeNotifyAt] */
-    private val sizeNotifyGapMs = 80L
-
-    /**
      * 刚刚从**相册 / 文件选择器**返回的时刻（[onActivityResult] 记）。
      *
      * 这种"离开"不算真的退出应用 —— [onResume] 会据此豁免一次"全部收起"，
@@ -351,10 +316,9 @@ class MainActivity : Activity() {
             restore = {
                 prefs.sizeScale = sizeSnap[0]
                 bindSizeControls()
-                editSize.removeCallbacks(sizeTypeApply)
-                // 回退也走这一条：缩放 + 吸附在**同一次窗口同步**里做完。
-                // 分两次搬窗口就是用户看到的"飞出一段再飞回来"
-                PetService.notifySizeChanged(this, resnap = true)
+                // 取消回退：只是把倍率改回去并通知服务（与 2.1.3 的尺寸路径同一条），
+                // 不做任何额外的"吸附/落位" —— 那套在手机上会抖、会甩到另一侧
+                PetService.notifyChanged(this)
             }
         )
         val summonSnap = FloatArray(3)
@@ -450,66 +414,27 @@ class MainActivity : Activity() {
                 if (!fromUser) return
                 prefs.sizeScale = sizeScaleOf(progress)
                 bindSizeControls()
-                // 拖动中**只缩放、不吸附**（用户选定的手感：这样最不抖），
-                // 吸附留到松手那一下。这里仍然**节流**：每移动一个像素都发一次通知
-                // = 几十赫兹重排窗口，那本身就会让人物发抖。
-                val now = android.os.SystemClock.elapsedRealtime()
-                if (now - lastSizeNotifyAt >= sizeNotifyGapMs) {
-                    lastSizeNotifyAt = now
-                    PetService.notifySizeChanged(this@MainActivity)
-                }
+                // 大小变了要重新计算绘制尺寸与窗口尺寸，必须通知服务。
+                //
+                // ⚠️ 这条路**照搬 2.1.3**（= 基线）：每格发一次 notifyChanged，
+                //    不在尺寸变化里做任何"额外的吸附/落位"。
+                //    2.1.6~2.1.9 试过在尺寸变化时强制吸回边缘，结果是在手机上抖动、
+                //    甚至把人物甩到另一侧（用户反馈"抖而且飞"）。
+                //    基线的 setSizeFraction 本来就是"以附着边为基准缩放"——
+                //    宠物贴边时它自己就一直是贴着的，不需要再补一刀。
+                PetService.notifyChanged(this@MainActivity)
             }
 
             override fun onStartTrackingTouch(sb: SeekBar?) = Unit
-
-            // 松手：这一步才吸附（按**当前位置**决定贴哪一边，不会甩到另一侧），
-            // 顺带保证最后一格一定落到位
-            override fun onStopTrackingTouch(sb: SeekBar?) {
-                lastSizeNotifyAt = 0L
-                PetService.notifySizeChanged(this@MainActivity, resnap = true)
-            }
+            override fun onStopTrackingTouch(sb: SeekBar?) = Unit
         })
 
-        // 数字输入：**边打边生效**（用户要求：填入数字实时反应大小），
-        // 回车 / 失焦时再兜一次底（形如 "1." 这种半截输入解析不了的，那一刻也不强行套值）。
-        //
-        // ⚠️ 两个坑：
-        //   1. bindSizeControls() 会回写输入框，那会再次触发这里 -> 用 suppressSizeWatcher 闸住；
-        //   2. 这里**不回写输入框**（只在滑块不同步时更新滑块），否则光标会被顶到末尾，
-        //      用户就没法在中间插字符了。
-        editSize.addTextChangedListener(object : android.text.TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) = Unit
-            override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) = Unit
-            override fun afterTextChanged(s: android.text.Editable?) {
-                if (suppressSizeWatcher) return
-                val v = parseScale(
-                    s?.toString().orEmpty(), Prefs.SIZE_SCALE_MIN, Prefs.SIZE_SCALE_MAX
-                ) ?: return
-                if (v == prefs.sizeScale) return
-                prefs.sizeScale = v
-                txtSize.text = getString(R.string.size_label_value, fmtScale(v))
-                val want = progressOfSizeScale(v)
-                if (seekSize.progress != want) {
-                    suppressSizeWatcher = true
-                    seekSize.progress = want
-                    suppressSizeWatcher = false
-                }
-                // 打字：输入框与滑块**立刻**跟着变（界面反馈要跟手），
-                // 但"应用给桌宠"压后 250ms —— 见 sizeTypeApply 的说明
-                //（不然输 "0.8" 会先跳到被夹取的 0.5、再跳回来 = 抖）。
-                // 应用时带 resnap：一边改一边吸附。
-                editSize.removeCallbacks(sizeTypeApply)
-                editSize.postDelayed(sizeTypeApply, 250)
-            }
-        })
-
-        // 数字输入：回车或失焦时**立刻**生效一次（不必再等那 250ms）
+        // 数字输入：回车或失焦时生效（支持小数，如 1.5）
         val applySize = {
-            editSize.removeCallbacks(sizeTypeApply)
             parseScale(editSize.text.toString(), Prefs.SIZE_SCALE_MIN, Prefs.SIZE_SCALE_MAX)
                 ?.let {
                     prefs.sizeScale = it
-                    PetService.notifySizeChanged(this, resnap = true)
+                    PetService.notifyChanged(this)
                 }
             bindSizeControls()
         }
@@ -517,11 +442,10 @@ class MainActivity : Activity() {
         editSize.setOnFocusChangeListener { _, has -> if (!has) applySize() }
 
         btnSaveSize.setOnClickListener {
-            editSize.removeCallbacks(sizeTypeApply)
             parseScale(editSize.text.toString(), Prefs.SIZE_SCALE_MIN, Prefs.SIZE_SCALE_MAX)
                 ?.let {
                     prefs.sizeScale = it
-                    PetService.notifySizeChanged(this, resnap = true)
+                    PetService.notifyChanged(this)
                 }
             bindSizeControls()
             clearInputFocus()
@@ -534,8 +458,7 @@ class MainActivity : Activity() {
             prefs.sizeScale = 1f
             bindSizeControls()
             clearInputFocus()
-            editSize.removeCallbacks(sizeTypeApply)
-            PetService.notifySizeChanged(this, resnap = true)
+            PetService.notifyChanged(this)
             markCardSaved(panelSize)
         }
 
@@ -2415,11 +2338,8 @@ class MainActivity : Activity() {
     /** 把当前值刷到滑块 / 文本框 / 摘要文字 */
     private fun bindSizeControls() {
         val sc = prefs.sizeScale
-        // 闸住输入框监听：下面这一句 setText 会再触发它一次（见那里的说明）
-        suppressSizeWatcher = true
         seekSize.progress = progressOfSizeScale(sc)
         editSize.setText(fmtScale(sc))
-        suppressSizeWatcher = false
         // 只显示倍率，不再显示"占屏高 xx%"（用户要求，且太长会被截断）
         txtSize.text = getString(R.string.size_label_value, fmtScale(sc))
     }

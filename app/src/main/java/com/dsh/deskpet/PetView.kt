@@ -417,18 +417,13 @@ class PetView(context: Context) : View(context) {
     /**
      * 应用新的尺寸倍率。
      *
-     * @param resnapSide 是否**顺便横向吸回当前所在的那一侧**（用户要求：调大小时吸附到边）。
-     *
-     * ⚠️ 吸附必须在这里、**在 syncWindow() 之前**算完，不能事后单独再搬一次窗口：
-     *    曾经的做法是 setSizeFraction(...) 之后再调一次 resnapSideNow()（内部又
-     *    syncWindow 一次）。一次重载里窗口被搬两次 —— 拖动滑条时看着在抽搐，
-     *    点「取消」回退大小时先摆到中间位置再挪回来，就是"飞出去又飞回来"。
-     *    现在只同步一次窗口，两个症状一起没了。
-     *
-     * ⚠️ 也不要**每拖动一格**都传 true：吸附是"落位"动作，拖动过程中只该缩放，
-     *    松手那一下再吸附（见 MainActivity 里 onStopTrackingTouch / 输入停顿）。
+     * ⚠️ 这里**只做"以吸附边为基准缩放"**（贴底/下角 -> 底边不动，贴侧边 -> 那一侧不动）。
+     *    2.1.6~2.1.9 曾在这里额外加"尺寸变化后强制吸回某一侧"，结果在手机上表现为
+     *    拖动时抖动、松手/取消时人物被甩到另一侧。用户拍板：尺寸这块照搬 2.1.3，
+     *    也就是下面这段基线实现 —— **不要再往里加吸附**。
+     *    （贴边的宠物本来就一直贴着：这条缩放规则保住了那条边。）
      */
-    fun setSizeFraction(f: Float, resnapSide: Boolean = false) {
+    fun setSizeFraction(f: Float) {
         // 与 Prefs 用同一套边界，别在这里写另一组数（否则两处不一致）
         sizeFrac = f.coerceIn(Prefs.MIN_SIZE, Prefs.MAX_SIZE)
         // 缩放前先记下**吸附边的屏幕位置**
@@ -478,20 +473,6 @@ class PetView(context: Context) : View(context) {
             )
             anchorX = cl[0] + centerFromTrackX()
             anchorY = cl[1] + centerFromTrackY()
-
-            // 吸附：横向直接落到**当前所在那一侧**的标准位置（纵向不动 ——
-            // 改尺寸不该顺手把宠物从屏幕上方挪到下方）。
-            //
-            // ⚠️ 判断贴哪一边要用**当前位置**，不能看 `state`：
-            //    state 可能是过期的（宠物被拖过、或「复位保留」留下了别处的位置），
-            //    照它吸附会把人物从一侧甩到另一侧 —— 用户反馈的"会飞走"就是它。
-            //    实测：按 state 吸附时锚点从 x=479 跳到 1274（横跨整屏）。
-            if (resnapSide) {
-                val curCenterX = anchorX - centerFromTrackX() + trackW / 2f
-                val onLeft = curCenterX <= b.width() / 2f
-                val trackLeft = if (onLeft) 0f else (b.width() - trackW).toFloat()
-                anchorX = trackLeft + centerFromTrackX()
-            }
         }
         dragOffsetX = 0f
         dragOffsetY = 0f
