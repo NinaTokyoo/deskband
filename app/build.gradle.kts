@@ -267,11 +267,16 @@ android {
         //                     改用 getForegroundService（走 startForegroundService，
         //                     通知动作永远允许）；那个分支第一件事就是
         //                     startForegroundCompat()，满足 5 秒内 startForeground 的要求）
+        //   2.1.26 -> 20126（取消通知栏里的「锁定 / 解锁」动作（用户要求）：那条动作
+        //                     在实机上点了没反应 —— Android 12 起通知动作启动服务受限，
+        //                     系统直接丢掉（getForegroundService 也救不回来）。
+        //                     通知栏只留「收起 / 呼出」；要锁就在 App 里点「锁定」。
+        //                     代码里注释写明了"别再往通知栏加第二个动作"）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
         //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
         //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
-        val vName = "2.1.25"
+        val vName = "2.1.26"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()

@@ -163,17 +163,6 @@ class PetService : Service(), PetView.Host {
                 refreshNotificationOnly()
                 return START_STICKY
             }
-            ACTION_LOCK_TOGGLE -> {
-                // 通知栏那个「锁定 / 解锁」：翻一下状态，然后**立刻**刷前台通知
-                //（按钮文案跟着状态走）。
-                //
-                // ⚠️ 顺序不能改：这个动作是用 PendingIntent.getForegroundService 发过来的，
-                //    服务必须在 5 秒内 startForeground —— startForegroundCompat() 正是那一步。
-                //    形象那边不用通知（PetView 触摸时现读 prefs）。
-                prefs.locked = !prefs.locked
-                runCatching { startForegroundCompat() }
-                return START_STICKY
-            }
             ACTION_SUMMON -> {
                 // 落到下面那条"把桌宠叫出来"的公共路径（与 App 内部呼出完全同一套：
                 // 窗口 attach 判据、reverseSlide/restoreRest 兜底都在那里）。
@@ -401,34 +390,13 @@ class PetService : Service(), PetView.Host {
             // 忽略
         }
 
-        // 第二个动作：**锁定 / 解锁**（用户要求，放在「收起」右边）。
-        // 与 App 里那两个锁定按钮是同一份状态（prefs.locked），
-        // 所以点完这里，App 界面上的按钮也会跟着变（App onResume 会 bindLock）。
-        try {
-            // ⚠️ 必须用 **getForegroundService**，不是 getService：
-            //    Android 12 起"后台启动服务"受限，通知动作走 getService 时
-            //    系统会直接丢掉这次启动（vivo 这类 ROM 尤其严）—— 表现就是
-            //    用户反馈的"通知栏里的解锁貌似不起作用"。
-            //    getForegroundService 走 startForegroundService，通知动作永远允许；
-            //    代价是服务必须在 5 秒内 startForeground —— 下面那个分支第一件事就是
-            //    startForegroundCompat()，满足要求（minSdk 26，API 一直可用）。
-            val lockIntent = PendingIntent.getForegroundService(
-                this, if (prefs.locked) 3 else 4,
-                Intent(this, PetService::class.java)
-                    .setAction(ACTION_LOCK_TOGGLE),
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            )
-            builder.addAction(
-                Notification.Action.Builder(
-                    Icon.createWithResource(this, R.drawable.ic_pet_notify),
-                    getString(if (prefs.locked) R.string.notif_action_unlock else R.string.notif_action_lock),
-                    lockIntent
-                ).build()
-            )
-        } catch (e: Exception) {
-            // 忽略
-        }
-
+        // ⚠️ 通知栏**只留「收起 / 呼出」一个动作**。
+        //
+        // 曾经在它右边加过一个「锁定 / 解锁」（与 App 里那两个按钮共用 prefs.locked）：
+        // AOSP 上能用，但用户实机上点了没反应 —— 那条动作用 PendingIntent 启动服务，
+        // Android 12 起"后台启动服务"受限、系统会把这次启动丢掉（vivo 这类 ROM 尤其严；
+        // 换成 getForegroundService 也没救回来）。用户拍板：**取消这个动作**。
+        // 要锁就在 App 里点「锁定」—— 别再往通知栏加第二个动作了。
         val notification = builder.build()
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
@@ -933,9 +901,6 @@ class PetService : Service(), PetView.Host {
         const val ACTION_RELOAD = "com.dsh.deskpet.action.RELOAD"
         const val ACTION_RESET = "com.dsh.deskpet.action.RESET"
         const val ACTION_NOTIFY = "com.dsh.deskpet.action.NOTIFY"
-
-        /** 通知栏那个「锁定 / 解锁」按钮 */
-        const val ACTION_LOCK_TOGGLE = "com.dsh.deskpet.action.LOCK_TOGGLE"
 
         /** 通知栏的「呼出」按钮。效果与 [start]（App 内部的呼出）一致。 */
         const val ACTION_SUMMON = "com.dsh.deskpet.action.SUMMON"
