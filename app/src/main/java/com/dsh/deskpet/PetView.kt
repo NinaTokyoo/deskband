@@ -479,12 +479,17 @@ class PetView(context: Context) : View(context) {
             anchorX = cl[0] + centerFromTrackX()
             anchorY = cl[1] + centerFromTrackY()
 
-            // 吸附：横向直接落到当前那一侧的**标准位置**（纵向不动 ——
+            // 吸附：横向直接落到**当前所在那一侧**的标准位置（纵向不动 ——
             // 改尺寸不该顺手把宠物从屏幕上方挪到下方）。
-            // 放在夹取之后：标准位置本来就是合法位置，不需要再夹。
+            //
+            // ⚠️ 判断贴哪一边要用**当前位置**，不能看 `state`：
+            //    state 可能是过期的（宠物被拖过、或「复位保留」留下了别处的位置），
+            //    照它吸附会把人物从一侧甩到另一侧 —— 用户反馈的"会飞走"就是它。
+            //    实测：按 state 吸附时锚点从 x=479 跳到 1274（横跨整屏）。
             if (resnapSide) {
-                val trackLeft =
-                    if (PetState.isLeft(state)) 0f else (b.width() - trackW).toFloat()
+                val curCenterX = anchorX - centerFromTrackX() + trackW / 2f
+                val onLeft = curCenterX <= b.width() / 2f
+                val trackLeft = if (onLeft) 0f else (b.width() - trackW).toFloat()
                 anchorX = trackLeft + centerFromTrackX()
             }
         }
