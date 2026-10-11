@@ -518,11 +518,11 @@ class PetService : Service(), PetView.Host {
                 } else {
                     0
                 },
-            // 半透明自己压一层（AOSP 上不带 flag 的窗口不会被系统淡化，实机 ROM 会，
-            // 两边表现要一致 —— 见 syncPassThrough 的说明）
+            // 半透明**由系统给**：挂 FLAG_NOT_TOUCHABLE 的悬浮窗，实机 ROM 自己会淡化
+            //（这正是 2.1.14~2.1.18 那场"关掉互动就变淡"的根源 —— 现在它成了想要的效果）。
+            // ⚠️ 别自己再压一层 alpha：用户明确"不用刻意变淡，系统给的透明度就够了"。
             PixelFormat.TRANSLUCENT
         )
-        view.alpha = if (prefs.petPassesThrough) FADE_ALPHA else 1f
         p.gravity = Gravity.TOP or Gravity.START
         p.x = zero[0]
         p.y = zero[1]
@@ -654,29 +654,24 @@ class PetService : Service(), PetView.Host {
     }
 
     /**
-     * 让窗口的可触性 / 透明度跟上「锁定互动：淡出」的状态。
+     * 让窗口的可触性跟上「锁定互动：淡出」的状态。
      *
      * 淡出 = 形象半透明 **且** 触控上完全透明（点它等于点它下面的屏幕）：
      *   · 触控穿透只有 `FLAG_NOT_TOUCHABLE` 能做到（视图返回 false 不够，实测过）；
      *   · 而这个 flag **只能在 addView 那一刻定死** —— 运行中改 flag 要走
      *     `updateViewLayout`，那会让窗口 surface 重建、画面发白/发花（用户实测）。
      *     所以状态真的变了就**重建窗口**。
-     *   · 半透明另外自己压一层 [FADE_ALPHA]：实机 ROM 对不可触摸的悬浮窗本来就会
-     *     渲染成半透明（这正是当初那场"关掉互动就变淡"的根源），但 AOSP 不会 ——
-     *     自己设一次，行为在任何机器上都一致。
+     *   · 半透明**不自己设**：挂了这个 flag 的悬浮窗由系统淡化，实机上就是用户
+     *     想要的那种透明度（他自己点名"系统给的透明度就足够了，别刻意变淡"）。
      *
      * @return 是否**已经重建过窗口**（调用方要据此提前返回：新窗口已按新状态建好）
      */
     private fun syncPassThrough(): Boolean {
-        val v = petView ?: return false
+        petView ?: return false
         val has = petParams?.let {
             (it.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE) != 0
         } ?: return false
-        if (has == prefs.petPassesThrough) {
-            // 状态没变：只把透明度对齐（成本极低）
-            v.alpha = if (prefs.petPassesThrough) FADE_ALPHA else 1f
-            return false
-        }
+        if (has == prefs.petPassesThrough) return false
         removePet()
         showPet()
         return true
@@ -923,13 +918,6 @@ class PetService : Service(), PetView.Host {
 
         private const val CHANNEL_ID = "deskpet"
         private const val NOTIF_ID = 1001
-
-        /**
-         * 「锁定互动：淡出」时形象的不透明度（用户要求"半透明"）。
-         * 实机 ROM 对挂了 FLAG_NOT_TOUCHABLE 的悬浮窗还会再淡一层，所以那边看起来更淡；
-         * 想更实/更淡改这一个数就行。
-         */
-        private const val FADE_ALPHA = 0.5f
 
         const val ACTION_STOP = "com.dsh.deskpet.action.STOP"
         const val ACTION_RELOAD = "com.dsh.deskpet.action.RELOAD"

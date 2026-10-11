@@ -250,11 +250,14 @@ android {
         //                     ④ 锁定时所有卡片的「管理/新增」不能展开并提示
         //                     「请解除锁定以操作」；已展开的仍可收起，
         //                     「当前形象」二级菜单锁定时照常可用）
+        //   2.1.22 -> 20122（「淡出」的半透明**交回系统**：不再自己压 view.alpha=0.5
+        //                     （用户说"太淡了，系统给的透明度就足够"）。挂 FLAG_NOT_TOUCHABLE
+        //                     的悬浮窗由 ROM 淡化，就是前几版看到的那种程度）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
         //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
         //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
-        val vName = "2.1.21"
+        val vName = "2.1.22"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()

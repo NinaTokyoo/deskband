@@ -676,16 +676,20 @@ canvas.scale(sx, sy, cx, squashPivotLocalY())
     |---|---|---|---|
     | 开 `MODE_ON` | 实心 | 点击 / 长按照常，拖动仍被锁定挡掉 | `PetView` 正常受理 |
     | 关 `MODE_OFF` | 实心 | 任何操作都不响应（不播按压动画、不点击跳跃） | `interactionLocked()` 直接 `return false` |
-    | 淡出 `MODE_FADE` | **半透明**（自己压 `FADE_ALPHA = 0.5f`） | **触控上完全透明**：点它 = 点它下面的屏幕 | 窗口挂 `FLAG_NOT_TOUCHABLE` |
+    | 淡出 `MODE_FADE` | **半透明**（**系统给的**，自己不再压 alpha） | **触控上完全透明**：点它 = 点它下面的屏幕 | 窗口挂 `FLAG_NOT_TOUCHABLE` |
   - 淡出的穿透**只能靠窗口 flag**：实测"视图 `onTouchEvent` 返回 false"不够 ——
     那只是"这个视图不消费"，事件**不会**转交给下面的窗口（拿被形象压住的按钮试过，
     返回 false 时点它毫无反应）。`FLAG_SLIPPERY` 按数值挂也穿不过去。
   - ⚠️ **`FLAG_NOT_TOUCHABLE` 只能在 `addView` 那一刻定死**：运行中改 flag 要走
     `updateViewLayout`，会让 surface 重建、用户实机上画面发白/发花。
     所以 `syncPassThrough()` 发现状态真的变了就**重建窗口**（`removePet()` + `showPet()`），
-    并让 `reloadPet()` 提前返回；状态没变时只对齐 `view.alpha`。
+    并让 `reloadPet()` 提前返回。
     （这条经验最初是当 bug 修的：2.1.14~2.1.18 那场"关掉互动形象就变淡"其实正是
     这个 flag 的效果 —— 用户后来把它变成了想要的"淡出"状态。）
+  - ⚠️ **半透明不要自己设**：2.1.21 试过额外压一层 `view.alpha = 0.5f`，
+    用户反馈"太淡了，系统给的透明度就足够了" —— 挂了这个 flag 的悬浮窗由 ROM 淡化，
+    那才是他要的程度。**只留 flag，不碰 alpha**（AOSP 上因此看不出变淡，
+    这是正常的：淡是实机 ROM 给的效果）。
   - ⚠️ **锁定的判据一律"现读 prefs"**（`PetView` 自己有 Prefs 实例：`interactionLocked()`
     / `moveLocked()`）。**不要**改成"由服务下发标志"：2.1.14~2.1.20 就是下发式写法，
     标志在某条路径上没刷新，表现成"明明关了互动、点它还在跳"。
