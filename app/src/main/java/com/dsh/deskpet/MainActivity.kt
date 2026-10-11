@@ -417,6 +417,10 @@ class MainActivity : Activity() {
         // 锁定决定它还能不能被拖动，锁定互动决定点击/长按还灵不灵。
         btnLock.setOnClickListener {
             prefs.locked = !prefs.locked
+            // 一旦锁定，立刻把所有已打开的卡片收回（用户要求）：锁定的语义就是
+            // "别再去动设置"，展开的卡片留在那里既碍事、又正好是锁定要拦的东西。
+            // 解锁时不收（用户是来改设置的，收了反而要多点一次）。
+            if (prefs.locked) collapseAllCards()
             bindLock()
             PetService.notifyChanged(this)
         }
@@ -625,8 +629,10 @@ class MainActivity : Activity() {
     /**
      * 把所有卡片收回一横条（不含自定义形象卡的展开区，那由 [collapseCustomCard] 管）。
      *
-     * 进入应用时调（见 [onResume]）：冷启动、或离开超过 [CARD_RESET_AFTER_MS] 再回来，
-     * 一律回到"全收起"的初始状态（用户要求）。
+     * 两个地方调：
+     *   · 进入应用时（见 [onResume]）：冷启动、或离开超过 [CARD_RESET_AFTER_MS] 再回来，
+     *     一律回到"全收起"的初始状态（用户要求）；
+     *   · 点「锁定」的那一刻（用户要求：一旦锁定立刻关闭所有已打开的卡片）。
      */
     private fun collapseAllCards() {
         for (c in expandCards) setCardExpanded(c.body, false)
