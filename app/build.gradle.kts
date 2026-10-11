@@ -256,11 +256,16 @@ android {
         //   2.1.23 -> 20123（点「锁定」的那一刻立刻把所有已打开的卡片收回
         //                     —— collapseAllCards()（含「当前形象」二级菜单）；
         //                     解锁时不收，用户是来改设置的）
+        //   2.1.24 -> 20124（「自定义形象」与「通知栏内容」两张卡**不受锁定限制**
+        //                     （用户要求）：锁定时照样能展开/管理/改通知文案 ——
+        //                     它们不是锁定要拦的"数值"。registerExpandCard 新增
+        //                     lockExempt 参数，「通知栏内容」传 true；自定义形象的
+        //                     新增/管理两处闸门直接去掉）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
         //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
         //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
-        val vName = "2.1.23"
+        val vName = "2.1.24"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()

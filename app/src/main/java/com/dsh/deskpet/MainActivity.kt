@@ -379,7 +379,9 @@ class MainActivity : Activity() {
                 prefs.notifyText = notifySnap[1]
                 refreshNotifyFields()
                 PetService.refreshNotification(this)
-            }
+            },
+            // 通知栏内容 = 文案，不是锁定要拦的"数值" —— 锁定时也能展开改（用户要求）
+            lockExempt = true
         )
         setupSummonControls()
         setupBounceControls()
@@ -543,7 +545,12 @@ class MainActivity : Activity() {
         body: View,
         manage: Button,
         capture: () -> Unit = {},
-        restore: () -> Unit = {}
+        restore: () -> Unit = {},
+        /**
+         * 锁定时**照样可以展开**（用户要求）。
+         * 目前只有「通知栏内容」用它 —— 那两项是文案，不属于锁定要拦的"数值"。
+         */
+        lockExempt: Boolean = false
     ) {
         val card = ExpandCard(body, manage, capture, restore)
         expandCards.add(card)
@@ -552,10 +559,12 @@ class MainActivity : Activity() {
         (body as? CardPanel)?.onUserTouch = { markCardDirty(card) }
         manage.setOnClickListener {
             // 锁定期间**卡片不能被展开**（用户要求）：点「管理」只提示「请解除锁定以操作」。
-            // ⚠️ 两个例外都要留着：
+            // ⚠️ 三个例外都要留着：
             //   · 已经展开的卡片必须还能「收起 / 取消」，否则锁定时界面卡在展开态出不来；
-            //   · 「当前形象」那个二级菜单（切换形象）锁定时照常可用。
-            if (prefs.locked && body.visibility != View.VISIBLE) {
+            //   · 「当前形象」那个二级菜单（切换形象）锁定时照常可用；
+            //   · 标了 [lockExempt] 的卡片（「通知栏内容」）锁定时也能展开 ——
+            //     里面调的是通知文案，不是锁定要拦的"数值"（用户要求）。
+            if (prefs.locked && !lockExempt && body.visibility != View.VISIBLE) {
                 Toast.makeText(this, R.string.locked_hint, Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
@@ -1177,11 +1186,7 @@ class MainActivity : Activity() {
     private fun setupCustomSkinControls() {
         // 不在新增态时是「新增」，在新增态时是「保存」（文案在 setCustomMode 里定）
         btnCustomAdd.setOnClickListener {
-            // 锁定期间不许展开卡片（用户要求）；「当前形象」那个二级菜单不受此限
-            if (prefs.locked) {
-                Toast.makeText(this, R.string.locked_hint, Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
+            // 自定义形象**不受锁定限制**（用户要求）：新增/管理照常可用
             if (customMode == CUSTOM_ADD) saveCustomSkin() else setCustomMode(CUSTOM_ADD)
         }
         // 「取消 / 收起 / 管理」= 三个不同意思（用户要求）：
@@ -1190,13 +1195,7 @@ class MainActivity : Activity() {
         //   · 新增表单 -> 「取消」= 放弃本次新增（名字与素材一起清掉）
         //   · 横条态 -> 「管理」= 展开列表
         btnCustomManage.setOnClickListener {
-            // 锁定期间不许展开/收起卡片（用户要求）。注意：已经展开的卡片要允许「收起」，
-            // 否则锁定时界面会被卡在展开态出不来。
-            val willExpand = customMode == CUSTOM_NONE
-            if (prefs.locked && willExpand) {
-                Toast.makeText(this, R.string.locked_hint, Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
+            // 自定义形象**不受锁定限制**（用户要求）：管理列表、删除、取消都照常可用
             when {
                 customMode == CUSTOM_MANAGE && pendingDeleteId != null -> {
                     pendingDeleteId = null
