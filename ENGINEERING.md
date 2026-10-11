@@ -669,16 +669,24 @@ canvas.scale(sx, sy, cx, squashPivotLocalY())
     （不刷的话滑条/输入框会停在用户拖到的位置，看着像"改了没生效"）。
     ⚠️ 只拦"数值"：角色、明暗、通知文案、以及位置/运行中这类内部状态不受限 ——
     用户要的是"没法调数值"，不是"整个 App 冻结"。`doReset()`（复位）也算改数值，一并拦。
-  - `Prefs.lockInteraction`：**锁定互动关 = 触控上完全透明**。
-    实现是给窗口挂 `FLAG_NOT_TOUCHABLE`（`PetService.applyTouchability()`）——
-    比"视图 `onTouchEvent` 返回 false"硬：后者依赖系统把事件继续派发给下面的窗口，
-    前者是系统层面直接跳过这个窗口，点形象等于点它下面那一层屏幕。
+  - `Prefs.lockInteraction`：**锁定互动关 = 触控上完全透明**（点形象 = 点它下面的屏幕）。
+    **只能靠窗口的 `FLAG_NOT_TOUCHABLE`** —— 实测"视图 `onTouchEvent` 返回 false"不够：
+    那只是"这个视图不消费"，事件**不会**转交给下面的窗口（拿被形象压住的「管理」
+    按钮试过，返回 false 时点它毫无反应）。
+    ⚠️ 但 **flag 只能在 `addView` 那一刻定死**：改 flag 要 `updateViewLayout`，
+    而它会重建窗口 surface —— 用户实机上表现成"关掉锁定互动后整个形象变透明"
+    （模拟器复现不出来）。所以 `applyLockToView()` 发现状态真的变了就
+    **重建窗口**（`removePet()` + `showPet()`）；状态没变（例如调尺寸的高频重载）直接返回。
     开着的时候只保留点击/长按（`PetView` 里锁定后不进拖动分支）。
-  - 标志由服务下发（`showPet` / `reloadPet` 都设），两个按钮走
-    `notifyChanged` → `reloadPet` 就能立刻生效。
+  - 标志由服务下发（`showPet` / `reloadPet` / 通知栏的 `ACTION_LOCK_TOGGLE` 都走
+    `applyLockToView()`），App 里两个按钮走 `notifyChanged` → `reloadPet` 同样能生效。
   - 实测（模拟器）：锁定后拖形象窗口坐标**完全不变**；拖尺寸滑条 `size_scale` 仍是 1.0
-    且弹出「请解除锁定以操作」；点「锁定互动」-> 关后窗口 flags 出现 `NOT_TOUCHABLE`；
-    点「解除」后 flags 复原且立刻又能拖动。
+    且弹出「请解除锁定以操作」；锁定+互动关时点被形象压住的「管理」能**穿透**生效
+    （[管理/收起] -> [取消/展开]），互动开时点它无反应；两种状态下形象都完整可见
+    （形象区域粉色像素 42540 / 43722，真透明会接近 0）。
+  - 通知栏也有一个「锁定 / 解锁」动作（`ACTION_LOCK_TOGGLE`，排在「收起」右边），
+    与 App 里那两个按钮共用同一份 `prefs.locked`；App 的 `refreshUi()` 会 `bindLock()`
+    把文案对齐。锁定态的按钮文案统一用「**解锁**」（曾写作"解除"，用户要求改）。
 
 - **尺寸缩放的锚点规则：就用 2.1.10 那一版（用户实测后拍板）**：
   - **横向**：贴左 -> 左边不动，贴右 -> 右边不动；

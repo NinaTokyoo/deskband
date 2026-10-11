@@ -208,11 +208,21 @@ android {
         //                     锁定互动关 = 触控完全透明（窗口挂 FLAG_NOT_TOUCHABLE，
         //                      点它等于点它下面的屏幕），开 = 只保留点击/长按。
         //                     顺带：保存自定义形象的提示语改成「已保存」）
+        //   2.1.15 -> 20115（通知栏在「收起」右边新增「锁定 / 解锁」动作，
+        //                     与 App 里那两个按钮共用 prefs.locked；
+        //                     App 里锁定态的按钮文案 解除 -> 解锁，两处统一）
+        //   2.1.16 -> 20116（修"关掉锁定互动后形象视觉上变透明"（用户实机）：
+        //                     触控穿透只能靠窗口 FLAG_NOT_TOUCHABLE（视图返回 false
+        //                     实测不会把事件转交给下面的窗口），但改 flag 用的
+        //                     updateViewLayout 会让 surface 重建、画面发白；
+        //                     改成 **状态变了就重建窗口**，flag 只在 addView 时定死。
+        //                     实测：锁定+互动关 -> flags 含 NOT_TOUCHABLE 且点被形象
+        //                     压住的按钮能生效；互动开 -> 点它无反应，形象完全可见）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
         //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
         //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
-        val vName = "2.1.14"
+        val vName = "2.1.16"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()

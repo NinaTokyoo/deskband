@@ -30,7 +30,7 @@
     <!-- 锁定 / 锁定互动（用户要求）：第一张卡里、复位保留下面那一行的两个按钮，
          尺寸与「复位」「复位保留」一致。锁定态下按钮文案变「解除」。 -->
     <string name="lock_off">锁定</string>
-    <string name="lock_on">解除</string>
+    <string name="lock_on">解锁</string>
     <string name="lock_interact_on">锁定互动：开</string>
     <string name="lock_interact_off">锁定互动：关</string>
     <!-- 锁定期间在 App 里动数值时的提示（用户指定文案） -->
@@ -126,6 +126,10 @@
     <string name="notify_input">留空使用当前标题</string>
     <string name="notify_count">已输入 %1$d / %2$d 字符</string>
     <string name="notify_saved">通知内容已保存</string>
+    <!-- 通知栏第二个动作：锁定 / 解锁（用户要求，放在「收起」右边）。
+         文案按当前状态切换，与 App 里那个按钮共用 prefs.locked。 -->
+    <string name="notif_action_lock">锁定</string>
+    <string name="notif_action_unlock">解锁</string>
     <string name="notify_restored">通知内容已恢复默认</string>
 
     <!-- ⑥ 明暗模式 -->

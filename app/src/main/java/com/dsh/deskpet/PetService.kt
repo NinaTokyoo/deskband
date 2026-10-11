@@ -163,6 +163,15 @@ class PetService : Service(), PetView.Host {
                 refreshNotificationOnly()
                 return START_STICKY
             }
+            ACTION_LOCK_TOGGLE -> {
+                // 通知栏那个「锁定 / 解锁」：只是翻一下状态，
+                // 然后把两件事刷到位 —— 形象能不能被拖（applyTouchability + 视图标志）、
+                // 以及通知栏自己那个按钮的文案（重建通知）。
+                prefs.locked = !prefs.locked
+                applyLockToView()
+                runCatching { startForegroundCompat() }
+                return START_STICKY
+            }
             ACTION_SUMMON -> {
                 // 落到下面那条"把桌宠叫出来"的公共路径（与 App 内部呼出完全同一套：
                 // 窗口 attach 判据、reverseSlide/restoreRest 兜底都在那里）。
@@ -390,6 +399,27 @@ class PetService : Service(), PetView.Host {
             // 忽略
         }
 
+        // 第二个动作：**锁定 / 解锁**（用户要求，放在「收起」右边）。
+        // 与 App 里那两个锁定按钮是同一份状态（prefs.locked），
+        // 所以点完这里，App 界面上的按钮也会跟着变（App onResume 会 bindLock）。
+        try {
+            val lockIntent = PendingIntent.getService(
+                this, if (prefs.locked) 3 else 4,
+                Intent(this, PetService::class.java)
+                    .setAction(ACTION_LOCK_TOGGLE),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+            builder.addAction(
+                Notification.Action.Builder(
+                    Icon.createWithResource(this, R.drawable.ic_pet_notify),
+                    getString(if (prefs.locked) R.string.notif_action_unlock else R.string.notif_action_lock),
+                    lockIntent
+                ).build()
+            )
+        } catch (e: Exception) {
+            // 忽略
+        }
+
         val notification = builder.build()
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
@@ -478,7 +508,15 @@ class PetService : Service(), PetView.Host {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                 or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-                or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                // 锁定 + 锁定互动关（用户要求）：形象在触控上完全透明 ——
+                // **只在建窗口时定**，运行中切换靠 applyLockToView() 重建窗口，
+                // 不能用 updateViewLayout 改（那会让 surface 重建、画面发白/透明）。
+                or if (prefs.locked && !prefs.lockInteraction) {
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                } else {
+                    0
+                },
             PixelFormat.TRANSLUCENT
         )
         p.gravity = Gravity.TOP or Gravity.START
@@ -494,8 +532,8 @@ class PetService : Service(), PetView.Host {
 
         petView = view
         petParams = p
-        // 呼出时按当前锁定状态定一次窗口的可触性（锁定 + 锁定互动关 = 完全透明）
-        applyTouchability()
+        // 呼出时按当前锁定状态下发一次（锁定后形象不能被拖动 / 互动关则触控穿透）
+        applyLockToView()
 
         // 恢复上次的吸附状态与位置。
         //
@@ -614,25 +652,31 @@ class PetService : Service(), PetView.Host {
     }
 
     /**
-     * 「锁定 + 锁定互动关」时，让形象在**触控上完全透明**（用户要求）：
-     * 点它等于点它下面那一层屏幕，它占的那块地方不再截获任何触摸。
+     * 把「锁定 / 锁定互动」两个状态下发到形象上。
      *
-     * 用窗口的 `FLAG_NOT_TOUCHABLE` 来保证 —— 比"视图 onTouchEvent 返回 false"
-     * 更硬：后者要依赖系统把这一串事件继续派发给下面的窗口，前者是系统层面直接跳过。
-     * 两个锁定开关一改（MainActivity 走 notifyChanged → reloadPet）就会刷到这里。
+     * 两个入口都走它：App 里那两个按钮（notifyChanged → reloadPet）与通知栏那个
+     * 「锁定 / 解锁」（ACTION_LOCK_TOGGLE）。合成一个函数是为了两条路不会走岔。
+     *
+     * ⚠️ **触控穿透只能靠窗口 flag**：`PetView.onTouchEvent` 返回 false 只是"这个视图
+     *    不消费"，事件**不会**转交给下面的窗口 —— 拿被形象压住的「管理」按钮实测过，
+     *    返回 false 时点它毫无反应，挂上 `FLAG_NOT_TOUCHABLE` 才会穿透。
+     * ⚠️ 但 **不能**用 `updateViewLayout` 去改 flag：改 flags 会让窗口 surface 重建，
+     *    在用户实机上表现为"关掉锁定互动后整个形象变透明"（模拟器复现不出来）。
+     *    所以改成**状态真的变了就重建窗口**，flag 只在 addView 那一刻定死；
+     *    状态没变时（例如调尺寸会走到的重载）直接返回，不做无谓重建。
      */
-    private fun applyTouchability() {
+    private fun applyLockToView() {
         val v = petView ?: return
-        val p = petParams ?: return
-        val passThrough = prefs.locked && !prefs.lockInteraction
-        val has = (p.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE) != 0
-        if (passThrough == has) return
-        p.flags = if (passThrough) {
-            p.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-        } else {
-            p.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
-        }
-        runCatching { wm.updateViewLayout(v, p) }
+        v.locked = prefs.locked
+        v.lockInteraction = prefs.lockInteraction
+        val want = prefs.locked && !prefs.lockInteraction
+        val cur = petParams?.let {
+            (it.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE) != 0
+        } ?: return
+        if (want == cur) return
+        // 重建：removePet() 会先把位置存好，showPet() 再按新 flag 建窗口
+        removePet()
+        showPet()
     }
 
     private fun reloadPet() {
@@ -674,9 +718,7 @@ class PetService : Service(), PetView.Host {
         v.sprite = sprite
         // 锁定 / 锁定互动可能刚在 App 里切换过，每次重载都重新下发一次
         //（MainActivity 的两个锁定按钮就是靠 notifyChanged 走到这里的）
-        v.locked = prefs.locked
-        v.lockInteraction = prefs.lockInteraction
-        applyTouchability()
+        applyLockToView()
         // 以**吸附边为基准**缩放（贴底/下角 -> 底边不动，贴侧边 -> 那一侧不动）。
         //
         // ⚠️ 就到这里为止 —— 2.1.6~2.1.9 曾在这里额外做"吸回某一侧"，结果是手机上
@@ -883,6 +925,9 @@ class PetService : Service(), PetView.Host {
         const val ACTION_RELOAD = "com.dsh.deskpet.action.RELOAD"
         const val ACTION_RESET = "com.dsh.deskpet.action.RESET"
         const val ACTION_NOTIFY = "com.dsh.deskpet.action.NOTIFY"
+
+        /** 通知栏那个「锁定 / 解锁」按钮 */
+        const val ACTION_LOCK_TOGGLE = "com.dsh.deskpet.action.LOCK_TOGGLE"
 
         /** 通知栏的「呼出」按钮。效果与 [start]（App 内部的呼出）一致。 */
         const val ACTION_SUMMON = "com.dsh.deskpet.action.SUMMON"

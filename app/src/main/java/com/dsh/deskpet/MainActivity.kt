@@ -721,6 +721,10 @@ class MainActivity : Activity() {
         setPermMark(markOverlay, Settings.canDrawOverlays(this))
         setPermMark(markNotify, hasNotificationPermission())
 
+        // 锁定按钮：通知栏那个「锁定 / 解锁」也能翻这个状态，
+        // 回到 App 时得把两个按钮的文案跟 prefs 对齐（用户要求：收起的右边那个动作）
+        bindLock()
+
         // 开关按钮：呼出/收起 + **当前形象名**（名字用强调色，见 refreshSummonLabel）。
         // 名字跟着下拉框走，与桌宠是否在运行无关。
         refreshSummonLabel()
