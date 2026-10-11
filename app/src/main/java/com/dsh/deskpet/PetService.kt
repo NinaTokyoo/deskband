@@ -508,25 +508,18 @@ class PetService : Service(), PetView.Host {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                 or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-                or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                // 锁定 + 锁定互动关（用户要求）：形象在触控上完全透明 ——
-                // 点它等于点它下面的屏幕。
-                //
-                // ⚠️ 只有 FLAG_NOT_TOUCHABLE 能做到（实测：视图返回 false 不够；
-                //    FLAG_SLIPPERY 按数值挂上去也穿不过去）。
-                //    flag 只在**建窗口那一刻**定死，运行中切换靠 applyLockToView()
-                //    重建窗口 —— 不能用 updateViewLayout 改 flag（那会让 surface 重建）。
-                or if (prefs.locked && !prefs.lockInteraction) {
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                } else {
-                    0
-                },
+                or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            // ⚠️ 这里**不要**加 FLAG_NOT_TOUCHABLE：
+            //    它能实现"锁定互动关时触摸穿透到下面的屏幕"，但用户实机上带这个 flag 的
+            //    悬浮窗会被系统整块渲染成**半透明**（模拟器复现不出来；加"受信悬浮窗"
+            //    标记也救不回来）。用户明确"不要发淡"，所以放弃穿透：
+            //    锁定 + 互动关 = 形象**完全实心**、点它没有任何反应（也不穿透）。
+            //    想要"穿透优先"就把这个 flag 加回来（其余代码不用动）。
             PixelFormat.TRANSLUCENT
         )
         p.gravity = Gravity.TOP or Gravity.START
         p.x = zero[0]
         p.y = zero[1]
-        markTrustedOverlay(p)
 
         try {
             wm.addView(view, p)
@@ -666,47 +659,19 @@ class PetService : Service(), PetView.Host {
      * 状态变化时重建窗口（见下面的说明），这里只同步两个标志。
      */
     /**
-     * 把窗口标成**受信悬浮窗**（`WindowManager.LayoutParams.setTrustedOverlay(true)`）。
-     *
-     * 为什么需要：Android 12 起对"非受信悬浮窗"有额外处理，而用户实机上
-     * "锁定互动关"（= 我们的窗口挂了 FLAG_NOT_TOUCHABLE、要让触摸穿到下面）时
-     * 整个形象会被渲染成**半透明** —— 时间点与那个 flag 完全对应，
-     * 怀疑是 ROM 对"不可触摸的悬浮窗"做的降级显示 ✗。标成受信悬浮窗是官方语义上
-     * 正确的做法（受信悬浮窗可以合法地把触摸透传给下面的窗口）。
-     *
-     * ⚠️ 这个方法在 SDK 里是 `@hide`（直接写编译不过），所以走**反射**；
-     *    被非 SDK 接口限制挡掉时会抛异常，这里吞掉即可（不影响其它功能）。
-     */
-    private fun markTrustedOverlay(p: WindowManager.LayoutParams) {
-        try {
-            val m = WindowManager.LayoutParams::class.java
-                .getMethod("setTrustedOverlay", Boolean::class.javaPrimitiveType)
-            m.invoke(p, true)
-        } catch (e: Throwable) {
-            // 方法不存在 / 被限制 —— 忽略
-        }
-    }
-
-    /**
-     * 把「锁定 / 锁定互动」两个状态下发到形象上，并在**触控穿透**状态发生变化时
-     * 重建窗口（窗口 flag 只能在 addView 那一刻定，运行中改 flag 要
-     * `updateViewLayout`，那会让 surface 重建、用户实机上画面发白）。
+     * 把「锁定 / 锁定互动」两个状态下发到形象上。
      *
      * 两个入口都走它：App 里那两个按钮（notifyChanged → reloadPet）与通知栏那个
      * 「锁定 / 解锁」（ACTION_LOCK_TOGGLE）。
+     *
+     * ⚠️ 这里**不重建窗口**：早先为了在运行时切换 FLAG_NOT_TOUCHABLE（触控穿透）
+     *    才需要重建，现在那个 flag 已经不用了（见 showPet 里的说明），
+     *    切换锁定状态不会再闪一下。视图侧只改两个标志，立即生效。
      */
     private fun applyLockToView() {
         val v = petView ?: return
         v.locked = prefs.locked
         v.lockInteraction = prefs.lockInteraction
-        val want = prefs.locked && !prefs.lockInteraction
-        val cur = petParams?.let {
-            (it.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE) != 0
-        } ?: return
-        if (want == cur) return
-        // 重建：removePet() 会先把位置存好，showPet() 再按新 flag 建窗口
-        removePet()
-        showPet()
     }
 
     private fun reloadPet() {
