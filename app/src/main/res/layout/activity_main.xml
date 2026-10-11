@@ -99,6 +99,47 @@
                     android:ellipsize="end"
                     android:text="@string/reset_keep_off" />
             </LinearLayout>
+
+            <!-- 锁定 / 锁定互动（用户要求）：位置在「复位」「复位保留」下面，
+                 两个按钮的尺寸与上一行**完全一致**（左按钮 wrap_content + 13dp 内边距、
+                 右按钮 weight=1，中间同样是 13dp 的 Space）。 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="horizontal"
+                android:baselineAligned="false">
+
+                <Button
+                    android:id="@+id/btnLock"
+                    style="@style/BigButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="0dp"
+                    android:paddingStart="13dp"
+                    android:paddingEnd="13dp"
+                    android:minWidth="0dp"
+                    android:maxLines="1"
+                    android:text="@string/lock_off" />
+
+                <Space
+                    android:layout_width="13dp"
+                    android:layout_height="1dp" />
+
+                <Button
+                    android:id="@+id/btnLockInteract"
+                    style="@style/BigButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginTop="0dp"
+                    android:paddingStart="13dp"
+                    android:paddingEnd="13dp"
+                    android:minWidth="0dp"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="@string/lock_interact_on" />
+            </LinearLayout>
         </LinearLayout>
 
         <!-- ② 形象：右下角实时显示当前角色的「右下角」素材。

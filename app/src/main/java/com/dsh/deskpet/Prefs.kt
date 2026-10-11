@@ -27,6 +27,43 @@ class Prefs(context: Context) {
         set(v) { sp.edit().putString(KEY_SKIN, v).apply() }
 
     /**
+     * **锁定**（用户要求）：锁上以后
+     *   · 形象在屏幕上不能被拖动；
+     *   · App 里**任何数值都不许改** —— 所有参数 setter 都先过 [rejectWhenLocked]，
+     *     被拦下时回调 [onBlockedAdjust]，由界面提示「请解除锁定以操作」并把控件弹回原值。
+     * 「锁定互动」是另一个开关：[lockInteraction]，见它的说明。
+     */
+    var locked: Boolean
+        get() = sp.getBoolean(KEY_LOCKED, false)
+        set(v) { sp.edit().putBoolean(KEY_LOCKED, v).apply() }
+
+    /**
+     * **锁定互动**（用户要求）：锁定状态下还允不允许对屏幕上的形象做操作。
+     *   · 关 -> 点击 / 长按**完全没有反应**（连按压动画都不播）；
+     *   · 开 -> 只保留点击与长按（拖动依旧被锁定挡掉）。
+     * 未锁定时这个开关不起作用。
+     */
+    var lockInteraction: Boolean
+        get() = sp.getBoolean(KEY_LOCK_INTERACT, true)
+        set(v) { sp.edit().putBoolean(KEY_LOCK_INTERACT, v).apply() }
+
+    /** 锁定期间有人试图改数值：界面挂上去做提示 + 把控件刷回存档值 */
+    var onBlockedAdjust: (() -> Unit)? = null
+
+    /**
+     * 参数 setter 的统一闸门：锁定期间拒绝写入，并通知界面提示一次。
+     *
+     * ⚠️ 只在**真正"数值"**的 setter 里调（倍率、开关这些）；
+     *    角色、明暗、通知文案、以及内部状态（位置、运行中…）不受锁定限制 ——
+     *    用户要的是"没法调数值"，不是"整个 App 冻结"。
+     */
+    private fun rejectWhenLocked(): Boolean {
+        if (!locked) return false
+        onBlockedAdjust?.invoke()
+        return true
+    }
+
+    /**
      * 宠物大小的**倍率**（用户可调，0.5~5）。
      *
      * 1.0 = 标准值 [SIZE_BASE]（占可用高度的 8%）。
@@ -35,6 +72,7 @@ class Prefs(context: Context) {
     var sizeScale: Float
         get() = sp.getFloat(KEY_SIZE_SCALE, 1f).coerceIn(SIZE_SCALE_MIN, SIZE_SCALE_MAX)
         set(v) {
+            if (rejectWhenLocked()) return
             sp.edit()
                 .putFloat(KEY_SIZE_SCALE, v.coerceIn(SIZE_SCALE_MIN, SIZE_SCALE_MAX))
                 .putBoolean(KEY_SIZE_TUNED, true)
@@ -105,6 +143,7 @@ class Prefs(context: Context) {
     var bounceAmpScale: Float
         get() = sp.getFloat(KEY_BOUNCE_AMP, 1f).coerceIn(AMP_SCALE_MIN, AMP_SCALE_MAX)
         set(v) {
+            if (rejectWhenLocked()) return
             sp.edit().putFloat(
                 KEY_BOUNCE_AMP, v.coerceIn(AMP_SCALE_MIN, AMP_SCALE_MAX)
             ).apply()
@@ -114,6 +153,7 @@ class Prefs(context: Context) {
     var bounceTimeScale: Float
         get() = sp.getFloat(KEY_BOUNCE_TIME, 1f).coerceIn(TIME_SCALE_MIN, TIME_SCALE_MAX)
         set(v) {
+            if (rejectWhenLocked()) return
             sp.edit().putFloat(
                 KEY_BOUNCE_TIME, v.coerceIn(TIME_SCALE_MIN, TIME_SCALE_MAX)
             ).apply()
@@ -189,7 +229,10 @@ class Prefs(context: Context) {
      */
     var bounceEnabled: Boolean
         get() = sp.getBoolean(KEY_BOUNCE_ON, true)
-        set(v) { sp.edit().putBoolean(KEY_BOUNCE_ON, v).apply() }
+        set(v) {
+            if (rejectWhenLocked()) return
+            sp.edit().putBoolean(KEY_BOUNCE_ON, v).apply()
+        }
 
     // ---------------------------------------------------------------- 呼出回弹
 
@@ -200,12 +243,16 @@ class Prefs(context: Context) {
      */
     var summonBounceEnabled: Boolean
         get() = sp.getBoolean(KEY_SUMMON_ON, true)
-        set(v) { sp.edit().putBoolean(KEY_SUMMON_ON, v).apply() }
+        set(v) {
+            if (rejectWhenLocked()) return
+            sp.edit().putBoolean(KEY_SUMMON_ON, v).apply()
+        }
 
     /** 呼出回弹**总时长**倍率：1.0 = [SUMMON_MS_BASE]（560ms），范围 0.2~5 */
     var summonTimeScale: Float
         get() = sp.getFloat(KEY_SUMMON_TIME, 1f).coerceIn(SUMMON_TIME_MIN, SUMMON_TIME_MAX)
         set(v) {
+            if (rejectWhenLocked()) return
             sp.edit()
                 .putFloat(KEY_SUMMON_TIME, v.coerceIn(SUMMON_TIME_MIN, SUMMON_TIME_MAX))
                 .apply()
@@ -215,6 +262,7 @@ class Prefs(context: Context) {
     var summonPopScale: Float
         get() = sp.getFloat(KEY_SUMMON_POP, 1f).coerceIn(SUMMON_POP_MIN, SUMMON_POP_MAX)
         set(v) {
+            if (rejectWhenLocked()) return
             sp.edit()
                 .putFloat(KEY_SUMMON_POP, v.coerceIn(SUMMON_POP_MIN, SUMMON_POP_MAX))
                 .apply()
@@ -224,6 +272,7 @@ class Prefs(context: Context) {
     var summonSpringScale: Float
         get() = sp.getFloat(KEY_SUMMON_SPRING, 1f).coerceIn(SUMMON_SPRING_MIN, SUMMON_SPRING_MAX)
         set(v) {
+            if (rejectWhenLocked()) return
             sp.edit()
                 .putFloat(KEY_SUMMON_SPRING, v.coerceIn(SUMMON_SPRING_MIN, SUMMON_SPRING_MAX))
                 .apply()
@@ -256,7 +305,10 @@ class Prefs(context: Context) {
     /** 呼吸晃动总开关。关掉后吸附静止时完全不动 */
     var breathEnabled: Boolean
         get() = sp.getBoolean(KEY_BREATH_ON, true)
-        set(v) { sp.edit().putBoolean(KEY_BREATH_ON, v).apply() }
+        set(v) {
+            if (rejectWhenLocked()) return
+            sp.edit().putBoolean(KEY_BREATH_ON, v).apply()
+        }
 
     /**
      * 呼吸**幅度**倍率：1.0 = 基准幅度（[BREATH_SQ_BASE]），范围 [BREATH_MIN]~[BREATH_MAX]。
@@ -268,6 +320,7 @@ class Prefs(context: Context) {
     var breathScale: Float
         get() = sp.getFloat(KEY_BREATH_SCALE, 1f).coerceIn(BREATH_MIN, BREATH_MAX)
         set(v) {
+            if (rejectWhenLocked()) return
             sp.edit().putFloat(KEY_BREATH_SCALE, v.coerceIn(BREATH_MIN, BREATH_MAX)).apply()
         }
 
@@ -282,6 +335,7 @@ class Prefs(context: Context) {
         get() = sp.getFloat(KEY_BREATH_SPEED, 1f)
             .coerceIn(BREATH_SPEED_MIN, BREATH_SPEED_MAX)
         set(v) {
+            if (rejectWhenLocked()) return
             sp.edit()
                 .putFloat(KEY_BREATH_SPEED, v.coerceIn(BREATH_SPEED_MIN, BREATH_SPEED_MAX))
                 .apply()
@@ -337,6 +391,8 @@ class Prefs(context: Context) {
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_BOUNCE_ON = "bounce_on"
         private const val KEY_RESET_KEEP = "reset_keep"
+        private const val KEY_LOCKED = "locked"
+        private const val KEY_LOCK_INTERACT = "lock_interact"
         private const val KEY_SUMMON_ON = "summon_bounce_on"
         private const val KEY_SUMMON_TIME = "summon_time_scale"
         private const val KEY_SUMMON_POP = "summon_pop_scale"

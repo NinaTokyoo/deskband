@@ -27,6 +27,14 @@
     <string name="reset_keep_on">复位保留：开</string>
     <string name="reset_keep_toast_on">复位将保留当前设置，只把人物移回右边框中点</string>
     <string name="reset_keep_toast_off">复位将恢复默认设置</string>
+    <!-- 锁定 / 锁定互动（用户要求）：第一张卡里、复位保留下面那一行的两个按钮，
+         尺寸与「复位」「复位保留」一致。锁定态下按钮文案变「解除」。 -->
+    <string name="lock_off">锁定</string>
+    <string name="lock_on">解除</string>
+    <string name="lock_interact_on">锁定互动：开</string>
+    <string name="lock_interact_off">锁定互动：关</string>
+    <!-- 锁定期间在 App 里动数值时的提示（用户指定文案） -->
+    <string name="locked_hint">请解除锁定以操作</string>
     <string name="reset_done">已复位</string>
     <string name="reset_need_running">DeskBand 还没开启，先点左侧「呼出」</string>
 
@@ -44,7 +52,7 @@
     <string name="custom_need_main">须添加主素材</string>
     <string name="custom_save_failed">保存失败，换一张图片再试</string>
     <string name="custom_bad_image">这张图片读不出来，换一张试试</string>
-    <string name="custom_saved">已保存到「当前形象」，可在那里启用</string>
+    <string name="custom_saved">已保存</string>
     <!-- 删除：就地两步（点红错号 -> 变「确认删除」-> 再点才删），没有弹窗 -->
     <string name="custom_delete_mark">✕</string>
     <string name="custom_confirm_delete">确认删除</string>

@@ -69,6 +69,8 @@ class MainActivity : Activity() {
     private lateinit var skinMenuWrap: android.widget.LinearLayout
     private lateinit var btnReset: Button
     private lateinit var btnResetKeep: Button
+    private lateinit var btnLock: Button
+    private lateinit var btnLockInteract: Button
 
     // 松手回弹调节
     private lateinit var seekBounceAmp: ThumbSeekBar
@@ -240,6 +242,8 @@ class MainActivity : Activity() {
         skinMenu = findViewById(R.id.skinMenu)
         btnReset = findViewById(R.id.btnReset)
         btnResetKeep = findViewById(R.id.btnResetKeep)
+        btnLock = findViewById(R.id.btnLock)
+        btnLockInteract = findViewById(R.id.btnLockInteract)
         seekBounceAmp = findViewById(R.id.seekBounceAmp)
         seekBounceMs = findViewById(R.id.seekBounceMs)
         txtBounceAmp = findViewById(R.id.txtBounceAmp)
@@ -409,6 +413,28 @@ class MainActivity : Activity() {
             prefs.resetKeepSettings = !prefs.resetKeepSettings
             bindResetKeep()
         }
+        // 锁定 / 锁定互动（用户要求）。两者都要**立刻下发**给正在跑的桌宠：
+        // 锁定决定它还能不能被拖动，锁定互动决定点击/长按还灵不灵。
+        btnLock.setOnClickListener {
+            prefs.locked = !prefs.locked
+            bindLock()
+            PetService.notifyChanged(this)
+        }
+        btnLockInteract.setOnClickListener {
+            prefs.lockInteraction = !prefs.lockInteraction
+            bindLock()
+            PetService.notifyChanged(this)
+        }
+        // 锁定期间参数 setter 会拒绝写入并回调到这里：提示一次，再把控件刷回存档值
+        //（否则滑条/输入框会停在用户拖到的位置，看着像"改了但没生效"）。
+        prefs.onBlockedAdjust = {
+            Toast.makeText(this, R.string.locked_hint, Toast.LENGTH_SHORT).show()
+            bindSizeControls()
+            bindSummonControls()
+            bindBounceControls()
+            bindBreathControls()
+        }
+        bindLock()
         seekSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
@@ -609,6 +635,11 @@ class MainActivity : Activity() {
      * 桌宠本来就不在，直接告诉他先开启。
      */
     private fun doReset() {
+        // 复位会把各项倍率清零 —— 属于"改数值"，锁定期间一并拦下（用户要求）
+        if (prefs.locked) {
+            Toast.makeText(this, R.string.locked_hint, Toast.LENGTH_SHORT).show()
+            return
+        }
         if (!prefs.running) {
             Toast.makeText(this, R.string.reset_need_running, Toast.LENGTH_SHORT).show()
             return
@@ -2184,6 +2215,14 @@ class MainActivity : Activity() {
     private fun bindResetKeep() {
         btnResetKeep.text = getString(
             if (prefs.resetKeepSettings) R.string.reset_keep_on else R.string.reset_keep_off
+        )
+    }
+
+    /** 锁定 / 锁定互动两个按钮的文案（锁定态左按钮变「解除」） */
+    private fun bindLock() {
+        btnLock.text = getString(if (prefs.locked) R.string.lock_on else R.string.lock_off)
+        btnLockInteract.text = getString(
+            if (prefs.lockInteraction) R.string.lock_interact_on else R.string.lock_interact_off
         )
     }
 

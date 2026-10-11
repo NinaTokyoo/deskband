@@ -450,6 +450,9 @@ class PetService : Service(), PetView.Host {
         val view = PetView(this)
         view.host = this
         view.sprite = s
+        // 锁定状态：呼出时下发一次（用户要求：锁定后形象不能被拖动）
+        view.locked = prefs.locked
+        view.lockInteraction = prefs.lockInteraction
         view.setSizeFraction(prefs.sizeFraction)
 
         // 窗口**只有宠物那么大**（不是整屏）。
@@ -491,6 +494,8 @@ class PetService : Service(), PetView.Host {
 
         petView = view
         petParams = p
+        // 呼出时按当前锁定状态定一次窗口的可触性（锁定 + 锁定互动关 = 完全透明）
+        applyTouchability()
 
         // 恢复上次的吸附状态与位置。
         //
@@ -608,6 +613,28 @@ class PetService : Service(), PetView.Host {
         petParams = null
     }
 
+    /**
+     * 「锁定 + 锁定互动关」时，让形象在**触控上完全透明**（用户要求）：
+     * 点它等于点它下面那一层屏幕，它占的那块地方不再截获任何触摸。
+     *
+     * 用窗口的 `FLAG_NOT_TOUCHABLE` 来保证 —— 比"视图 onTouchEvent 返回 false"
+     * 更硬：后者要依赖系统把这一串事件继续派发给下面的窗口，前者是系统层面直接跳过。
+     * 两个锁定开关一改（MainActivity 走 notifyChanged → reloadPet）就会刷到这里。
+     */
+    private fun applyTouchability() {
+        val v = petView ?: return
+        val p = petParams ?: return
+        val passThrough = prefs.locked && !prefs.lockInteraction
+        val has = (p.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE) != 0
+        if (passThrough == has) return
+        p.flags = if (passThrough) {
+            p.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        } else {
+            p.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+        }
+        runCatching { wm.updateViewLayout(v, p) }
+    }
+
     private fun reloadPet() {
         // 收起状态下也要先拿到**当前角色**的 sprite，否则通知标题里的角色名
         // 还是上一个角色的（标题文案由 sprite.displayName 提供）。
@@ -645,6 +672,11 @@ class PetService : Service(), PetView.Host {
         }
         val v = petView ?: return
         v.sprite = sprite
+        // 锁定 / 锁定互动可能刚在 App 里切换过，每次重载都重新下发一次
+        //（MainActivity 的两个锁定按钮就是靠 notifyChanged 走到这里的）
+        v.locked = prefs.locked
+        v.lockInteraction = prefs.lockInteraction
+        applyTouchability()
         // 以**吸附边为基准**缩放（贴底/下角 -> 底边不动，贴侧边 -> 那一侧不动）。
         //
         // ⚠️ 就到这里为止 —— 2.1.6~2.1.9 曾在这里额外做"吸回某一侧"，结果是手机上

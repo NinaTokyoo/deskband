@@ -2107,10 +2107,29 @@ class PetView(context: Context) : View(context) {
         return if (t < 0f) 0f else -jumpAt(t)
     }
 
+    /**
+     * **锁定**（用户要求）：锁上以后形象在屏幕上不能被拖动。
+     *
+     * 由服务在呼出 / 重载时从 [Prefs.locked] 下发 —— 视图本身读不到 Prefs。
+     * 「锁定互动」是另一个开关 [lockInteraction]：关掉时连点击/长按都不响应。
+     */
+    var locked = false
+
+    /**
+     * **锁定互动**（用户要求）：锁定状态下还允不允许对形象做操作。
+     * false = 按下就返回 false，连按压动画都不播（用户："点击形象不会有任何提示"）；
+     * true  = 只保留点击与长按，拖动依旧被 [locked] 挡掉。
+     */
+    var lockInteraction = true
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 if (!hitsPet(event.x + winShiftX, event.y + winShiftY)) return false
+                // 锁定 + 锁定互动关（用户要求）：**触控上完全透明** ——
+                // 返回 false，事件继续派发给形象下面的窗口（服务侧还额外给窗口挂了
+                // FLAG_NOT_TOUCHABLE，双保险）。
+                if (locked && !lockInteraction) return false
                 downRawX = event.rawX
                 downRawY = event.rawY
                 dragOffsetX = 0f
@@ -2136,7 +2155,9 @@ class PetView(context: Context) : View(context) {
             MotionEvent.ACTION_MOVE -> {
                 val dx = event.rawX - downRawX
                 val dy = event.rawY - downRawY
-                if (!dragging && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
+                // 锁定后**不能拖动**（用户要求）：长了位移也不进拖动分支，
+                // 于是这次手势仍然只是"点击 / 长按"（锁定互动开时照常播放）。
+                if (!locked && !dragging && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
                     dragging = true
                     // 真拖动了：以这次拖动为准，丢掉刚才记下的落点
                     clearPendingSnap()

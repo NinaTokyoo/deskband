@@ -200,11 +200,19 @@ android {
         //                     ⚠️ 不能在 PetView.setSizeFraction 里上报：showPet 是先
         //                     setSizeFraction（锚点还是 0,0）再 restore/resetToMid，
         //                     那样会把存档写成 (0,0)、人物下次落在左上角）
+        //   2.1.14 -> 20114（第一张卡新增「锁定 / 解除」与「锁定互动：开/关」两个按钮
+        //                     （位置在复位、复位保留下面，尺寸与它们一致）：
+        //                     锁定后形象不能被拖动；App 里任何**数值**都改不了
+        //                     （Prefs 的 11 个参数 setter 统一过 rejectWhenLocked，
+        //                      被拦下时回调界面提示「请解除锁定以操作」并把控件刷回）；
+        //                     锁定互动关 = 触控完全透明（窗口挂 FLAG_NOT_TOUCHABLE，
+        //                      点它等于点它下面的屏幕），开 = 只保留点击/长按。
+        //                     顺带：保存自定义形象的提示语改成「已保存」）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
         //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
         //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
-        val vName = "2.1.13"
+        val vName = "2.1.14"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()
