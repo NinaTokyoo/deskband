@@ -1231,5 +1231,28 @@
                 </LinearLayout>
             </LinearLayout>
         </LinearLayout>
+
+        <!--
+          底部说明 / 免责声明（用户要求：App 最下面、用**浅色字**）。
+          · 放在最外层内容 LinearLayout 的**最后一个子View** -> 就是整个页面的最下面，
+            随 ScrollView 滚到底才看到，不打扰常用操作；
+          · 颜色用次要色再压一点 alpha（"浅色"），字号 12sp、行距放宽；
+          · textIsSelectable：用户能长按复制里面的联系邮箱（法律声明里有用）。
+          ⚠️ 文案在 strings.xml 的 notice_text（用户逐字给的，别改字）。
+        -->
+        <TextView
+            android:id="@+id/txtNotice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:layout_marginStart="6dp"
+            android:layout_marginEnd="6dp"
+            android:layout_marginBottom="10dp"
+            android:alpha="0.85"
+            android:text="@string/notice_text"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:lineSpacingExtra="3dp"
+            android:textIsSelectable="true" />
     </LinearLayout>
 </ScrollView>
