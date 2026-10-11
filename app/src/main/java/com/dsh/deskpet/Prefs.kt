@@ -128,24 +128,54 @@ class Prefs(context: Context) {
     /**
      * 常驻通知的自定义内容（空串 = 用默认文案）。
      *
+     * ⚠️ **按形象分开存**（用户要求："每个形象都有单独备份而不是共用一个"）：
+     * 键是 `notify_text:<形象目录>`。换角色时 [skin] 变了，读写自然落到那个角色
+     * 自己的槽位上 —— 界面与服务两边都不需要知道这件事（它们照旧读 [notifyText]）。
+     *
      * 上限 [NOTIFY_TEXT_MAX] 个字符，允许任意语言、数字、符号与 emoji。
      * 按 UTF-16 code unit 计数（emoji 通常占 2 个）——简单、可控、不会切坏代理对
      * 到一半（take 不会把代理对拆开，因为上限远大于常见 emoji 的长度）。
      */
     var notifyText: String
-        get() = sp.getString(KEY_NOTIFY_TEXT, "") ?: ""
-        set(v) { sp.edit().putString(KEY_NOTIFY_TEXT, v.take(NOTIFY_TEXT_MAX)).apply() }
+        get() = skinValue(KEY_NOTIFY_TEXT)
+        set(v) { putSkinValue(KEY_NOTIFY_TEXT, v.take(NOTIFY_TEXT_MAX)) }
 
     /**
-     * 通知标题的自定义文案，用 `{name}` 表示角色名。
+     * 通知标题的自定义文案，用 `{name}` 表示角色名。**同样按形象分开存**。
      *
      * 空串表示"用默认"（[Prefs.NOTIFY_TITLE_DEFAULT]）—— 与正文一致，
      * 「留空即默认」比强制填更省事。真正的 `{name}` 替换在
      * [PetService.notificationTitle] 里做，因为只有那边知道当前角色名。
      */
     var notifyTitle: String
-        get() = sp.getString(KEY_NOTIFY_TITLE, "") ?: ""
-        set(v) { sp.edit().putString(KEY_NOTIFY_TITLE, v.take(NOTIFY_TITLE_MAX)).apply() }
+        get() = skinValue(KEY_NOTIFY_TITLE)
+        set(v) { putSkinValue(KEY_NOTIFY_TITLE, v.take(NOTIFY_TITLE_MAX)) }
+
+    /** 按形象分槽的键：`<旧键名>:<形象目录>` */
+    private fun skinKey(base: String, skin: String): String = "$base:$skin"
+
+    /**
+     * 读**当前形象自己**的那份通知文案。
+     *
+     * 旧版只有一个全局共用值，所以第一次读某个形象时做一次性迁移：
+     * 把那个旧值**归给升级那一刻正选着的形象**（就是这里读的这个），
+     * 读完即删旧键 —— 不删的话每个形象首次读到都会拿到同一份旧值，
+     * 那还是"共用一个"。其余形象留空 = 用默认文案（其中已含角色名）。
+     */
+    private fun skinValue(base: String): String {
+        val key = skinKey(base, skin)
+        sp.getString(key, null)?.let { return it }
+        val legacy = sp.getString(base, null)
+        if (legacy != null) {
+            sp.edit().remove(base).putString(key, legacy).apply()
+            return legacy
+        }
+        return ""
+    }
+
+    private fun putSkinValue(base: String, value: String) {
+        sp.edit().putString(skinKey(base, skin), value).apply()
+    }
 
     /**
      * 由当前角色发色推出的强调色（缓存，供下次启动先上色避免闪一下默认色）。

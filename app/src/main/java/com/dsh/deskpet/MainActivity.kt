@@ -267,6 +267,17 @@ class MainActivity : Activity() {
         setupBreathControls()
         setupNotifyControls()
         setupCustomSkinControls()
+        // ⚠️ loadSkins() 必须在 applyTheme() **之前**。
+        //
+        // applyTheme() 会顺带刷"呼出 <角色名>"按钮与通知栏那两个输入框，而角色名
+        // 来自 loadSkins() 建起来的名字表；顺序反了，首次进界面时 currentSkinName()
+        // 只能退回**目录名** —— 内置形象的目录名恰好就是角色名（所以一直没露馅），
+        // 自定义形象的目录名是 `u<时间戳>`，会明晃晃地显示成
+        // "u1750000000000 正在陪伴你"。而这两处此后没有任何地方会再刷一次。
+        //
+        // warmUpSkins() 读的是 `skins`，同样必须在 loadSkins() 之后 ——
+        // 原来它排在前面，冷启动时预热的是一个空列表（等于没预热）。
+        loadSkins()
         applyTheme()
         refreshCornerPreview()
         setupThemeButtons()
@@ -325,7 +336,6 @@ class MainActivity : Activity() {
         }
 
         bindSizeControls()
-        loadSkins()
     }
 
     // ---------------------------------------------------------------- 复位

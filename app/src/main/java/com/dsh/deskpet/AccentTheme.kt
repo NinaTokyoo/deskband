@@ -182,8 +182,16 @@ object AccentTheme {
                     v.setHintTextColor(p.textSecondary)
                     v.backgroundTintList = neutralTint
                 }
-                v.tag == TAG_CARD ->
+                v.tag == TAG_CARD -> {
                     v.background = cardDrawable.constantState?.newDrawable()?.mutate()
+                    // 描边还要**在子视图之上再画一遍**（同一几何、同一颜色）。
+                    //
+                    // 「当前形象」卡片右下角的素材是按卡片圆角裁切的，而裁切线正好
+                    // 落在描边中线上 —— 只画背景的话，素材会把描边内侧那半个像素盖掉，
+                    // 表现就是"人物右下角略微盖住卡片 R 角"（用户反馈）。前景描边
+                    // 画在子视图之后，边框就永远是完整的。
+                    v.foreground = strokeOnly(dm, accent, 18f)
+                }
 
                 // 分隔横线（形象卡片里、二级菜单项之间）：只有 1~2dp 高，
                 // 用纯色背景在深色底上几乎看不见，这里统一用强调色填。
@@ -228,6 +236,20 @@ object AccentTheme {
         cornerRadius = dp(dm, radiusDp)
         setColor(fill)
         setStroke(dp(dm, 1.5f).toInt().coerceAtLeast(1), stroke)
+    }
+
+    /**
+     * 只有描边的圆角矩形：卡片描边的**前景版**（画在子视图之上）。
+     *
+     * 见 [apply] 里 TAG_CARD 分支的说明 —— 用来把被素材盖住的那半个描边补回来。
+     */
+    private fun strokeOnly(
+        dm: android.util.DisplayMetrics, color: Int, radiusDp: Float
+    ): GradientDrawable = GradientDrawable().apply {
+        shape = GradientDrawable.RECTANGLE
+        cornerRadius = dp(dm, radiusDp)
+        setColor(Color.TRANSPARENT)
+        setStroke(dp(dm, 1.5f).toInt().coerceAtLeast(1), color)
     }
 
     /** 镂空按钮：边框使用强调色，文字中性（由调用处设置） */
