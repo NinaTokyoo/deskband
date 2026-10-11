@@ -880,6 +880,30 @@ class MainActivity : Activity() {
             rowsCustomManage.addView(row)
             i += 2
         }
+
+        // 待确认删除时，右上角那个「取消」也要变红 —— 它是这个状态的唯一"退路"，
+        // 跟着变红才看得出"现在点它是取消删除、不是收起卡片"
+        bindCustomManageButton()
+    }
+
+    /**
+     * 右上角按钮的配色：**有标签待确认删除时变红**（用户要求，深浅色模式都一样）。
+     *
+     * ⚠️ 只在 [renderCustomTags] 里调：它是"待确认状态可能变了"的唯一汇聚点
+     * （进管理态、点错号、点取消复位、删除后、切明暗都会走到）。
+     * 而"离开管理态"那条路**不经过** renderCustomTags —— 那正好：
+     * setCustomMode 末尾的 `applyTheme()` 会把按钮恢复成强调色镂空样式。
+     * 顺序上也不能反：AccentTheme.apply 会把所有 Button 重刷成强调色，
+     * 红色必须落在它**之后**（renderCustomTags 本来就排在 applyTheme 尾部）。
+     */
+    private fun bindCustomManageButton() {
+        val danger = pendingDeleteId != null
+        btnCustomManage.setTextColor(
+            if (danger) TAG_DELETE_RED else AccentTheme.skinBoxText(lightMode)
+        )
+        btnCustomManage.background = AccentTheme
+            .ghostSelectorFor(this, if (danger) TAG_DELETE_RED else accent, lightMode)
+            .constantState?.newDrawable()?.mutate()
     }
 
     /**
@@ -907,20 +931,39 @@ class MainActivity : Activity() {
         val pending = id == pendingDeleteId
         val dm = resources.displayMetrics
         tag.findViewById<TextView>(R.id.txtCustomTagDelete).apply {
-            // 两步删除的两个形态：红错号（可选）-> 红描边按钮（确认）
+            // ⚠️ 高度**两种形态写死成同一个值**。
+            //
+            // 标签的高度只由这个控件撑起来（名字那行比它矮），而控件的行高是随
+            // 字号走的：✕ 是 17sp、确认删除是 13sp —— 一换形态标签就上下各收一点，
+            // 实测矮 2px（density 3.5；用户手机上字更大，收得更多，看起来就是
+            // "点错号之后标签变窄了"）。写死之后标签高度恒定。
+            //
+            // 高度乘以 fontScale：系统字号调大时 sp 会变大，写死 dp 会把 ✕ 裁掉
+            // 上下两头；按同一比例放大就仍然容得下，而两态依然等高。
+            val slotDp = DELETE_SLOT_DP * resources.configuration.fontScale
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(dm, slotDp)
+            )
+            // 关掉字体自带的上下 padding，字形才会真正落在框的中间
+            // （否则 ✕ 的墨迹会偏下：实测到上边框 59px、到下边框 51px）
+            includeFontPadding = false
+            gravity = android.view.Gravity.CENTER
             text = getString(
                 if (pending) R.string.custom_confirm_delete else R.string.custom_delete_mark
             )
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, if (pending) 13f else 17f)
             // 错号是**固定的红**，不跟强调色（强调色本身可能就是红的，就分不出"删除"了）
             setTextColor(TAG_DELETE_RED)
-            if (pending) {
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-                background = AccentTheme.accentBoxBackground(this@MainActivity, TAG_DELETE_RED, lightMode, radiusDp = 8f)
-                setPadding(dp(dm, 8f), dp(dm, 4f), dp(dm, 8f), dp(dm, 4f))
+            // 上下内边距给 0（靠 gravity 居中），描边背景正好铺满这个固定高度的框 ——
+            // 于是"确认删除"按钮到标签描边的上 / 下 / 右三边距离 = 标签自己的内边距，
+            // 三边天然相等（用户要求）。左右内边距只影响按钮的横向留白。
+            setPadding(dp(dm, 8f), 0, dp(dm, 8f), 0)
+            background = if (pending) {
+                AccentTheme.accentBoxBackground(
+                    this@MainActivity, TAG_DELETE_RED, lightMode, radiusDp = 8f
+                )
             } else {
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
-                background = null
-                setPadding(dp(dm, 4f), dp(dm, 2f), dp(dm, 2f), dp(dm, 2f))
+                null
             }
             setOnClickListener {
                 if (pending) {
@@ -1514,6 +1557,15 @@ class MainActivity : Activity() {
         /** 选图请求码：主素材 / 角落素材各一个 */
         const val REQ_PICK_UPRIGHT = 9001
         const val REQ_PICK_CORNER = 9002
+
+        /**
+         * 管理标签里"删除控件"的**固定高度**（dp）。
+         *
+         * ⚠️ 两态（✕ / 确认删除）必须共用这一个值，且**不随字号变**：
+         * 标签的高度就是它撑起来的，字号一变标签就上下收，看起来像"标签变窄了"。
+         * 28dp 约等于改动前的实测高度（96px / density 3.5 ≈ 27.4dp），观感不变。
+         */
+        const val DELETE_SLOT_DP = 28f
 
         /**
          * 管理标签上错号的红色。
