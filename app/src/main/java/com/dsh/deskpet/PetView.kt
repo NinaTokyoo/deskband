@@ -473,6 +473,27 @@ class PetView(context: Context) : View(context) {
         markRest(anchorX, anchorY)
     }
 
+    /**
+     * 尺寸变化之后，**把宠物重新吸回它当前所在的那一侧**（用户要求：调大小时实时吸附到边）。
+     *
+     * 与 [setSizeFraction] 的区别：那个是"保持附着边不动"，只在宠物本来就贴边时才等价。
+     * 宠物被拖到屏幕中间、或「复位保留」留下了自定义位置时，保持旧坐标会一直留着一道缝，
+     * 看上去就是"调大小的时候不吸附了"。
+     *
+     * 这里**只动横向**（强制靠回左/右那一列），纵向保留用户当前所在的位置 ——
+     * 尺寸变化不该顺手把宠物从屏幕上方挪到下方。
+     */
+    fun resnapSideNow() {
+        val b = host?.bounds() ?: return
+        cacheSizes()
+        val trackLeft = if (PetState.isLeft(state)) 0f else (b.width() - trackW).toFloat()
+        anchorX = trackLeft + centerFromTrackX()
+        dragOffsetX = 0f
+        cancelTween()
+        syncWindow()
+        markRest(anchorX, anchorY)
+    }
+
     fun setState(newState: Int) {
         if (state == newState) return
         val prevRot = curSizeRot

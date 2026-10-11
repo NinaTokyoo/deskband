@@ -191,6 +191,14 @@ class MainActivity : Activity() {
     private var notifyAsked = false
 
     /**
+     * 程序性回写尺寸输入框时置上：挡住 [editSize] 的文本监听。
+     *
+     * 那个监听负责"边输入边生效"，而 `bindSizeControls()` 会 setText 回写 ——
+     * 不闸住就会自己触发自己。
+     */
+    private var suppressSizeWatcher = false
+
+    /**
      * 刚刚从**相册 / 文件选择器**返回的时刻（[onActivityResult] 记）。
      *
      * 这种"离开"不算真的退出应用 —— [onResume] 会据此豁免一次"全部收起"，
@@ -316,8 +324,9 @@ class MainActivity : Activity() {
             restore = {
                 prefs.sizeScale = sizeSnap[0]
                 bindSizeControls()
-                // 大小会改窗口尺寸：不通知服务的话人物还停在旧尺寸上
-                PetService.notifyChanged(this)
+                // 大小会改窗口尺寸：不通知服务的话人物还停在旧尺寸上。
+                // 走 notifySizeChanged —— 和"实时吸附"同一条路（用户要求）
+                PetService.notifySizeChanged(this)
             }
         )
         val summonSnap = FloatArray(3)
@@ -413,20 +422,50 @@ class MainActivity : Activity() {
                 if (!fromUser) return
                 prefs.sizeScale = sizeScaleOf(progress)
                 bindSizeControls()
-                // 大小变了要重新计算绘制尺寸与窗口尺寸，必须通知服务
-                PetService.notifyChanged(this@MainActivity)
+                // 大小变了要重新计算绘制尺寸与窗口尺寸，必须通知服务。
+                // 用 notifySizeChanged：它会额外要求"重新吸回当前那一侧"
+                //（用户要求：调大小时实时吸附到边）
+                PetService.notifySizeChanged(this@MainActivity)
             }
 
             override fun onStartTrackingTouch(sb: SeekBar?) = Unit
             override fun onStopTrackingTouch(sb: SeekBar?) = Unit
         })
 
-        // 数字输入：回车或失焦时生效（支持小数，如 1.5）
+        // 数字输入：**边打边生效**（用户要求：填入数字实时反应大小），
+        // 回车 / 失焦时再兜一次底（形如 "1." 这种半截输入解析不了的，那一刻也不强行套值）。
+        //
+        // ⚠️ 两个坑：
+        //   1. bindSizeControls() 会回写输入框，那会再次触发这里 -> 用 suppressSizeWatcher 闸住；
+        //   2. 这里**不回写输入框**（只在滑块不同步时更新滑块），否则光标会被顶到末尾，
+        //      用户就没法在中间插字符了。
+        editSize.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) = Unit
+            override fun afterTextChanged(s: android.text.Editable?) {
+                if (suppressSizeWatcher) return
+                val v = parseScale(
+                    s?.toString().orEmpty(), Prefs.SIZE_SCALE_MIN, Prefs.SIZE_SCALE_MAX
+                ) ?: return
+                if (v == prefs.sizeScale) return
+                prefs.sizeScale = v
+                txtSize.text = getString(R.string.size_label_value, fmtScale(v))
+                val want = progressOfSizeScale(v)
+                if (seekSize.progress != want) {
+                    suppressSizeWatcher = true
+                    seekSize.progress = want
+                    suppressSizeWatcher = false
+                }
+                PetService.notifySizeChanged(this@MainActivity)
+            }
+        })
+
+        // 数字输入：回车或失焦时再生效一次（支持小数，如 1.5）
         val applySize = {
             parseScale(editSize.text.toString(), Prefs.SIZE_SCALE_MIN, Prefs.SIZE_SCALE_MAX)
                 ?.let {
                     prefs.sizeScale = it
-                    PetService.notifyChanged(this)
+                    PetService.notifySizeChanged(this)
                 }
             bindSizeControls()
         }
@@ -437,7 +476,7 @@ class MainActivity : Activity() {
             parseScale(editSize.text.toString(), Prefs.SIZE_SCALE_MIN, Prefs.SIZE_SCALE_MAX)
                 ?.let {
                     prefs.sizeScale = it
-                    PetService.notifyChanged(this)
+                    PetService.notifySizeChanged(this)
                 }
             bindSizeControls()
             clearInputFocus()
@@ -450,7 +489,7 @@ class MainActivity : Activity() {
             prefs.sizeScale = 1f
             bindSizeControls()
             clearInputFocus()
-            PetService.notifyChanged(this)
+            PetService.notifySizeChanged(this)
             markCardSaved(panelSize)
         }
 
@@ -2330,8 +2369,11 @@ class MainActivity : Activity() {
     /** 把当前值刷到滑块 / 文本框 / 摘要文字 */
     private fun bindSizeControls() {
         val sc = prefs.sizeScale
+        // 闸住输入框监听：下面这一句 setText 会再触发它一次（见那里的说明）
+        suppressSizeWatcher = true
         seekSize.progress = progressOfSizeScale(sc)
         editSize.setText(fmtScale(sc))
+        suppressSizeWatcher = false
         // 只显示倍率，不再显示"占屏高 xx%"（用户要求，且太长会被截断）
         txtSize.text = getString(R.string.size_label_value, fmtScale(sc))
     }

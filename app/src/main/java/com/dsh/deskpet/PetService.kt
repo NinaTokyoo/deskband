@@ -152,7 +152,9 @@ class PetService : Service(), PetView.Host {
                 return START_NOT_STICKY
             }
             ACTION_RELOAD -> {
-                reloadPet()
+                // 尺寸变化那条路（notifySizeChanged）额外要求"重新吸回所在的那一侧"，
+                // 换角色之类的普通重载不需要（用户要求：调大小时实时吸附）
+                reloadPet(intent.getBooleanExtra(EXTRA_RESNAP, false))
                 return START_STICKY
             }
             ACTION_RESET -> {
@@ -608,7 +610,7 @@ class PetService : Service(), PetView.Host {
         petParams = null
     }
 
-    private fun reloadPet() {
+    private fun reloadPet(resnap: Boolean = false) {
         // 收起状态下也要先拿到**当前角色**的 sprite，否则通知标题里的角色名
         // 还是上一个角色的（标题文案由 sprite.displayName 提供）。
         acquireSprite()
@@ -647,6 +649,11 @@ class PetService : Service(), PetView.Host {
         v.sprite = sprite
         // 以**吸附边为基准**缩放（贴底/下角 -> 底边不动，贴侧边 -> 那一侧不动）。
         v.setSizeFraction(prefs.sizeFraction)
+        // 尺寸变化那条路再补一刀：把宠物横向吸回它当前所在的那一侧。
+        // setSizeFraction 只在"本来就贴边"时才等价于吸附；被拖到屏幕中间、
+        // 或「复位保留」留下自定义位置时，那道缝会一直留着 ——
+        // 用户反馈的"调整大小的时候人物不吸附到边了"就是它。
+        if (resnap) v.resnapSideNow()
         // ⚠️ 这里**不要**再调 v.restore(...)。
         //
         // 曾经是"先 setSizeFraction，再 restore(state, posLeft, posTop)"。
@@ -836,12 +843,17 @@ class PetService : Service(), PetView.Host {
 
         const val ACTION_STOP = "com.dsh.deskpet.action.STOP"
         const val ACTION_RELOAD = "com.dsh.deskpet.action.RELOAD"
+
+        /**
+         * ACTION_RELOAD 的附加项：这次重载是**尺寸变化**引起的，
+         * 重载后还要把宠物横向吸回当前那一侧（用户要求：调大小时实时吸附）。
+         */
+        const val EXTRA_RESNAP = "com.dsh.deskpet.extra.RESNAP"
         const val ACTION_RESET = "com.dsh.deskpet.action.RESET"
         const val ACTION_NOTIFY = "com.dsh.deskpet.action.NOTIFY"
 
         /** 通知栏的「呼出」按钮。效果与 [start]（App 内部的呼出）一致。 */
         const val ACTION_SUMMON = "com.dsh.deskpet.action.SUMMON"
-
         /** App 里改了通知栏自定义内容：只刷新通知，不动桌宠位置 */
         fun refreshNotification(context: Context) {
             // ⚠️ 闸门是 `alive`（服务是否活着），不是 `running`（桌宠是否可见）。
@@ -904,7 +916,29 @@ class PetService : Service(), PetView.Host {
             }
         }
 
-        /** 大小或角色变了，通知正在跑的服务刷新 */
+        /**
+         * 只改了**大小**：重载并让宠物重新吸回当前那一侧（用户要求：调大小时实时吸附）。
+         *
+         * 与 [notifyChanged] 分开是因为换角色那条路不该顺手把宠物挪一下 ——
+         * 只有尺寸变化才需要重新吸附。
+         */
+        fun notifySizeChanged(context: Context) {
+            if (!alive) return
+            val i = Intent(context, PetService::class.java)
+                .setAction(ACTION_RELOAD)
+                .putExtra(EXTRA_RESNAP, true)
+            try {
+                if (Build.VERSION.SDK_INT >= 26) {
+                    context.startForegroundService(i)
+                } else {
+                    context.startService(i)
+                }
+            } catch (e: Exception) {
+                // 忽略
+            }
+        }
+
+        /** 换角色 / 明暗等：只重载，不重新吸附 */
         fun notifyChanged(context: Context) {
             // 换角色 / 改大小后通知标题里的角色名要跟着变。
             //
