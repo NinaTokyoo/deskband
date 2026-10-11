@@ -414,6 +414,17 @@
                         </FrameLayout>
                     </LinearLayout>
                 </LinearLayout>
+
+                <!-- 素材要求提示（用户给定文案，一字不改）：放在两个素材位下面。
+                     只提示"要透明底 PNG"，不展开讲姿态与尺寸 —— 那属于文档的事，
+                     卡片里多一行就变说明书了。 -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp"
+                    android:text="@string/custom_asset_hint" />
             </LinearLayout>
 
             <!-- ============ 展开区二：管理（默认隐藏） ============

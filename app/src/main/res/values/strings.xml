@@ -38,6 +38,9 @@
     <string name="custom_name_input">形象名称</string>
     <string name="custom_main_asset">主素材（必选）</string>
     <string name="custom_corner_asset">角落素材（可选）</string>
+    <!-- 素材要求提示（用户给定文案，一字不改）：背景不透明的话，
+         人物会连背景一起画出来，逐像素命中判定与发色提取也都会失准 -->
+    <string name="custom_asset_hint">为保证效果，请选择透明底PNG</string>
     <!-- 主素材没加就点保存时的提示（角落素材是可选的，不加不提示） -->
     <string name="custom_need_main">须添加主素材</string>
     <string name="custom_save_failed">保存失败，换一张图片再试</string>
