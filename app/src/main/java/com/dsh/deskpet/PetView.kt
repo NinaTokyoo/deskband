@@ -2116,9 +2116,9 @@ class PetView(context: Context) : View(context) {
     var locked = false
 
     /**
-     * **锁定互动**（用户要求）：锁定状态下还允不允许对形象做操作。
-     * false = 按下就返回 false，连按压动画都不播（用户："点击形象不会有任何提示"）；
-     * true  = 只保留点击与长按，拖动依旧被 [locked] 挡掉。
+     * **锁定互动**（用户要求）：关掉时对屏幕上的形象**任何操作都不响应** ——
+     * 不播按压动画、不点击跳跃、也不能拖动（不论是否锁定，它是独立的开关）。
+     * 开着时：点击与长按照常，拖动仍由 [locked] 决定。
      */
     var lockInteraction = true
 
@@ -2126,10 +2126,13 @@ class PetView(context: Context) : View(context) {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 if (!hitsPet(event.x + winShiftX, event.y + winShiftY)) return false
-                // 锁定 + 锁定互动关（用户要求）：**触控上完全透明** ——
-                // 返回 false，事件继续派发给形象下面的窗口（服务侧还额外给窗口挂了
-                // FLAG_NOT_TOUCHABLE，双保险）。
-                if (locked && !lockInteraction) return false
+                // 「锁定互动：关」= 对屏幕上的形象**任何操作都不响应**（用户要求）：
+                // 直接返回 false —— 连按压动画都不播，更不会点击跳跃。
+                //
+                // ⚠️ 原来这里写的是 `locked && !lockInteraction`，等于"必须先锁定才生效"，
+                //    用户实测"只关锁定互动时还是能点着跳"，说明这个开关该**独立生效**
+                //    （它也确实是独立的一个开关）。拖动仍然只由 [locked] 控制。
+                if (!lockInteraction) return false
                 downRawX = event.rawX
                 downRawY = event.rawY
                 dragOffsetX = 0f
