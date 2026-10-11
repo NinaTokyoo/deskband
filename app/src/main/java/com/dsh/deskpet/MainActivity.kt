@@ -421,7 +421,8 @@ class MainActivity : Activity() {
             PetService.notifyChanged(this)
         }
         btnLockInteract.setOnClickListener {
-            prefs.lockInteraction = !prefs.lockInteraction
+            // 三态顺序循环（用户要求）：开 -> 关 -> 淡出 -> 开
+            prefs.lockMode = (prefs.lockMode + 1) % 3
             bindLock()
             PetService.notifyChanged(this)
         }
@@ -546,6 +547,14 @@ class MainActivity : Activity() {
         //  挂在容器上的 OnTouchListener 收不到 —— 触摸目标是子控件）
         (body as? CardPanel)?.onUserTouch = { markCardDirty(card) }
         manage.setOnClickListener {
+            // 锁定期间**卡片不能被展开**（用户要求）：点「管理」只提示「请解除锁定以操作」。
+            // ⚠️ 两个例外都要留着：
+            //   · 已经展开的卡片必须还能「收起 / 取消」，否则锁定时界面卡在展开态出不来；
+            //   · 「当前形象」那个二级菜单（切换形象）锁定时照常可用。
+            if (prefs.locked && body.visibility != View.VISIBLE) {
+                Toast.makeText(this, R.string.locked_hint, Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
             if (body.visibility == View.VISIBLE) {
                 // 收起前：这次展开后没点过保存 -> 把改动丢掉（用户要求）
                 if (!card.saved) card.restore()
@@ -1162,6 +1171,11 @@ class MainActivity : Activity() {
     private fun setupCustomSkinControls() {
         // 不在新增态时是「新增」，在新增态时是「保存」（文案在 setCustomMode 里定）
         btnCustomAdd.setOnClickListener {
+            // 锁定期间不许展开卡片（用户要求）；「当前形象」那个二级菜单不受此限
+            if (prefs.locked) {
+                Toast.makeText(this, R.string.locked_hint, Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
             if (customMode == CUSTOM_ADD) saveCustomSkin() else setCustomMode(CUSTOM_ADD)
         }
         // 「取消 / 收起 / 管理」= 三个不同意思（用户要求）：
@@ -1170,6 +1184,13 @@ class MainActivity : Activity() {
         //   · 新增表单 -> 「取消」= 放弃本次新增（名字与素材一起清掉）
         //   · 横条态 -> 「管理」= 展开列表
         btnCustomManage.setOnClickListener {
+            // 锁定期间不许展开/收起卡片（用户要求）。注意：已经展开的卡片要允许「收起」，
+            // 否则锁定时界面会被卡在展开态出不来。
+            val willExpand = customMode == CUSTOM_NONE
+            if (prefs.locked && willExpand) {
+                Toast.makeText(this, R.string.locked_hint, Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
             when {
                 customMode == CUSTOM_MANAGE && pendingDeleteId != null -> {
                     pendingDeleteId = null
@@ -2226,7 +2247,11 @@ class MainActivity : Activity() {
     private fun bindLock() {
         btnLock.text = getString(if (prefs.locked) R.string.lock_on else R.string.lock_off)
         btnLockInteract.text = getString(
-            if (prefs.lockInteraction) R.string.lock_interact_on else R.string.lock_interact_off
+            when (prefs.lockMode) {
+                Prefs.MODE_OFF -> R.string.lock_interact_off
+                Prefs.MODE_FADE -> R.string.lock_interact_fade
+                else -> R.string.lock_interact_on
+            }
         )
     }
 

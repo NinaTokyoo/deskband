@@ -33,6 +33,8 @@
     <string name="lock_on">解锁</string>
     <string name="lock_interact_on">锁定互动：开</string>
     <string name="lock_interact_off">锁定互动：关</string>
+    <!-- 第三种状态（用户要求）：形象半透明，且触控上完全透明（点它=点它下面的屏幕） -->
+    <string name="lock_interact_fade">锁定互动：淡出</string>
     <!-- 锁定期间在 App 里动数值时的提示（用户指定文案） -->
     <string name="locked_hint">请解除锁定以操作</string>
     <string name="reset_done">已复位</string>

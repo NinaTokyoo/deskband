@@ -507,15 +507,22 @@ class PetService : Service(), PetView.Host {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                 or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-                or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-            // ⚠️ 这里**不要**加 FLAG_NOT_TOUCHABLE：
-            //    它能实现"锁定互动关时触摸穿透到下面的屏幕"，但用户实机上带这个 flag 的
-            //    悬浮窗会被系统整块渲染成**半透明**（模拟器复现不出来；加"受信悬浮窗"
-            //    标记也救不回来）。用户明确"不要发淡"，所以放弃穿透：
-            //    锁定 + 互动关 = 形象**完全实心**、点它没有任何反应（也不穿透）。
-            //    想要"穿透优先"就把这个 flag 加回来（其余代码不用动）。
+                or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                // 「锁定互动：淡出」（用户要求）= 半透明 + 触控穿透：
+                // 挂 FLAG_NOT_TOUCHABLE，输入系统直接跳过这个窗口，点形象 =
+                // 点它下面的屏幕。**flag 只能在 addView 这一刻定死**：运行中改 flag 要走
+                // updateViewLayout，那会让 surface 重建、画面发白/发花（用户实机实测过）。
+                // 所以状态变化时由 syncPassThrough() 重建窗口，别在这里做别的花样。
+                or if (prefs.petPassesThrough) {
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                } else {
+                    0
+                },
+            // 半透明自己压一层（AOSP 上不带 flag 的窗口不会被系统淡化，实机 ROM 会，
+            // 两边表现要一致 —— 见 syncPassThrough 的说明）
             PixelFormat.TRANSLUCENT
         )
+        view.alpha = if (prefs.petPassesThrough) FADE_ALPHA else 1f
         p.gravity = Gravity.TOP or Gravity.START
         p.x = zero[0]
         p.y = zero[1]
@@ -646,6 +653,35 @@ class PetService : Service(), PetView.Host {
         petParams = null
     }
 
+    /**
+     * 让窗口的可触性 / 透明度跟上「锁定互动：淡出」的状态。
+     *
+     * 淡出 = 形象半透明 **且** 触控上完全透明（点它等于点它下面的屏幕）：
+     *   · 触控穿透只有 `FLAG_NOT_TOUCHABLE` 能做到（视图返回 false 不够，实测过）；
+     *   · 而这个 flag **只能在 addView 那一刻定死** —— 运行中改 flag 要走
+     *     `updateViewLayout`，那会让窗口 surface 重建、画面发白/发花（用户实测）。
+     *     所以状态真的变了就**重建窗口**。
+     *   · 半透明另外自己压一层 [FADE_ALPHA]：实机 ROM 对不可触摸的悬浮窗本来就会
+     *     渲染成半透明（这正是当初那场"关掉互动就变淡"的根源），但 AOSP 不会 ——
+     *     自己设一次，行为在任何机器上都一致。
+     *
+     * @return 是否**已经重建过窗口**（调用方要据此提前返回：新窗口已按新状态建好）
+     */
+    private fun syncPassThrough(): Boolean {
+        val v = petView ?: return false
+        val has = petParams?.let {
+            (it.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE) != 0
+        } ?: return false
+        if (has == prefs.petPassesThrough) {
+            // 状态没变：只把透明度对齐（成本极低）
+            v.alpha = if (prefs.petPassesThrough) FADE_ALPHA else 1f
+            return false
+        }
+        removePet()
+        showPet()
+        return true
+    }
+
     private fun reloadPet() {
         // 收起状态下也要先拿到**当前角色**的 sprite，否则通知标题里的角色名
         // 还是上一个角色的（标题文案由 sprite.displayName 提供）。
@@ -681,6 +717,9 @@ class PetService : Service(), PetView.Host {
             showPet()
             return
         }
+        // 「锁定互动：淡出」需要在窗口上挂/摘 FLAG_NOT_TOUCHABLE（半透明 + 触控穿透），
+        // 而 flag 只能在 addView 那一刻定死 -> 状态变了就重建窗口，然后直接返回。
+        if (syncPassThrough()) return
         val v = petView ?: return
         v.sprite = sprite
         // 以**吸附边为基准**缩放（贴底/下角 -> 底边不动，贴侧边 -> 那一侧不动）。
@@ -884,6 +923,13 @@ class PetService : Service(), PetView.Host {
 
         private const val CHANNEL_ID = "deskpet"
         private const val NOTIF_ID = 1001
+
+        /**
+         * 「锁定互动：淡出」时形象的不透明度（用户要求"半透明"）。
+         * 实机 ROM 对挂了 FLAG_NOT_TOUCHABLE 的悬浮窗还会再淡一层，所以那边看起来更淡；
+         * 想更实/更淡改这一个数就行。
+         */
+        private const val FADE_ALPHA = 0.5f
 
         const val ACTION_STOP = "com.dsh.deskpet.action.STOP"
         const val ACTION_RELOAD = "com.dsh.deskpet.action.RELOAD"

@@ -2108,19 +2108,32 @@ class PetView(context: Context) : View(context) {
     }
 
     /**
-     * **锁定互动**（用户要求）：关掉时对屏幕上的形象**任何操作都不响应** ——
-     * 不播按压动画、不点击跳跃、也不能拖动（不论是否锁定，它是独立的开关）。
-     * 开着时：点击与长按照常，拖动仍由「锁定」决定。
+     * **锁定互动**（用户要求）：三种状态，**都只在锁定时生效** ——
+     *   · 开（[Prefs.MODE_ON]）  ：点击与长按照常，拖动仍被「锁定」挡掉；
+     *   · 关（[Prefs.MODE_OFF]） ：任何操作都不响应（不播按压动画、不点击跳跃），形象实心；
+     *   · 淡出（[Prefs.MODE_FADE]）：半透明 + 触控穿透（窗口挂 FLAG_NOT_TOUCHABLE，
+     *     事件根本到不了这里；这里的 false 只是双保险）。
      *
      * ⚠️ 这里**现读 `prefs`**（[PetView] 自己有 Prefs 实例：`private val prefs by lazy`），
      *    **不要**改成"由服务下发一个标志"：用户实测过"明明关了锁定互动、点它还在跳" ——
      *    标志在某个路径上没被刷新就永久错位；现读 SharedPreferences 是内存缓存，
      *    每次按下读一次的成本可以忽略，但不可能过期。
      */
-    private fun interactionLocked(): Boolean = !prefs.lockInteraction
+    private fun interactionLocked(): Boolean =
+        prefs.locked && prefs.lockMode != Prefs.MODE_ON
 
     /** 「锁定」：形象不能被拖动（同样现读，见 [interactionLocked] 的说明） */
     private fun moveLocked(): Boolean = prefs.locked
+
+    /**
+     * 这一串手势的 DOWN **是否被我们受理**（触摸闸门放行）。
+     *
+     * ⚠️ 必须有这个标志：关掉「锁定互动」时 DOWN 直接 `return false`，
+     * 但系统仍可能把 UP 送进来，而松手分流在 `pressing == false` 时算出 `held = 0`、
+     * `0 <= SQ_MAX` 成立 —— 于是"没按下过"的松手照样触发点击跳跃
+     * （用户报的"锁定互动关还能点着跳"就是这个）。UP / MOVE 都要先看它。
+     */
+    private var downAccepted = false
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
@@ -2130,6 +2143,7 @@ class PetView(context: Context) : View(context) {
                 // 直接返回 false —— 连按压动画都不播，更不会点击跳跃。
                 // 现读 prefs，不做服务下发的标志（见 [interactionLocked] 的说明）。
                 if (interactionLocked()) return false
+                downAccepted = true
                 downRawX = event.rawX
                 downRawY = event.rawY
                 dragOffsetX = 0f
@@ -2157,7 +2171,11 @@ class PetView(context: Context) : View(context) {
                 val dy = event.rawY - downRawY
                 // 锁定后**不能拖动**（用户要求）：长了位移也不进拖动分支，
                 // 于是这次手势仍然只是"点击 / 长按"。同样是现读 prefs。
-                if (!moveLocked() && !dragging && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
+                // [downAccepted] 也要看：DOWN 没被受理时 downRawX/Y 是上一次的陈旧值，
+                // 拿它算位移会凭空拖起来。
+                if (downAccepted && !moveLocked() && !dragging &&
+                    (abs(dx) > touchSlop || abs(dy) > touchSlop)
+                ) {
                     dragging = true
                     // 真拖动了：以这次拖动为准，丢掉刚才记下的落点
                     clearPendingSnap()
@@ -2184,6 +2202,15 @@ class PetView(context: Context) : View(context) {
             }
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                // ⚠️ **没有受理过 DOWN 的 UP 一律不算数**（这就是"锁定互动关还能点着跳"的根因）：
+                // 关掉互动时 DOWN 直接返回 false，但系统仍可能把这个手势的 UP 送进来；
+                // 而松手分流里 `val held = if (pressing) pressSquash() else 0f` 在
+                // pressing=false 时给出 0，`0 <= SQ_MAX` 成立 -> 照样走 onTapped() -> 跳。
+                // 所以先看 [downAccepted]：没受理过就什么都不做，并把它复位。
+                if (!downAccepted) {
+                    dragging = false
+                    return false
+                }
                 if (dragging) {
                     // 固化当前位置，并清零位移 —— 否则 settle 里位移会被算两遍（瞬移）
                     anchorX = curCenterX()
@@ -2218,6 +2245,7 @@ class PetView(context: Context) : View(context) {
                     // 点完把被打断的吸附补间补完，绝不停在半路（否则贴边会留缝）
                     resumePendingSnap()
                 }
+                downAccepted = false
                 dragging = false
                 return true
             }

@@ -238,11 +238,23 @@ android {
         //                     没刷新就会出现"明明关了锁定互动、点它还在跳"（用户实测）。
         //                     PetView 本来就有 Prefs 实例，按下时现读，不可能过期；
         //                     顺手删掉下发的标志与 applyLockToView()）
+        //   2.1.21 -> 20121（① 修根因："未被受理的 DOWN"之后系统仍会送来 UP，
+        //                     而松手分流在 pressing=false 时算出 held=0、0<=SQ_MAX 成立，
+        //                     于是照样触发点击跳跃 —— 这就是"锁定互动关还能点着跳"。
+        //                     新增 downAccepted 标志：DOWN 过闸门才置位，
+        //                     UP/MOVE 都先看它（MOVE 还要防止用陈旧 downRaw 凭空拖起来）。
+        //                     ② 「锁定互动」改三态顺序循环：开 -> 关 -> 淡出。
+        //                     淡出 = 半透明 + 触控穿透（窗口挂 FLAG_NOT_TOUCHABLE，
+        //                     状态变化时重建窗口，因为 flag 只能在 addView 时定）。
+        //                     ③ 三态都**只在锁定时生效**（未锁定 = 照常可点可拖）。
+        //                     ④ 锁定时所有卡片的「管理/新增」不能展开并提示
+        //                     「请解除锁定以操作」；已展开的仍可收起，
+        //                     「当前形象」二级菜单锁定时照常可用）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
         //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
         //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
-        val vName = "2.1.20"
+        val vName = "2.1.21"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()

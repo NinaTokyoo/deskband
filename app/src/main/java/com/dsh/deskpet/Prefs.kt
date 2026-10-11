@@ -39,13 +39,26 @@ class Prefs(context: Context) {
 
     /**
      * **锁定互动**（用户要求）：锁定状态下还允不允许对屏幕上的形象做操作。
-     *   · 关 -> 点击 / 长按**完全没有反应**（连按压动画都不播）；
-     *   · 开 -> 只保留点击与长按（拖动依旧被锁定挡掉）。
-     * 未锁定时这个开关不起作用。
+     * 顺序循环三种状态（[MODE_ON] -> [MODE_OFF] -> [MODE_FADE] -> 开）：
+     *   · [MODE_ON]   开   -> 只保留点击与长按（拖动依旧被锁定挡掉）；
+     *   · [MODE_OFF]  关   -> 点击 / 长按**完全没有反应**（连按压动画都不播），形象实心；
+     *   · [MODE_FADE] 淡出 -> 形象半透明，并且**触控上完全透明**（点它等于点它下面的屏幕）。
+     * **三种状态都只在锁定时生效**（未锁定时形象照常可点可拖，用户要求）。
      */
-    var lockInteraction: Boolean
-        get() = sp.getBoolean(KEY_LOCK_INTERACT, true)
-        set(v) { sp.edit().putBoolean(KEY_LOCK_INTERACT, v).apply() }
+    var lockMode: Int
+        get() {
+            // 旧版本存的是布尔 lock_interact（true=开 / false=关），迁移一次：
+            // 关 -> MODE_OFF（那个年代还没有"淡出"）。
+            if (!sp.contains(KEY_LOCK_MODE) && sp.contains(KEY_LOCK_INTERACT)) {
+                return if (sp.getBoolean(KEY_LOCK_INTERACT, true)) MODE_ON else MODE_OFF
+            }
+            return sp.getInt(KEY_LOCK_MODE, MODE_ON).coerceIn(MODE_ON, MODE_FADE)
+        }
+        set(v) { sp.edit().putInt(KEY_LOCK_MODE, v.coerceIn(MODE_ON, MODE_FADE)).apply() }
+
+    /** 锁定时是否让形象**不接收触摸**（淡出状态）：点它等于点它下面的屏幕 */
+    val petPassesThrough: Boolean
+        get() = locked && lockMode == MODE_FADE
 
     /** 锁定期间有人试图改数值：界面挂上去做提示 + 把控件刷回存档值 */
     var onBlockedAdjust: (() -> Unit)? = null
@@ -392,7 +405,17 @@ class Prefs(context: Context) {
         private const val KEY_BOUNCE_ON = "bounce_on"
         private const val KEY_RESET_KEEP = "reset_keep"
         private const val KEY_LOCKED = "locked"
-        private const val KEY_LOCK_INTERACT = "lock_interact"
+        private const val KEY_LOCK_INTERACT = "lock_interact"   // 旧版布尔值，仅用于迁移
+        private const val KEY_LOCK_MODE = "lock_mode"
+
+        /** 锁定互动：开（点击/长按可用） */
+        const val MODE_ON = 0
+
+        /** 锁定互动：关（完全不响应，形象实心） */
+        const val MODE_OFF = 1
+
+        /** 锁定互动：淡出（半透明 + 触控穿透） */
+        const val MODE_FADE = 2
         private const val KEY_SUMMON_ON = "summon_bounce_on"
         private const val KEY_SUMMON_TIME = "summon_time_scale"
         private const val KEY_SUMMON_POP = "summon_pop_scale"
