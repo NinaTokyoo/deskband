@@ -261,11 +261,17 @@ android {
         //                     它们不是锁定要拦的"数值"。registerExpandCard 新增
         //                     lockExempt 参数，「通知栏内容」传 true；自定义形象的
         //                     新增/管理两处闸门直接去掉）
+        //   2.1.25 -> 20125（修"通知栏里的解锁不起作用"：那条动作原来用
+        //                     PendingIntent.getService，Android 12 起后台启动服务受限、
+        //                     系统会直接丢掉这次启动（vivo 这类 ROM 尤其严）。
+        //                     改用 getForegroundService（走 startForegroundService，
+        //                     通知动作永远允许）；那个分支第一件事就是
+        //                     startForegroundCompat()，满足 5 秒内 startForeground 的要求）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
         //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
         //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
-        val vName = "2.1.24"
+        val vName = "2.1.25"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()

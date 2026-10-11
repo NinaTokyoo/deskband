@@ -164,9 +164,12 @@ class PetService : Service(), PetView.Host {
                 return START_STICKY
             }
             ACTION_LOCK_TOGGLE -> {
-                // 通知栏那个「锁定 / 解锁」：只是翻一下状态，
-                // 通知栏那个「锁定 / 解锁」：翻一下状态，再重建通知
-                //（按钮文案跟着状态走）。形象那边不用通知 —— PetView 触摸时现读 prefs。
+                // 通知栏那个「锁定 / 解锁」：翻一下状态，然后**立刻**刷前台通知
+                //（按钮文案跟着状态走）。
+                //
+                // ⚠️ 顺序不能改：这个动作是用 PendingIntent.getForegroundService 发过来的，
+                //    服务必须在 5 秒内 startForeground —— startForegroundCompat() 正是那一步。
+                //    形象那边不用通知（PetView 触摸时现读 prefs）。
                 prefs.locked = !prefs.locked
                 runCatching { startForegroundCompat() }
                 return START_STICKY
@@ -402,7 +405,14 @@ class PetService : Service(), PetView.Host {
         // 与 App 里那两个锁定按钮是同一份状态（prefs.locked），
         // 所以点完这里，App 界面上的按钮也会跟着变（App onResume 会 bindLock）。
         try {
-            val lockIntent = PendingIntent.getService(
+            // ⚠️ 必须用 **getForegroundService**，不是 getService：
+            //    Android 12 起"后台启动服务"受限，通知动作走 getService 时
+            //    系统会直接丢掉这次启动（vivo 这类 ROM 尤其严）—— 表现就是
+            //    用户反馈的"通知栏里的解锁貌似不起作用"。
+            //    getForegroundService 走 startForegroundService，通知动作永远允许；
+            //    代价是服务必须在 5 秒内 startForeground —— 下面那个分支第一件事就是
+            //    startForegroundCompat()，满足要求（minSdk 26，API 一直可用）。
+            val lockIntent = PendingIntent.getForegroundService(
                 this, if (prefs.locked) 3 else 4,
                 Intent(this, PetService::class.java)
                     .setAction(ACTION_LOCK_TOGGLE),
