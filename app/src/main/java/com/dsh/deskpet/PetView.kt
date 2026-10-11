@@ -2108,19 +2108,19 @@ class PetView(context: Context) : View(context) {
     }
 
     /**
-     * **锁定**（用户要求）：锁上以后形象在屏幕上不能被拖动。
-     *
-     * 由服务在呼出 / 重载时从 [Prefs.locked] 下发 —— 视图本身读不到 Prefs。
-     * 「锁定互动」是另一个开关 [lockInteraction]：关掉时连点击/长按都不响应。
-     */
-    var locked = false
-
-    /**
      * **锁定互动**（用户要求）：关掉时对屏幕上的形象**任何操作都不响应** ——
      * 不播按压动画、不点击跳跃、也不能拖动（不论是否锁定，它是独立的开关）。
-     * 开着时：点击与长按照常，拖动仍由 [locked] 决定。
+     * 开着时：点击与长按照常，拖动仍由「锁定」决定。
+     *
+     * ⚠️ 这里**现读 `prefs`**（[PetView] 自己有 Prefs 实例：`private val prefs by lazy`），
+     *    **不要**改成"由服务下发一个标志"：用户实测过"明明关了锁定互动、点它还在跳" ——
+     *    标志在某个路径上没被刷新就永久错位；现读 SharedPreferences 是内存缓存，
+     *    每次按下读一次的成本可以忽略，但不可能过期。
      */
-    var lockInteraction = true
+    private fun interactionLocked(): Boolean = !prefs.lockInteraction
+
+    /** 「锁定」：形象不能被拖动（同样现读，见 [interactionLocked] 的说明） */
+    private fun moveLocked(): Boolean = prefs.locked
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
@@ -2128,11 +2128,8 @@ class PetView(context: Context) : View(context) {
                 if (!hitsPet(event.x + winShiftX, event.y + winShiftY)) return false
                 // 「锁定互动：关」= 对屏幕上的形象**任何操作都不响应**（用户要求）：
                 // 直接返回 false —— 连按压动画都不播，更不会点击跳跃。
-                //
-                // ⚠️ 原来这里写的是 `locked && !lockInteraction`，等于"必须先锁定才生效"，
-                //    用户实测"只关锁定互动时还是能点着跳"，说明这个开关该**独立生效**
-                //    （它也确实是独立的一个开关）。拖动仍然只由 [locked] 控制。
-                if (!lockInteraction) return false
+                // 现读 prefs，不做服务下发的标志（见 [interactionLocked] 的说明）。
+                if (interactionLocked()) return false
                 downRawX = event.rawX
                 downRawY = event.rawY
                 dragOffsetX = 0f
@@ -2159,8 +2156,8 @@ class PetView(context: Context) : View(context) {
                 val dx = event.rawX - downRawX
                 val dy = event.rawY - downRawY
                 // 锁定后**不能拖动**（用户要求）：长了位移也不进拖动分支，
-                // 于是这次手势仍然只是"点击 / 长按"（锁定互动开时照常播放）。
-                if (!locked && !dragging && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
+                // 于是这次手势仍然只是"点击 / 长按"。同样是现读 prefs。
+                if (!moveLocked() && !dragging && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
                     dragging = true
                     // 真拖动了：以这次拖动为准，丢掉刚才记下的落点
                     clearPendingSnap()

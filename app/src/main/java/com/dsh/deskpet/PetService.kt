@@ -165,10 +165,9 @@ class PetService : Service(), PetView.Host {
             }
             ACTION_LOCK_TOGGLE -> {
                 // 通知栏那个「锁定 / 解锁」：只是翻一下状态，
-                // 然后把两件事刷到位 —— 形象能不能被拖（applyTouchability + 视图标志）、
-                // 以及通知栏自己那个按钮的文案（重建通知）。
+                // 通知栏那个「锁定 / 解锁」：翻一下状态，再重建通知
+                //（按钮文案跟着状态走）。形象那边不用通知 —— PetView 触摸时现读 prefs。
                 prefs.locked = !prefs.locked
-                applyLockToView()
                 runCatching { startForegroundCompat() }
                 return START_STICKY
             }
@@ -480,9 +479,9 @@ class PetService : Service(), PetView.Host {
         val view = PetView(this)
         view.host = this
         view.sprite = s
-        // 锁定状态：呼出时下发一次（用户要求：锁定后形象不能被拖动）
-        view.locked = prefs.locked
-        view.lockInteraction = prefs.lockInteraction
+        // ⚠️ 不再往视图上下发「锁定 / 锁定互动」标志：PetView 自己按 prefs **现读**
+        //    （它本来就有 Prefs 实例）。下发式写法踩过坑：标志在某条路径上没刷新，
+        //    就会出现"明明关了锁定互动、点它还在跳"。
         view.setSizeFraction(prefs.sizeFraction)
 
         // 窗口**只有宠物那么大**（不是整屏）。
@@ -530,8 +529,6 @@ class PetService : Service(), PetView.Host {
 
         petView = view
         petParams = p
-        // 呼出时按当前锁定状态下发一次（锁定 → 不能拖动；锁定互动关 → 触控穿透）
-        applyLockToView()
 
         // 恢复上次的吸附状态与位置。
         //
@@ -649,31 +646,6 @@ class PetService : Service(), PetView.Host {
         petParams = null
     }
 
-    /**
-     * 把「锁定 / 锁定互动」两个状态下发到形象上。
-     *
-     * 两个入口都走它：App 里那两个按钮（notifyChanged → reloadPet）与通知栏那个
-     * 「锁定 / 解锁」（ACTION_LOCK_TOGGLE）。合成一个函数是为了两条路不会走岔。
-     *
-     * 触控穿透（锁定 + 锁定互动关）由窗口 flag [FLAG_SLIPPERY] 实现，
-     * 状态变化时重建窗口（见下面的说明），这里只同步两个标志。
-     */
-    /**
-     * 把「锁定 / 锁定互动」两个状态下发到形象上。
-     *
-     * 两个入口都走它：App 里那两个按钮（notifyChanged → reloadPet）与通知栏那个
-     * 「锁定 / 解锁」（ACTION_LOCK_TOGGLE）。
-     *
-     * ⚠️ 这里**不重建窗口**：早先为了在运行时切换 FLAG_NOT_TOUCHABLE（触控穿透）
-     *    才需要重建，现在那个 flag 已经不用了（见 showPet 里的说明），
-     *    切换锁定状态不会再闪一下。视图侧只改两个标志，立即生效。
-     */
-    private fun applyLockToView() {
-        val v = petView ?: return
-        v.locked = prefs.locked
-        v.lockInteraction = prefs.lockInteraction
-    }
-
     private fun reloadPet() {
         // 收起状态下也要先拿到**当前角色**的 sprite，否则通知标题里的角色名
         // 还是上一个角色的（标题文案由 sprite.displayName 提供）。
@@ -711,9 +683,6 @@ class PetService : Service(), PetView.Host {
         }
         val v = petView ?: return
         v.sprite = sprite
-        // 锁定 / 锁定互动可能刚在 App 里切换过，每次重载都重新下发一次
-        //（MainActivity 的两个锁定按钮就是靠 notifyChanged 走到这里的）
-        applyLockToView()
         // 以**吸附边为基准**缩放（贴底/下角 -> 底边不动，贴侧边 -> 那一侧不动）。
         //
         // ⚠️ 就到这里为止 —— 2.1.6~2.1.9 曾在这里额外做"吸回某一侧"，结果是手机上

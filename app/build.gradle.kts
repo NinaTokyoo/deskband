@@ -233,11 +233,16 @@ android {
         //                     `locked && !lockInteraction`，等于必须先锁定才管用，
         //                     用户实测"只关锁定互动还是能点着跳"。现在只要它是关的，
         //                     对形象的任何操作都不响应（也不播按压动画）；拖动仍由锁定控制）
+        //   2.1.20 -> 20120（锁定 / 锁定互动改为**触摸时现读 prefs**：
+        //                     原来是由服务把两个标志下发到 PetView，标志在某条路径上
+        //                     没刷新就会出现"明明关了锁定互动、点它还在跳"（用户实测）。
+        //                     PetView 本来就有 Prefs 实例，按下时现读，不可能过期；
+        //                     顺手删掉下发的标志与 applyLockToView()）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
         //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
         //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
-        val vName = "2.1.19"
+        val vName = "2.1.20"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()
