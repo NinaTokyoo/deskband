@@ -667,11 +667,13 @@ class MainActivity : Activity() {
      *   · 默认只有一横条 —— 标题 + 右侧「新增」「管理」；
      *   · 点「新增」卡片向下展开表单，**这个按钮变成「保存」、右边那个变成「取消」**；
      *   · 点「管理」向下展开标签列表，**右边那个也变成「取消」**；
-     *   · 「取消」= 放弃本次新增（已选的图与名字一起清掉）并收回一横条；
+     *   · 「取消」= **退一级**：管理态下有标签正等"确认删除"就先退回管理列表，
+     *     否则收回一横条；「取消」在新增态等于放弃本次新增（图与名字一起清掉）；
      *   · 保存成功也收回一横条。
      *
      * 所以右侧按钮的文案只看"卡片是不是展开着"（收起=管理、展开=取消），
      * 与当前是新增还是管理**无关**；左侧按钮才是"收起=新增、新增态=保存"。
+     * 而"退一级"的具体分支在 [setupCustomSkinControls] 的点击回调里。
      *
      * ⚠️ 两个展开区**互斥**，只在这里改可见性：同时可见会出现
      * "新增表单下面挂着删除标签"的错位画面。
@@ -687,10 +689,19 @@ class MainActivity : Activity() {
         btnCustomManage.text = getString(
             if (mode == CUSTOM_NONE) R.string.custom_manage else R.string.custom_cancel
         )
+        if (mode == CUSTOM_ADD) {
+            // 名称框的**浅色占位**就是"留空时会用的默认名"（用户要求）：
+            // 每次进来按当前数量重算（已有 2 个就是「自定义人物3」）。
+            // 一输入它就消失（hint 的固有行为），而留空保存时用的正是这个名字 ——
+            // 所以 hint 与 saveCustomSkin 里的兜底名必须是同一个算法。
+            editCustomName.hint = getString(
+                R.string.custom_default_name, CustomSkinStore.list(this).size + 1
+            )
+        }
         if (mode == CUSTOM_MANAGE) {
             renderCustomTags()
         } else {
-            // 离开管理态（含点「取消」）：待确认删除也一并作废，
+            // 离开管理态（含点「取消」退回一横条）：待确认删除也一并作废，
             // 否则下次进来那个标签会直接顶着「确认删除」，一点就没了
             pendingDeleteId = null
         }
@@ -707,9 +718,19 @@ class MainActivity : Activity() {
         btnCustomAdd.setOnClickListener {
             if (customMode == CUSTOM_ADD) saveCustomSkin() else setCustomMode(CUSTOM_ADD)
         }
-        // 展开着就是「取消」（新增态/管理态都一样），收起时才是「管理」
+        // 「取消」= 退一级（用户要求）：
+        //   · 管理态下若有标签正等着"确认删除" -> 先退回管理列表（那个标签复位）
+        //   · 其余展开态 -> 收回一横条
+        //   · 收起态 -> 展开管理列表
         btnCustomManage.setOnClickListener {
-            setCustomMode(if (customMode == CUSTOM_NONE) CUSTOM_MANAGE else CUSTOM_NONE)
+            when {
+                customMode == CUSTOM_MANAGE && pendingDeleteId != null -> {
+                    pendingDeleteId = null
+                    renderCustomTags()
+                }
+                customMode == CUSTOM_NONE -> setCustomMode(CUSTOM_MANAGE)
+                else -> setCustomMode(CUSTOM_NONE)
+            }
         }
         boxCustomUpright.setOnClickListener { pickCustomImage(REQ_PICK_UPRIGHT) }
         boxCustomCorner.setOnClickListener { pickCustomImage(REQ_PICK_CORNER) }
