@@ -662,14 +662,21 @@ canvas.scale(sx, sy, cx, squashPivotLocalY())
   （wrap_content，用户要求"大小根据文字数量来"）；通知栏内容卡的"恢复默认值"是
   **清空当前形象那两条自定义文案**（留空 = 用默认，本来就是这张卡的语义）。
 
-- **尺寸卡片：照搬 2.1.3（= 基线），不要在这里加吸附**（2.1.10 用户拍板）。
-  现状就是基线那三行：滑条 `onProgressChanged` 每格 `prefs.sizeScale = ...` +
-  `bindSizeControls()` + `PetService.notifyChanged()`；`onStopTrackingTouch` 空实现；
-  数字输入回车或失焦才生效。服务侧 `reloadPet()` 只调 `setSizeFraction(prefs.sizeFraction)`，
-  也就是"以吸附边为基准缩放"——**贴边的宠物本来就一直贴着**，不需要额外补一刀。
-  ⚠️ 2.1.6~2.1.9 在这里试过的东西全部删除了，别再捡回来：
-  `notifySizeChanged` / `EXTRA_RESNAP` / `setSizeFraction(f, resnapSide)` /
-  按 `state` 或按当前位置的强制吸附 / 80ms 节流 / 打字 250ms 压后。
+- **尺寸缩放：锚点规则（用户要求，2.1.11 定稿）** —— 缩放时"一直吸附"：
+  - **横向**：贴左 -> 左边不动，贴右 -> 右边不动；
+  - **纵向**：**角落钉住对应顶点**（贴上沿钉顶边、贴底钉底边），
+    **侧边钉住那条边的中点**（竖直中心不动）。
+  - ⚠️ 判据必须与 [applySnap] 的"标准落位"完全一致（VERT_TOP -> 顶边 /
+    VERT_NONE 或 isZoneless -> 居中 / 其余 -> 底边）。原来 `setSizeFraction` 只判
+    `BORDER_R/BORDER_L`，把**立姿侧边** `BORDER_*_UPRIGHT` 当贴底处理，
+    而 applySnap 是把它竖直居中的 —— 判据不一致，于是调大小时中点在跑
+    （用户反馈的就是这个）。改完后实测：立姿侧边状态下 size 1.2 / 2.0 / 0.8 三档，
+    窗口竖直中心恒为 388（只有宽高在变）。
+  - 滑条与数字输入的行为仍是 2.1.3 那套（每格 `notifyChanged`；数字回车/失焦生效）。
+- **不要在尺寸路径上加"强行吸回某一侧"**（2.1.10 用户拍板撤销）：
+  2.1.6~2.1.9 试过的 `notifySizeChanged` / `EXTRA_RESNAP` /
+  `setSizeFraction(f, resnapSide)` / 按 `state` 或按当前位置的强制吸附 /
+  80ms 节流 / 打字 250ms 压后 —— **全部已删除，别再捡回来**。
   那些改动的实测症状：拖动时抖动、松手或点取消时人物被甩到另一侧
   （用户原话"抖而且飞"）。教训：**窗口位置一帧里只能动一次**，
   而"每像素一次完整重载"在手机上本身就会抖。
