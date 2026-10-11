@@ -450,20 +450,20 @@ class MainActivity : Activity() {
                 if (!fromUser) return
                 prefs.sizeScale = sizeScaleOf(progress)
                 bindSizeControls()
-                // **一边改一边吸附**（用户要的老手感），但要**节流**：
-                // 每像素发一次通知 = 几十赫兹重排窗口，那才是"抽搐"的来源。
-                // 吸附本身不会抖 —— 缩放与吸附在 setSizeFraction 的**同一次**
-                // syncWindow 里做完，且贴哪一边按**当前位置**判断（不会甩到另一侧）。
+                // 拖动中**只缩放、不吸附**（用户选定的手感：这样最不抖），
+                // 吸附留到松手那一下。这里仍然**节流**：每移动一个像素都发一次通知
+                // = 几十赫兹重排窗口，那本身就会让人物发抖。
                 val now = android.os.SystemClock.elapsedRealtime()
                 if (now - lastSizeNotifyAt >= sizeNotifyGapMs) {
                     lastSizeNotifyAt = now
-                    PetService.notifySizeChanged(this@MainActivity, resnap = true)
+                    PetService.notifySizeChanged(this@MainActivity)
                 }
             }
 
             override fun onStartTrackingTouch(sb: SeekBar?) = Unit
 
-            // 松手：无条件再发一次，保证最后一格一定落到位
+            // 松手：这一步才吸附（按**当前位置**决定贴哪一边，不会甩到另一侧），
+            // 顺带保证最后一格一定落到位
             override fun onStopTrackingTouch(sb: SeekBar?) {
                 lastSizeNotifyAt = 0L
                 PetService.notifySizeChanged(this@MainActivity, resnap = true)
