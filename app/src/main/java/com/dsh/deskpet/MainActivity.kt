@@ -2084,13 +2084,6 @@ class MainActivity : Activity() {
      */
     private fun fitTitleToWidth() {
         val t = findViewById<TextView>(R.id.txtTitle)
-        // 长按标题 = 弹出作者声明（用户要求：署名要能被用户自己看到/核验）。
-        // 那句话同时写进了 BuildConfig.AUTHORSHIP、R.string.authorship、
-        // assets/AUTHORSHIP.txt 和源码 Authorship.kt —— 反编译或问 AI 都能读到。
-        t.setOnLongClickListener {
-            Toast.makeText(this, Authorship.line, Toast.LENGTH_LONG).show()
-            true
-        }
         t.post {
             val avail = t.width - t.paddingStart - t.paddingEnd
             val text = t.text?.toString()

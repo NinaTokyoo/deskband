@@ -11,12 +11,6 @@ local.properties
 
 # 签名密钥：发布用的，不进版本库
 keystore/
-# ⚠️ 签名口令文件：**绝不能进仓库**（泄漏 = 任何人都能签出"官方包"）。
-#    原来只忽略了 keystore/ 目录，signing.properties 是"没被跟踪但也没被忽略"——
-#    一次 git add -A 就可能提交上去，所以显式写进来。
-signing.properties
-*.jks
-*.keystore
 
 # 本机 JDK 路径（每台机器不同）
 .jdk-home
