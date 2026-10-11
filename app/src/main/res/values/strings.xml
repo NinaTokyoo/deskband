@@ -28,7 +28,7 @@
     <string name="reset_keep_toast_on">复位将保留当前设置，只把人物移回右边框中点</string>
     <string name="reset_keep_toast_off">复位将恢复默认设置</string>
     <string name="reset_done">已复位</string>
-    <string name="reset_need_running">桌宠还没开启，先点左侧「开启桌宠」</string>
+    <string name="reset_need_running">DeskBand 还没开启，先点左侧「呼出」</string>
 
     <!-- ②.5 自定义形象（插在「当前形象」与「外观尺寸」之间） -->
     <string name="section_custom_skin">自定义形象</string>
@@ -126,8 +126,8 @@
 
 
     <!-- 通知 -->
-    <string name="notif_channel">桌宠</string>
-    <string name="notif_channel_desc">桌宠在桌面上运行时显示的常驻通知</string>
+    <string name="notif_channel">DeskBand</string>
+    <string name="notif_channel_desc">DeskBand 在桌面上运行时显示的常驻通知</string>
     <!-- 标题随当前形象变化，形象名后留一个空格：例如「山田凉 正在陪伴你」 -->
     <!--
       通知标题的**默认值**：`<角色名> 正在陪伴你`。
@@ -138,12 +138,12 @@
     <string name="notify_title_label">标题</string>
     <string name="notify_body_label">正文</string>
     <string name="notify_title_count">标题已输入 %1$d / %2$d 字符</string>
-        <string name="notif_title_fallback">桌宠正在陪伴你</string>
+        <string name="notif_title_fallback">DeskBand 正在陪伴你</string>
     <!-- 已收起时的标题：**固定**为「<角色名> 待呼出」，App 内自定义只作用于呼出状态 -->
     <string name="notif_title_collapsed">%1$s 待呼出</string>
     <!-- 通知栏动作按钮：按状态在「收起」/「呼出」之间切换 -->
     <string name="notif_action_summon">呼出</string>
-    <string name="notif_text">点这里回到设置，或直接收起桌宠</string>
+    <string name="notif_text">点这里回到设置，或直接收起 DeskBand</string>
     <!-- 已收起（服务仍在跑）时的通知正文 -->
         <!-- 已收起时的正文：**固定**文案，App 内的自定义正文只作用于呼出状态 -->
     <string name="notif_text_collapsed">点击回到应用</string>
