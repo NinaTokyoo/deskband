@@ -218,11 +218,17 @@ android {
         //                     改成 **状态变了就重建窗口**，flag 只在 addView 时定死。
         //                     实测：锁定+互动关 -> flags 含 NOT_TOUCHABLE 且点被形象
         //                     压住的按钮能生效；互动开 -> 点它无反应，形象完全可见）
+        //   2.1.17 -> 20117（触控穿透回归 FLAG_NOT_TOUCHABLE（唯一实测有效的办法），
+        //                     保留"flag 只在建窗口时定、状态变了重建窗口"；
+        //                     另外用**反射**把窗口标成受信悬浮窗
+        //                     （setTrustedOverlay，@hide）—— 实机上"锁定互动关时
+        //                     形象半透明"很可能是 ROM 对非受信/不可触摸悬浮窗的降级显示；
+        //                     反射失败也只是忽略，不影响功能）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
         //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
         //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
-        val vName = "2.1.16"
+        val vName = "2.1.17"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()
