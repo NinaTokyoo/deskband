@@ -1,10 +1,13 @@
 package com.dsh.deskpet
 
+import android.content.Context
 import android.content.res.AssetManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import org.json.JSONObject
+import java.io.File
+import java.io.InputStream
 
 /**
  * 一个角色的两套素材（目录约定 `assets/pet/<角色>/`）：
@@ -128,39 +131,104 @@ class PetSprite private constructor(
         /** 素材缺失时的兜底角色 */
         const val FALLBACK = "后藤一里"
 
-        fun listSkins(assets: AssetManager): List<String> =
+        /**
+         * 全部可选形象：**内置的在前（按目录名排序）、自定义的在后（按创建顺序）**。
+         *
+         * 自定义排在后面是有意的 —— 刚新增的那个一定在列表最下方，不用翻。
+         */
+        fun listSkins(ctx: Context): List<String> =
+            builtinSkins(ctx.assets) + CustomSkinStore.list(ctx)
+
+        /** APK 内置素材：`assets/pet/` 下带 pet.json 的子目录 */
+        private fun builtinSkins(assets: AssetManager): List<String> =
             (assets.list(ROOT) ?: emptyArray())
                 .filter { dir ->
                     (assets.list("$ROOT/$dir") ?: emptyArray()).contains("pet.json")
                 }
                 .sorted()
 
-        fun load(assets: AssetManager, dir: String): PetSprite? {
+        /**
+         * 只读一个形象的**显示名**，不解码任何图片。
+         *
+         * 「当前形象」列表在每次换角色 / 切明暗时都要重建，而重建要拿到所有名字 ——
+         * 原来这里走的是 [load]（每个形象解码两张 PNG），自定义形象一多，
+         * 这个代价就直接压在 UI 线程上。
+         */
+        fun readName(ctx: Context, dir: String): String? =
+            if (CustomSkinStore.exists(ctx, dir)) {
+                CustomSkinStore.readName(ctx, dir)
+            } else {
+                try {
+                    val json = ctx.assets.open("$ROOT/$dir/pet.json")
+                        .use { it.readBytes().toString(Charsets.UTF_8) }
+                    JSONObject(json).optString("name", "").takeIf { it.isNotEmpty() }
+                } catch (e: Exception) {
+                    null
+                }
+            }
+
+        /**
+         * 加载一个形象（含解码两张素材）。
+         *
+         * **自定义优先**：filesDir 下有这个 id 就用它，否则回落到 APK 内置素材。
+         * 判据是"目录里有没有 pet.json"，而不是给 id 加前缀 ——
+         * 前缀一旦和角色名撞上（内置目录名就是中文角色名）就再也分不清了。
+         */
+        fun load(ctx: Context, dir: String): PetSprite? {
+            if (CustomSkinStore.exists(ctx, dir)) {
+                val base = CustomSkinStore.dirOf(ctx, dir)
+                val json = try {
+                    File(base, CustomSkinStore.JSON).readText(Charsets.UTF_8)
+                } catch (e: Exception) {
+                    return null
+                }
+                return parse(dir, json) { name -> CustomSkinStore.openFileStream(base, name) }
+            }
+            return loadFromAssets(ctx.assets, dir)
+        }
+
+        private fun loadFromAssets(assets: AssetManager, dir: String): PetSprite? {
             val base = "$ROOT/$dir"
             val json = try {
                 assets.open("$base/pet.json").use { it.readBytes().toString(Charsets.UTF_8) }
             } catch (e: Exception) {
                 return null
             }
-            return try {
-                val root = JSONObject(json)
-                val c = root.getJSONObject("corner")
-                val u = root.getJSONObject("upright")
-                val corner = decode(assets, "$base/" + c.getString("file")) ?: return null
-                val upright = decode(assets, "$base/" + u.getString("file")) ?: return null
-                PetSprite(
-                    dir = dir,
-                    displayName = root.optString("name", dir),
-                    cornerW = c.optInt("w", corner.width),
-                    cornerH = c.optInt("h", corner.height),
-                    uprightW = u.optInt("w", upright.width),
-                    uprightH = u.optInt("h", upright.height),
-                    cornerSrc = corner,
-                    uprightSrc = upright
-                )
-            } catch (e: Exception) {
-                null
+            return parse(dir, json) { name ->
+                try {
+                    assets.open("$base/$name")
+                } catch (e: Exception) {
+                    null
+                }
             }
+        }
+
+        /**
+         * pet.json + 两个图片流 -> [PetSprite]。
+         *
+         * 内置素材与自定义形象共用这一段：区别只有"清单从哪读、图片流怎么开"，
+         * 都由 [open] 传进来，所以解码 / 降采样 / 缓存键这些规则永远只有一份。
+         */
+        private fun parse(
+            dir: String, json: String, open: (String) -> InputStream?
+        ): PetSprite? = try {
+            val root = JSONObject(json)
+            val c = root.getJSONObject("corner")
+            val u = root.getJSONObject("upright")
+            val corner = decode { open(c.getString("file")) } ?: return null
+            val upright = decode { open(u.getString("file")) } ?: return null
+            PetSprite(
+                dir = dir,
+                displayName = root.optString("name", dir),
+                cornerW = c.optInt("w", corner.width),
+                cornerH = c.optInt("h", corner.height),
+                uprightW = u.optInt("w", upright.width),
+                uprightH = u.optInt("h", upright.height),
+                cornerSrc = corner,
+                uprightSrc = upright
+            )
+        } catch (e: Exception) {
+            null
         }
 
         /**
@@ -173,18 +241,23 @@ class PetSprite private constructor(
          *
          * 目标尺寸见 [DECODE_MAX_PX]。先只读 bounds 再解码：inSampleSize 只能取
          * 2 的幂，得先知道原尺寸才能算出"最接近又不小于目标"的那一档。
-         * 解码要开两次流 —— 这是仓库里的 asset，重复打开没有代价。
+         * 解码要开两次流 —— 内置素材是仓库里的 asset、自定义形象是本机文件，
+         * 重复打开都没有代价。
+         *
+         * [open] 由调用方给：assets 走 AssetManager，自定义形象走 FileInputStream。
+         * 自定义形象落盘前已经被 [CustomSkinStore] 缩到 [DECODE_MAX_PX] 以内，
+         * 所以这里的 `inSampleSize` 对它们恒为 1，清单里的宽高与位图尺寸必然一致。
          */
-        private fun decode(assets: AssetManager, path: String): Bitmap? = try {
+        private fun decode(open: () -> InputStream?): Bitmap? = try {
             val probe = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            assets.open(path).use { input ->
+            open()?.use { input ->
                 BitmapFactory.decodeStream(input, null, probe)
             }
             val opts = BitmapFactory.Options().apply {
                 inPreferredConfig = Bitmap.Config.ARGB_8888
                 inSampleSize = sampleSizeFor(probe.outWidth, probe.outHeight)
             }
-            assets.open(path).use { input ->
+            open()?.use { input ->
                 BitmapFactory.decodeStream(input, null, opts)
             }
         } catch (e: Exception) {

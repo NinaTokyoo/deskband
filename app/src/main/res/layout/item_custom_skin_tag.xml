@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  「自定义形象」-> 管理：一个形象标签（名字 + 右侧红色错号）。
+
+  ⚠️ 背景与文字色**不在 XML 里写死**：标签是每次进「管理」都重建的动态视图，
+  由 MainActivity.renderCustomTags() 按当前强调色 / 明暗模式现给
+  （走 AccentTheme.accentBoxBackground 与 AccentTheme.skinBoxText）。
+
+  错号用 ✕（U+2715）而不是 ✗：后者在不同字重下容易糊成一个点；
+  字号比名字大一号、加粗，才在一眼之内认得出是"删除"。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingStart="10dp"
+    android:paddingEnd="8dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp">
+
+    <TextView
+        android:id="@+id/txtCustomTagName"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:textSize="14sp" />
+
+    <TextView
+        android:id="@+id/txtCustomTagDelete"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:paddingStart="4dp"
+        android:paddingEnd="2dp"
+        android:paddingTop="2dp"
+        android:paddingBottom="2dp"
+        android:text="✕"
+        android:textSize="17sp"
+        android:textStyle="bold" />
+</LinearLayout>

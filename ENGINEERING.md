@@ -538,6 +538,7 @@ canvas.scale(sx, sy, cx, squashPivotLocalY())
 | 权限 | 悬浮窗 / 通知（后面的对号错号是**黑白**字形） |
 | 呼出 · 收起 | 开关按钮 + 复位 + 「复位保留设置」 |
 | 当前形象 | 角色下拉 + 右下角预览 |
+| **自定义形象** | 默认一横条：标题 + 新增 / 管理；展开成"新增表单"或"管理标签"（2.1.0） |
 | 外观大小 | 大小倍率（0.5~5） |
 | **呼出回弹** | 总时长（0.2~5，1.0 = 560ms）/ 弹出高度（0.1~10，1.0 = 现在过冲的一半）/ 回弹幅度（0.1~10，1.0 = 39%）+ 停用 + 恢复默认 |
 | 边框回弹 | 幅度（0.5~100）/ 时长（0.1~10）+ 停用 + 恢复默认 |
@@ -574,6 +575,66 @@ canvas.scale(sx, sy, cx, squashPivotLocalY())
 > 大小以**吸附边为基准**缩放：贴底/角落则底边不动（否则缩小后浮空），
 > 贴侧边则吸附那侧不动（否则放大后超出屏幕）。
 
+### 自定义形象（2.1.0 新增）
+
+卡片插在「当前形象」之后，三种形态**互斥**、只在 `MainActivity.setCustomMode` 一处切换：
+收起（一横条）/ 新增表单 / 管理标签。保存成功、或点「取消」都回到一横条。
+
+两个按钮的文案**只看卡片是不是展开着**，在 `setCustomMode` 里一起定：
+
+| 形态 | 左按钮 | 右按钮 |
+|---|---|---|
+| 收起 | 新增 | 管理 |
+| 新增表单 | **保存** | **取消** |
+| 管理标签 | 新增 | **取消** |
+
+所以右侧按钮在**任何展开态**下都是「取消」（用户要求），不能只在管理态改文案；
+「取消」除了收回卡片，还要 `clearCustomForm()` 把已填的名字与已选的图一起清掉 ——
+否则下次展开会看到上一次的半成品。形象名称那一行宽度取卡片内容宽度的 **2/3**
+（`weight 66:34`，与「当前形象」的名称框同宽），管理列表为空时提示
+「尚无自定义形象，点击新增按钮以添加」。
+
+**存储与内置素材同构**，这是整个设计的地基：
+
+```
+filesDir/custom_pet/<id>/pet.json + upright.png + corner.png
+assets/pet/<角色>/pet.json      + upright.png + corner.png
+```
+
+于是 `PetSprite` 只多一个"根目录从哪来"（`load(ctx, dir)` 里判一下
+`CustomSkinStore.exists`），解码 / 降采样 / 镜像 / 缓存键**一行都不用改**。
+不要为自定义形象另写一套加载路径。
+
+几条踩过或差点踩到的：
+
+- **角落素材"可选"不做运行时回退分支**：没选角落素材时，pet.json 的
+  `corner.file` 直接写 `upright.png`、宽高照抄主素材。于是"角落状态用主素材"
+  这件事在数据里就成立了，代码里一个 if 都不需要 —— 也就不会出现
+  "只改了一处回退逻辑"的漏网。
+- **pet.json 里的 `w/h` 必须是落盘 PNG 的实际尺寸**。PetSprite 用它们算缩放比，
+  而位图自己还会再走一次 `DECODE_MAX_PX` 降采样：清单写原图 4000、位图却被降到
+  2000 的话，人物会按 4000 算比例、画出来只有一半大。所以 `CustomSkinStore`
+  先把图缩到 1280 以内再落盘，清单写的就是落盘尺寸。内置素材（都 ≤1440）永远踩不到。
+- **id 与显示名分离**：目录名是 `u<时间戳>`，显示名在 pet.json 的 `name` 里。
+  这样两个形象可以重名而不互相覆盖，名字里也能带 `/`、emoji 等文件名不接受的字符。
+- **选图用 `ACTION_OPEN_DOCUMENT`**：不需要任何存储权限，也能选到"文件"里的图；
+  同时 `takePersistableUriPermission` 尽量取持久读权限（临时授权在进程重建后就失效，
+  表现是"选完图回来点保存，读不到图"）。
+- **保存走后台线程**：手机相册里的图常常 4000px 起步，解码 + 缩放 + PNG 编码
+  在主线程上是几百毫秒的卡顿。`customSaving` 标志挡连点，否则会存出两个一样的形象。
+- **列表重建用 `PetSprite.readName()`**（只读 pet.json），**不要**再用
+  `PetSprite.load()` —— 那是"每个形象解码两张 PNG"，自定义形象一多就全压在 UI 线程上。
+- **管理标签是动态视图**，颜色/描边都要自己给：进「管理」、删除后、切明暗
+  （`applyTheme` 末尾）三处都要 `renderCustomTags()` 重建；标签描边走
+  `AccentTheme.accentBoxBackground`。**错号的红色是唯一的例外**——
+  固定红、不跟强调色（强调色本身可能就是红的，跟着走就认不出哪个是删除了）。
+- **删除要连缓存一起清**：`skinAssets.remove(id)`（发色 / 包围盒 / 预览位图都是按
+  id 缓存的，留着会串味）；删的若是**当前**形象，`loadSkins()` 会把 `prefs.skin`
+  退回列表第一个，此时还要 `applyTheme` + `refreshCornerPreview` +
+  `PetService.notifyChanged`，否则桌宠还拿着一个已经不存在的目录名。
+- **卡片里的两个展开区不能同时可见**：同时展开会出现"新增表单下面挂着删除标签"
+  的错位画面。可见性只在 `setCustomMode` 里改。
+
 ---
 
 ## 七、素材
@@ -592,7 +653,7 @@ python tools/stage_assets.py     # 转换 + 入库 + 生成 pet.json
 
 ```powershell
 .\gradlew.bat assembleDebug      # 调试包
-.\gradlew.bat testDebugUnitTest  # 52 个单元测试
+.\gradlew.bat testDebugUnitTest  # 85 个单元测试
 .\gradlew.bat assembleRelease    # 签名发布包
 ```
 
@@ -612,7 +673,8 @@ python tools/stage_assets.py     # 转换 + 入库 + 生成 pet.json
 |---|---|
 | `PetState.kt` | 纯逻辑：垂直基准（`VERT_*`）、分区判定、吸附位置、旋转角、翻转、缩放。**无 Android 依赖，全部可单测** |
 | `PetView.kt` | 悬浮窗本体：绘制、触摸、动画、窗口摆放 |
-| `PetSprite.kt` | 素材加载、镜像/翻转、按状态缓存位图 |
+| `PetSprite.kt` | 素材加载、镜像/翻转、按状态缓存位图（内置 assets 与自定义目录两种来源） |
+| `CustomSkinStore.kt` | 自定义形象：导入图片（解码 / 缩放）、落盘、列举、删除 |
 | `PetService.kt` | 前台服务：挂载/移除悬浮窗、屏幕开关、窗口布局 |
 | `Prefs.kt` | SharedPreferences 封装（含默认值迁移） |
 | `MainActivity.kt` | 控制面板 |

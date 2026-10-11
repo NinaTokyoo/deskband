@@ -107,6 +107,36 @@ class MainActivity : Activity() {
     /** 切换形象卡片右下角的素材预览（不可交互） */
     private lateinit var imgCornerPreview: android.widget.ImageView
 
+    // ---- 自定义形象卡 ----
+    /** 卡片形态：收起（一横条）/ 新增表单 / 管理列表 */
+    private var customMode = CUSTOM_NONE
+    private lateinit var btnCustomAdd: Button
+    private lateinit var btnCustomManage: Button
+    private lateinit var panelCustomAdd: View
+    private lateinit var panelCustomManage: View
+    private lateinit var rowsCustomManage: android.widget.LinearLayout
+    private lateinit var txtCustomEmpty: TextView
+    private lateinit var editCustomName: EditText
+    private lateinit var boxCustomUpright: View
+    private lateinit var boxCustomCorner: View
+    private lateinit var imgCustomUpright: android.widget.ImageView
+    private lateinit var imgCustomCorner: android.widget.ImageView
+    private lateinit var txtPlusCustomUpright: TextView
+    private lateinit var txtPlusCustomCorner: TextView
+
+    /**
+     * 新增表单里已选中的两张图。
+     *
+     * ⚠️ 只存 Uri、**不存解码后的位图**：位图会随 Activity 重建丢失（旋转屏幕、
+     * 被系统回收），而 Uri 一直有效；保存时才真正解码落盘（见 CustomSkinStore。
+     * 顺带也就不会因为"选了两张 4000px 的图"把内存顶上去。
+     */
+    private var pickedUpright: Uri? = null
+    private var pickedCorner: Uri? = null
+
+    /** 保存/解码在后台线程跑，这个标志挡住连点（否则会存出两个一样的形象） */
+    private var customSaving = false
+
     /**
      * 明暗模式：三个按钮（跟随系统 / 浅色 / 深色），选中的那个高亮。
      *
@@ -203,6 +233,19 @@ class MainActivity : Activity() {
         txtNotifyCount = findViewById(R.id.txtNotifyCount)
         btnSaveNotify = findViewById(R.id.btnSaveNotify)
         imgCornerPreview = findViewById(R.id.imgCornerPreview)
+        btnCustomAdd = findViewById(R.id.btnCustomAdd)
+        btnCustomManage = findViewById(R.id.btnCustomManage)
+        panelCustomAdd = findViewById(R.id.panelCustomAdd)
+        panelCustomManage = findViewById(R.id.panelCustomManage)
+        rowsCustomManage = findViewById(R.id.rowsCustomManage)
+        txtCustomEmpty = findViewById(R.id.txtCustomEmpty)
+        editCustomName = findViewById(R.id.editCustomName)
+        boxCustomUpright = findViewById(R.id.boxCustomUpright)
+        boxCustomCorner = findViewById(R.id.boxCustomCorner)
+        imgCustomUpright = findViewById(R.id.imgCustomUpright)
+        imgCustomCorner = findViewById(R.id.imgCustomCorner)
+        txtPlusCustomUpright = findViewById(R.id.txtPlusCustomUpright)
+        txtPlusCustomCorner = findViewById(R.id.txtPlusCustomCorner)
         btnThemeSystem = findViewById(R.id.btnThemeSystem)
         btnThemeLight = findViewById(R.id.btnThemeLight)
         btnThemeDark = findViewById(R.id.btnThemeDark)
@@ -214,6 +257,7 @@ class MainActivity : Activity() {
         installThumbOnlySeekBars()
         setupBreathControls()
         setupNotifyControls()
+        setupCustomSkinControls()
         applyTheme()
         refreshCornerPreview()
         setupThemeButtons()
@@ -474,9 +518,10 @@ class MainActivity : Activity() {
     }
 
     private fun loadSkins() {
-        val found = PetSprite.listSkins(assets)
+        val found = PetSprite.listSkins(this)
         skins = if (found.isEmpty()) listOf(Prefs.DEFAULT_SKIN) else found
-        val labels = skins.map { dir -> PetSprite.load(assets, dir)?.displayName ?: dir }
+        // 只读 pet.json 拿显示名，**不再 load**（那会解码每个形象的两张 PNG）
+        val labels = skins.map { dir -> PetSprite.readName(this, dir) ?: dir }
         // 名字表一次算好：之后按钮文案、通知标题都查它，不再重复解码 PNG
         skinNames = skins.indices.associate { skins[it] to labels[it] }
 
@@ -602,6 +647,293 @@ class MainActivity : Activity() {
         applyTheme()
         refreshCornerPreview()
         PetService.notifyChanged(this)
+    }
+
+    // ---------------------------------------------------------------- 自定义形象
+
+    /**
+     * 卡片三种形态的**唯一**切换点：收起（一横条）/ 新增表单 / 管理列表。
+     *
+     * 用户要求：
+     *   · 默认只有一横条 —— 标题 + 右侧「新增」「管理」；
+     *   · 点「新增」卡片向下展开表单，**这个按钮变成「保存」、右边那个变成「取消」**；
+     *   · 点「管理」向下展开标签列表，**右边那个也变成「取消」**；
+     *   · 「取消」= 放弃本次新增（已选的图与名字一起清掉）并收回一横条；
+     *   · 保存成功也收回一横条。
+     *
+     * 所以右侧按钮的文案只看"卡片是不是展开着"（收起=管理、展开=取消），
+     * 与当前是新增还是管理**无关**；左侧按钮才是"收起=新增、新增态=保存"。
+     *
+     * ⚠️ 两个展开区**互斥**，只在这里改可见性：同时可见会出现
+     * "新增表单下面挂着删除标签"的错位画面。
+     * 也正因为互斥，两个按钮的文案必须在这里一起定，不能各写各的。
+     */
+    private fun setCustomMode(mode: Int) {
+        customMode = mode
+        panelCustomAdd.visibility = if (mode == CUSTOM_ADD) View.VISIBLE else View.GONE
+        panelCustomManage.visibility = if (mode == CUSTOM_MANAGE) View.VISIBLE else View.GONE
+        btnCustomAdd.text = getString(
+            if (mode == CUSTOM_ADD) R.string.custom_save else R.string.custom_add
+        )
+        btnCustomManage.text = getString(
+            if (mode == CUSTOM_NONE) R.string.custom_manage else R.string.custom_cancel
+        )
+        if (mode == CUSTOM_MANAGE) renderCustomTags()
+        if (mode != CUSTOM_ADD) {
+            clearCustomForm()
+            clearInputFocus()
+        }
+        // 展开区里的方块靠 tag=accentBox 上色、标签是刚重建的，都要重刷一遍主题
+        applyTheme()
+    }
+
+    private fun setupCustomSkinControls() {
+        // 不在新增态时是「新增」，在新增态时是「保存」（文案在 setCustomMode 里定）
+        btnCustomAdd.setOnClickListener {
+            if (customMode == CUSTOM_ADD) saveCustomSkin() else setCustomMode(CUSTOM_ADD)
+        }
+        // 展开着就是「取消」（新增态/管理态都一样），收起时才是「管理」
+        btnCustomManage.setOnClickListener {
+            setCustomMode(if (customMode == CUSTOM_NONE) CUSTOM_MANAGE else CUSTOM_NONE)
+        }
+        boxCustomUpright.setOnClickListener { pickCustomImage(REQ_PICK_UPRIGHT) }
+        boxCustomCorner.setOnClickListener { pickCustomImage(REQ_PICK_CORNER) }
+        editCustomName.setOnEditorActionListener { _, _, _ -> clearInputFocus(); true }
+        renderCustomTags()
+    }
+
+    /**
+     * 选素材图：走系统文件选择器（`ACTION_OPEN_DOCUMENT`）。
+     *
+     * 选它而不是 `ACTION_GET_CONTENT` / 相册权限的原因：**不需要任何存储权限**，
+     * 返回的是可以直接读的 Uri，用户也能选到"文件"里的图（不只是相册）。
+     */
+    private fun pickCustomImage(req: Int) {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "image/*"
+        }
+        try {
+            startActivityForResult(intent, req)
+        } catch (e: Exception) {
+            Toast.makeText(this, R.string.custom_no_picker, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (resultCode != RESULT_OK) return
+        val uri = data?.data ?: return
+        // 有些来源只给"本次会话有效"的临时授权，能持久就持久 ——
+        // 否则进程一重建、回来点保存就变成读不到图
+        runCatching {
+            contentResolver.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        }
+        when (requestCode) {
+            REQ_PICK_UPRIGHT -> {
+                pickedUpright = uri
+                showPickedImage(imgCustomUpright, txtPlusCustomUpright, uri)
+            }
+            REQ_PICK_CORNER -> {
+                pickedCorner = uri
+                showPickedImage(imgCustomCorner, txtPlusCustomCorner, uri)
+            }
+        }
+    }
+
+    /** 选完图立刻在方框里显示缩略图，并把那个「+」收起来 */
+    private fun showPickedImage(img: android.widget.ImageView, plus: TextView, uri: Uri) {
+        val bmp = CustomSkinStore.preview(this, uri)
+        if (bmp == null) {
+            Toast.makeText(this, R.string.custom_bad_image, Toast.LENGTH_SHORT).show()
+            return
+        }
+        img.setImageBitmap(bmp)
+        plus.visibility = View.GONE
+    }
+
+    /** 清空新增表单（离开新增态时调用，避免下次展开还留着上次的半成品） */
+    private fun clearCustomForm() {
+        editCustomName.setText("")
+        pickedUpright = null
+        pickedCorner = null
+        imgCustomUpright.setImageDrawable(null)
+        imgCustomCorner.setImageDrawable(null)
+        txtPlusCustomUpright.visibility = View.VISIBLE
+        txtPlusCustomCorner.visibility = View.VISIBLE
+        customSaving = false
+    }
+
+    /**
+     * 「保存」：把表单里的人物存成一个自定义形象。
+     *
+     * 用户要求：
+     *   · 主素材**必填** —— 没加就点保存 = 不生效 + 提示「须添加主素材」；
+     *   · 角落素材可选，**不加不提示**（角落状态直接用主素材）；
+     *   · 存完**不立刻使用**：只是出现在「当前形象」的二级菜单里，要用得去那儿选；
+     *   · 存完卡片收回一横条（图一）。
+     *
+     * 解码 + 缩放 + PNG 编码都放后台线程：手机里的图常常是 4000px 起步，
+     * 这一串在主线程上会让界面卡住好几百毫秒。
+     */
+    private fun saveCustomSkin() {
+        if (customSaving) return
+        val upright = pickedUpright
+        if (upright == null) {
+            Toast.makeText(this, R.string.custom_need_main, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val corner = pickedCorner
+        val typed = editCustomName.text.toString().trim()
+        val name = typed.ifEmpty {
+            getString(R.string.custom_default_name, CustomSkinStore.list(this).size + 1)
+        }
+        clearInputFocus()
+        customSaving = true
+        btnCustomAdd.isEnabled = false
+
+        val app = applicationContext
+        Thread {
+            val id = CustomSkinStore.save(app, name, upright, corner)
+            runOnUiThread {
+                btnCustomAdd.isEnabled = true
+                customSaving = false
+                if (id == null) {
+                    Toast.makeText(this, R.string.custom_save_failed, Toast.LENGTH_SHORT).show()
+                    return@runOnUiThread
+                }
+                // 重读形象列表：内置 + 自定义 —— 新人物立刻出现在二级菜单里
+                loadSkins()
+                setCustomMode(CUSTOM_NONE)
+                Toast.makeText(this, R.string.custom_saved, Toast.LENGTH_SHORT).show()
+            }
+        }.start()
+    }
+
+    /**
+     * 「管理」列表：自定义形象每行两个，**奇数个时最后一个与左列对齐**（用户要求）。
+     *
+     * 每次进「管理」、每次删除、每次切明暗都要重建 ——
+     * 标签的描边与文字色都跟着当前强调色走（与二级菜单同一个道理）。
+     */
+    private fun renderCustomTags() {
+        rowsCustomManage.removeAllViews()
+        val ids = CustomSkinStore.list(this)
+        txtCustomEmpty.visibility = if (ids.isEmpty()) View.VISIBLE else View.GONE
+
+        val gap = (resources.displayMetrics.density * 10f).toInt()
+        var i = 0
+        while (i < ids.size) {
+            val row = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { if (rowsCustomManage.childCount > 0) topMargin = gap }
+            }
+            row.addView(makeCustomTag(ids[i], startMargin = 0))
+            // 奇数个：右列补一个等宽空位，最后一个标签才与左列对齐
+            row.addView(
+                if (i + 1 < ids.size) makeCustomTag(ids[i + 1], startMargin = gap)
+                else android.widget.Space(this).apply {
+                    layoutParams = android.widget.LinearLayout.LayoutParams(1, 1, 1f)
+                }
+            )
+            rowsCustomManage.addView(row)
+            i += 2
+        }
+    }
+
+    /** 一个形象标签：名字 + 右侧红色错号（点错号走二次确认删除） */
+    private fun makeCustomTag(id: String, startMargin: Int): View {
+        val tag = layoutInflater.inflate(R.layout.item_custom_skin_tag, rowsCustomManage, false)
+        tag.layoutParams = android.widget.LinearLayout.LayoutParams(
+            0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+        ).apply { marginStart = startMargin }
+        tag.background = AccentTheme.accentBoxBackground(this, accent, lightMode)
+
+        val name = CustomSkinStore.readName(this, id) ?: id
+        tag.findViewById<TextView>(R.id.txtCustomTagName).apply {
+            text = name
+            setTextColor(AccentTheme.skinBoxText(lightMode))
+        }
+        tag.findViewById<TextView>(R.id.txtCustomTagDelete).apply {
+            // 错号是**固定的红**，不跟强调色（强调色可能是红的，就分不出"删除"了）
+            setTextColor(TAG_DELETE_RED)
+            setOnClickListener { confirmDeleteCustomSkin(id, name) }
+        }
+        return tag
+    }
+
+    /**
+     * 二次确认：「确定删除 <形象名> 吗？」
+     *
+     * ⚠️ 刻意**不用** `AlertDialog`：它的面板与按钮是 DeviceDefault 的系统样式
+     * （深色圆角面板 + 蓝紫按钮），跟整页"中性底 + 强调色描边"完全对不上
+     * （用户反馈："这个二次确认能做成跟按钮统一样式的吗"）。
+     *
+     * 改用普通 [android.app.Dialog] + 自己的内容布局，然后走 [AccentTheme.apply]
+     * 上色 —— 弹窗里的卡片背景与镂空按钮就是**同一套**配色，
+     * 换角色 / 切明暗时弹窗也跟着变，不需要另写一份颜色。
+     */
+    private fun confirmDeleteCustomSkin(id: String, name: String) {
+        val content = layoutInflater.inflate(R.layout.dialog_confirm_delete, null)
+        content.findViewById<TextView>(R.id.txtConfirmMessage).text =
+            getString(R.string.custom_delete_confirm, name)
+
+        val dialog = android.app.Dialog(this)
+        // requestWindowFeature 必须在 setContentView 之前
+        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+        dialog.setContentView(content)
+        dialog.setCanceledOnTouchOutside(true)
+
+        // 系统那层窗口背景必须透明：圆角与描边由内容视图（tag=card）自己画，
+        // 留着不透明背景会在圆角外露出一圈方角
+        dialog.window?.setBackgroundDrawable(
+            android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT)
+        )
+        val dm = resources.displayMetrics
+        val side = (dm.density * 24f).toInt()
+        dialog.window?.setLayout(
+            (dm.widthPixels - side * 2).coerceAtLeast(1),
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+
+        AccentTheme.apply(this, content, accent, lightMode)
+
+        content.findViewById<Button>(R.id.btnConfirmCancel)
+            .setOnClickListener { dialog.dismiss() }
+        content.findViewById<Button>(R.id.btnConfirmDelete).setOnClickListener {
+            dialog.dismiss()
+            deleteCustomSkin(id, name)
+        }
+        dialog.show()
+    }
+
+    /**
+     * 真删：素材目录、缓存、以及"删的正好是当前形象"这一种情况。
+     *
+     * 删的若是当前正在用的那个，[loadSkins] 会把 `prefs.skin` 退回列表第一个
+     * （它本来就带这条兜底），这里再把界面与桌宠一起换过去 ——
+     * 否则桌宠那边还拿着一个已经不存在的目录名，只能靠 FALLBACK 兜。
+     */
+    private fun deleteCustomSkin(id: String, name: String) {
+        val wasCurrent = prefs.skin == id
+        CustomSkinStore.delete(this, id)
+        // 这个 id 的发色 / 包围盒 / 预览位图都是旧的了，留着会串味
+        skinAssets.remove(id)
+        loadSkins()
+        if (wasCurrent) {
+            applyTheme()
+            refreshCornerPreview()
+            PetService.notifyChanged(this)
+        } else {
+            renderCustomTags()
+        }
+        Toast.makeText(this, getString(R.string.custom_delete_done, name), Toast.LENGTH_SHORT)
+            .show()
     }
 
     // ---------------------------------------------------------------- 回弹调节
@@ -1142,6 +1474,28 @@ class MainActivity : Activity() {
          * 真实过冲量是按行程算的（见 [Prefs.summonPopPx]），所以标签只是参考值。
          */
         const val SUMMON_REF_TRAVEL_PX = 320f
+
+        // ---- 自定义形象卡 ----
+        /** 收起：只有标题那一横条 */
+        const val CUSTOM_NONE = 0
+
+        /** 展开新增表单（此时「新增」按钮显示为「保存」） */
+        const val CUSTOM_ADD = 1
+
+        /** 展开管理列表 */
+        const val CUSTOM_MANAGE = 2
+
+        /** 选图请求码：主素材 / 角落素材各一个 */
+        const val REQ_PICK_UPRIGHT = 9001
+        const val REQ_PICK_CORNER = 9002
+
+        /**
+         * 管理标签上错号的红色。
+         *
+         * 这里是**唯一**不跟强调色、也不跟明暗模式的颜色（用户明确要"红色错号"）——
+         * 强调色本身可能就是红的或橙的，跟着走就认不出哪个是删除了。
+         */
+        val TAG_DELETE_RED = 0xFFE53935.toInt()
     }
 
     // ---------------------------------------------------------------- 标题铺满
@@ -1214,7 +1568,7 @@ class MainActivity : Activity() {
         java.util.Collections.synchronizedMap(HashMap<String, SkinAssets>())
 
     private fun assetsFor(skin: String): SkinAssets = skinAssets.getOrPut(skin) {
-        val sprite = PetSprite.load(assets, skin)
+        val sprite = PetSprite.load(this, skin)
         val bmp = sprite?.bitmap(PetState.CORNER_BR, mirror = false, flipV = false)
         if (bmp == null) {
             SkinAssets(null, android.graphics.Rect(0, 0, 1, 1),
@@ -1257,6 +1611,9 @@ class MainActivity : Activity() {
         // 菜单项的横线与文字色都依赖强调色 / 明暗模式，重建一次
         buildSkinMenu()
         refreshSkinBox()
+
+        // 「自定义形象」管理列表里的标签同理：描边与名字色都跟着强调色
+        renderCustomTags()
 
         // 按钮上的文字里有形象名，名字要用强调色，所以每次都重建一次
         refreshSummonLabel()

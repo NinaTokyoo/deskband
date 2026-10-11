@@ -30,6 +30,28 @@
     <string name="reset_done">已复位</string>
     <string name="reset_need_running">桌宠还没开启，先点左侧「开启桌宠」</string>
 
+    <!-- ②.5 自定义形象（插在「当前形象」与「外观尺寸」之间） -->
+    <string name="section_custom_skin">自定义形象</string>
+    <string name="custom_add">新增</string>
+    <string name="custom_manage">管理</string>
+    <string name="custom_save">保存</string>
+    <string name="custom_name_input">形象名称</string>
+    <string name="custom_main_asset">主素材（必选）</string>
+    <string name="custom_corner_asset">角落素材（可选）</string>
+    <!-- 主素材没加就点保存时的提示（角落素材是可选的，不加不提示） -->
+    <string name="custom_need_main">须添加主素材</string>
+    <string name="custom_save_failed">保存失败，换一张图片再试</string>
+    <string name="custom_bad_image">这张图片读不出来，换一张试试</string>
+    <string name="custom_saved">已保存到「当前形象」，可在那里启用</string>
+    <string name="custom_delete_confirm">确定删除 %1$s 吗？</string>
+    <string name="custom_delete">删除</string>
+    <string name="custom_cancel">取消</string>
+    <string name="custom_empty">尚无自定义形象，点击新增按钮以添加</string>
+    <!-- 名字留空时的兜底名：后面接序号，例如「自定义人物1」 -->
+    <string name="custom_default_name">自定义人物%1$d</string>
+    <string name="custom_delete_done">已删除 %1$s</string>
+    <string name="custom_no_picker">没有找到可用的图片选择器</string>
+
     <!-- ③ 外观 -->
     <string name="section_look">外观尺寸</string>
     <!-- 标签与当前值合并成一行，提高信息密度。

@@ -44,6 +44,16 @@ object AccentTheme {
      */
     const val TAG_ACCENT_LINE = "accentLine"
 
+    /**
+     * 「自定义形象」里那些**描边方块**（主素材 / 角落素材的选择框、管理列表里的
+     * 形象标签）标的 tag。
+     *
+     * 它们是运行时才出现的视图（标签每次进"管理"都重建），
+     * 没法在 XML 里逐个写好背景；统一在这里按强调色下发描边，
+     * 与卡片、按钮同一套配色规则。
+     */
+    const val TAG_ACCENT_BOX = "accentBox"
+
     // ------------------------------------------------------------ 取色
 
     /**
@@ -179,6 +189,10 @@ object AccentTheme {
                 // 用纯色背景在深色底上几乎看不见，这里统一用强调色填。
                 v.tag == TAG_ACCENT_LINE -> v.setBackgroundColor(accent)
 
+                // 自定义形象的素材选择框 / 管理标签：与其它边框同一套强调色描边
+                v.tag == TAG_ACCENT_BOX ->
+                    v.background = accentBoxBackground(ctx, accent, light)
+
                 v is TextView -> when (v.id) {
                     // 只有标题吃强调色
                     R.id.txtTitle -> v.setTextColor(accent)
@@ -283,5 +297,16 @@ object AccentTheme {
 
     /** 选择框里的文字与三角的颜色（跟随明暗模式的中性色） */
     fun skinBoxText(light: Boolean): Int = Palette(light).textPrimary
+
+    /**
+     * 「自定义形象」里描边方块的背景：素材选择框、管理列表里的形象标签。
+     *
+     * 与「当前形象」的名称框同一套（中性底 + 强调色描边 + 10dp 圆角）——
+     * 代码里动态造出来的标签用它上色，XML 里的静态方块靠 [TAG_ACCENT_BOX]。
+     */
+    fun accentBoxBackground(
+        ctx: Context, accent: Int, light: Boolean, radiusDp: Float = 10f
+    ): GradientDrawable =
+        rounded(ctx.resources.displayMetrics, Palette(light).card, accent, radiusDp)
 
 }

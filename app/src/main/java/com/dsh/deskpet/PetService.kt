@@ -419,9 +419,9 @@ class PetService : Service(), PetView.Host {
      */
     private fun acquireSprite(): PetSprite? {
         val s = sprite?.takeIf { !it.isEvicted && it.dir == prefs.skin }
-            ?: PetSprite.load(assets, prefs.skin)
-            ?: PetSprite.load(assets, PetSprite.FALLBACK)
-            ?: PetSprite.listSkins(assets).firstOrNull()?.let { PetSprite.load(assets, it) }
+            ?: PetSprite.load(this, prefs.skin)
+            ?: PetSprite.load(this, PetSprite.FALLBACK)
+            ?: PetSprite.listSkins(this).firstOrNull()?.let { PetSprite.load(this, it) }
         if (s != null) sprite = s
         return s
     }
