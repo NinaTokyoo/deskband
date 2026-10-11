@@ -486,7 +486,7 @@
             </LinearLayout>
 
             <!-- 展开区：参数 + 底部两个整行按钮（保存并应用 / 恢复默认值） -->
-            <LinearLayout
+            <com.dsh.deskpet.CardPanel
                 android:id="@+id/panelSize"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -549,7 +549,7 @@
                         android:layout_marginStart="10dp"
                         android:text="@string/restore_default" />
                 </LinearLayout>
-            </LinearLayout>
+            </com.dsh.deskpet.CardPanel>
         </LinearLayout>
 
         <!-- ④ 呼出回弹（滑入 + 回摆那一段，独立于边框回弹） -->
@@ -576,7 +576,7 @@
 
             <!-- 展开区：参数 + 底部两个整行按钮（保存并应用 / 恢复默认值）。
                  「停用」留在标题行里不动，两个状态下都能点。 -->
-            <LinearLayout
+            <com.dsh.deskpet.CardPanel
                 android:id="@+id/panelSummon"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -709,7 +709,7 @@
                         android:layout_marginStart="10dp"
                         android:text="@string/restore_default" />
                 </LinearLayout>
-            </LinearLayout>
+            </com.dsh.deskpet.CardPanel>
         </LinearLayout>
 
         <!-- ⑤ 松手回弹 -->
@@ -736,7 +736,7 @@
             </LinearLayout>
 
             <!-- 展开区：参数 + 底部两个整行按钮（保存并应用 / 恢复默认值） -->
-            <LinearLayout
+            <com.dsh.deskpet.CardPanel
                 android:id="@+id/panelBounce"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -833,7 +833,7 @@
                         android:layout_marginStart="10dp"
                         android:text="@string/restore_default" />
                 </LinearLayout>
-            </LinearLayout>
+            </com.dsh.deskpet.CardPanel>
         </LinearLayout>
 
         <!-- ⑥ 呼吸 -->
@@ -859,7 +859,7 @@
             </LinearLayout>
 
             <!-- 展开区：参数 + 底部两个整行按钮（保存并应用 / 恢复默认值） -->
-            <LinearLayout
+            <com.dsh.deskpet.CardPanel
                 android:id="@+id/panelBreath"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -955,7 +955,7 @@
                         android:layout_marginStart="10dp"
                         android:text="@string/restore_default" />
                 </LinearLayout>
-            </LinearLayout>
+            </com.dsh.deskpet.CardPanel>
         </LinearLayout>
 
         <!-- ⑦ 通知栏自定义 -->
@@ -977,7 +977,7 @@
 
             <!-- 展开区：两个输入框 + 底部「保存并应用」。
                  这张卡没有可恢复的参数，所以**不放**「恢复默认值」。 -->
-            <LinearLayout
+            <com.dsh.deskpet.CardPanel
                 android:id="@+id/panelNotify"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -1062,7 +1062,7 @@
                         android:layout_marginStart="10dp"
                         android:text="@string/restore_default" />
                 </LinearLayout>
-            </LinearLayout>
+            </com.dsh.deskpet.CardPanel>
         </LinearLayout>
 
         <!-- ⑥ 明暗模式：放在最下方（用户要求） -->

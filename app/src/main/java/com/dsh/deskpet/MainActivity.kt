@@ -376,6 +376,8 @@ class MainActivity : Activity() {
                 }
             bindSizeControls()
             clearInputFocus()
+            // 操作完成 -> 右上角按钮从「取消」变「收起」
+            markCardSaved(panelSize)
         }
 
         // 恢复默认值：大小会改变窗口尺寸，必须通知服务
@@ -384,6 +386,7 @@ class MainActivity : Activity() {
             bindSizeControls()
             clearInputFocus()
             PetService.notifyChanged(this)
+            markCardSaved(panelSize)
         }
 
         bindSizeControls()
@@ -403,8 +406,16 @@ class MainActivity : Activity() {
 
     // ---------------------------------------------------------------- 可展开卡片
 
-    /** 一张"一横条 + 点管理展开"的卡片：展开区 + 右上角那个「管理 / 取消」按钮 */
-    private class ExpandCard(val body: View, val manage: Button)
+    /** 一张"一横条 + 点管理展开"的卡片：展开区 + 右上角那个「管理 / 取消 / 收起」按钮 */
+    private class ExpandCard(val body: View, val manage: Button) {
+        /**
+         * 展开之后是否已经"操作完成"（点过「保存」或「恢复默认值」）。
+         *
+         * 决定按钮文案（用户要求）：展开后是**取消**；点过保存就变**收起**；
+         * 之后再碰一下这张卡，又回到**取消**。
+         */
+        var saved = false
+    }
 
     private val expandCards = ArrayList<ExpandCard>()
 
@@ -412,16 +423,17 @@ class MainActivity : Activity() {
      * 登记一张可展开卡片（用户要求：外观尺寸 / 呼出回弹 / 边框回弹 / 呼吸 /
      * 通知栏内容 都做成自定义形象那种"平常收起、点管理展开"）。
      *
-     * 两个状态只差两件事：展开区可见性、右上角按钮文案在「管理 / 取消」之间切换。
-     * **「停用 / 启用」按钮留在标题行不动**，两个状态下都能点（用户确认的交互）。
-     *
      * ⚠️ 这里**不调 applyTheme()**：展开区里的控件都是 XML 里的静态视图，
      *    上一次主题刷色已经把它们刷好了；而 applyTheme() 会顺带
      *    `refreshNotifyFields()`，那会把通知栏两个输入框里**正在编辑**的内容
      *    覆盖成存档值（展开/收起任何一张卡都会误伤）。
      */
     private fun registerExpandCard(body: View, manage: Button) {
-        expandCards.add(ExpandCard(body, manage))
+        val card = ExpandCard(body, manage)
+        expandCards.add(card)
+        // 「用户碰过这张卡」由 CardPanel 上报（它是 dispatchTouchEvent 那一层才收得到，
+        //  挂在容器上的 OnTouchListener 收不到 —— 触摸目标是子控件）
+        (body as? CardPanel)?.onUserTouch = { markCardDirty(card) }
         manage.setOnClickListener { setCardExpanded(body, body.visibility != View.VISIBLE) }
         setCardExpanded(body, false)
     }
@@ -429,8 +441,10 @@ class MainActivity : Activity() {
     /**
      * 展/收一张卡片。
      *
-     * **手风琴**（用户要求）：展开某一张时，其余打开的卡片（含自定义形象卡的展开区）
-     * 立刻关闭 —— 一次只留一张展开，页面高度永远可控。
+     * **手风琴**（用户要求）：展开某一张时，其余打开的卡片（含自定义形象卡的展开区、
+     * 以及「当前形象」的二级菜单）立刻关闭 —— 一次只留一块展开。
+     *
+     * 展开时把"操作完成"标志清掉 -> 按钮显示**取消**（用户要求：没点过保存就是取消）。
      */
     private fun setCardExpanded(body: View, expanded: Boolean) {
         if (expanded) {
@@ -440,10 +454,38 @@ class MainActivity : Activity() {
             closeSkinMenuIfOpen()
         }
         body.visibility = if (expanded) View.VISIBLE else View.GONE
-        expandCards.firstOrNull { it.body === body }?.manage?.text =
-            getString(if (expanded) R.string.card_cancel else R.string.card_manage)
+        expandCards.firstOrNull { it.body === body }?.let { card ->
+            if (expanded) card.saved = false
+            refreshCardButton(card)
+        }
         // 收起时收掉焦点与键盘，免得输入框在看不见的地方亮着
         if (!expanded) clearInputFocus()
+    }
+
+    /** 用户又碰了这张卡：未保存状态，按钮回到**取消** */
+    private fun markCardDirty(card: ExpandCard) {
+        if (!card.saved) return
+        card.saved = false
+        refreshCardButton(card)
+    }
+
+    /** 操作完成（保存 / 恢复默认值）：按钮变成**收起** */
+    private fun markCardSaved(body: View) {
+        val card = expandCards.firstOrNull { it.body === body } ?: return
+        card.saved = true
+        refreshCardButton(card)
+    }
+
+    /** 右上角按钮的文案：收起态=管理，展开且已保存=收起，展开未保存=取消 */
+    private fun refreshCardButton(card: ExpandCard) {
+        val expanded = card.body.visibility == View.VISIBLE
+        card.manage.text = getString(
+            when {
+                !expanded -> R.string.card_manage
+                card.saved -> R.string.card_collapse
+                else -> R.string.card_cancel
+            }
+        )
     }
 
     /**
@@ -1130,30 +1172,6 @@ class MainActivity : Activity() {
             rowsCustomManage.addView(row)
             i += 2
         }
-
-        // 待确认删除时，右上角那个「取消」也要变红 —— 它是这个状态的唯一"退路"，
-        // 跟着变红才看得出"现在点它是取消删除、不是收起卡片"
-        bindCustomManageButton()
-    }
-
-    /**
-     * 右上角按钮的配色：**有标签待确认删除时变红**（用户要求，深浅色模式都一样）。
-     *
-     * ⚠️ 只在 [renderCustomTags] 里调：它是"待确认状态可能变了"的唯一汇聚点
-     * （进管理态、点错号、点取消复位、删除后、切明暗都会走到）。
-     * 而"离开管理态"那条路**不经过** renderCustomTags —— 那正好：
-     * setCustomMode 末尾的 `applyTheme()` 会把按钮恢复成强调色镂空样式。
-     * 顺序上也不能反：AccentTheme.apply 会把所有 Button 重刷成强调色，
-     * 红色必须落在它**之后**（renderCustomTags 本来就排在 applyTheme 尾部）。
-     */
-    private fun bindCustomManageButton() {
-        val danger = pendingDeleteId != null
-        btnCustomManage.setTextColor(
-            if (danger) TAG_DELETE_RED else AccentTheme.skinBoxText(lightMode)
-        )
-        btnCustomManage.background = AccentTheme
-            .ghostSelectorFor(this, if (danger) TAG_DELETE_RED else accent, lightMode)
-            .constantState?.newDrawable()?.mutate()
     }
 
     /**
@@ -1315,6 +1333,7 @@ class MainActivity : Activity() {
             bindBounceControls()
             // 保存后收掉焦点与键盘，否则输入框会一直亮着下划线、光标闪个不停
             clearInputFocus()
+            markCardSaved(panelBounce)
         }
 
         // 恢复默认值：回弹参数是吸附时现读的，不需要通知服务
@@ -1323,6 +1342,7 @@ class MainActivity : Activity() {
             prefs.bounceTimeScale = 1f
             bindBounceControls()
             clearInputFocus()
+            markCardSaved(panelBounce)
         }
 
         // 边框回弹总开关：关掉后吸附只做位置补间，不再往外弹。
@@ -1415,6 +1435,7 @@ class MainActivity : Activity() {
             )?.let { prefs.summonSpringScale = it }
             bindSummonControls()
             clearInputFocus()
+            markCardSaved(panelSummon)
         }
 
         btnResetSummon.setOnClickListener {
@@ -1423,6 +1444,7 @@ class MainActivity : Activity() {
             prefs.summonSpringScale = 1f
             bindSummonControls()
             clearInputFocus()
+            markCardSaved(panelSummon)
         }
 
         btnSummonToggle.setOnClickListener {
@@ -1538,6 +1560,7 @@ class MainActivity : Activity() {
                 ?.let { prefs.breathScale = it }
             bindBreathControls()
             clearInputFocus()
+            markCardSaved(panelBreath)
         }
 
         btnResetBreath.setOnClickListener {
@@ -1547,6 +1570,7 @@ class MainActivity : Activity() {
             prefs.breathSpeed = 1f
             bindBreathControls()
             clearInputFocus()
+            markCardSaved(panelBreath)
         }
 
         btnBreathToggle.setOnClickListener {
@@ -1736,6 +1760,7 @@ class MainActivity : Activity() {
             applyNotify()
             clearInputFocus()
             PetService.refreshNotification(this)
+            markCardSaved(panelNotify)
         }
 
         /**
@@ -1752,6 +1777,7 @@ class MainActivity : Activity() {
             clearInputFocus()
             PetService.refreshNotification(this)
             Toast.makeText(this, R.string.notify_restored, Toast.LENGTH_SHORT).show()
+            markCardSaved(panelNotify)
         }
     }
 
