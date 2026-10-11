@@ -430,13 +430,15 @@
                     android:id="@+id/rowsCustomManage"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
                     android:orientation="vertical" />
 
+                <!-- 空列表时的提示：本身不再留上边距，靠上面 rowsCustomManage 的
+                     12dp —— 这样"有标签"与"没标签"两种情况下，与标题行的间隔一致 -->
                 <TextView
                     android:id="@+id/txtCustomEmpty"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
                     android:textColor="@color/text_secondary"
                     android:textSize="13sp"
                     android:visibility="gone"
