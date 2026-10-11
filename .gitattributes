@@ -1,6 +1,0 @@
-# git archive 打包源码快照时排除这些（`export-ignore`）：
-#   attest/ —— 存证产物自身（时间戳、哈希清单、上一版源码 zip）
-#   docs/   —— 本地开发过程截图，体积大
-# 目的：源码快照只含"真正的源码"，不逐版套娃、不膨胀。
-attest/ export-ignore
-docs/ export-ignore
