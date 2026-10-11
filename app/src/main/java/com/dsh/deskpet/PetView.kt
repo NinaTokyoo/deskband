@@ -484,6 +484,10 @@ class PetView(context: Context) : View(context) {
         clearPendingSnap()
         syncWindow()
         markRest(anchorX, anchorY)
+        // ⚠️ 这里**不要**顺手把位置上报给服务存档：showPet() 是先调本函数
+        //    （此时视图还没落位、锚点还是 0,0）再 restore()/resetToRightMid() ——
+        //    在这里上报等于每次呼出都往存档里写 (0,0)，下次呼出就落在屏幕左上角。
+        //    尺寸变化后的存档由服务侧的 reloadPet() 负责（见那里的 scheduleSave）。
     }
 
     fun setState(newState: Int) {

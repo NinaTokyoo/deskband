@@ -651,6 +651,15 @@ class PetService : Service(), PetView.Host {
         //    抖动、甚至把人物甩到另一侧。用户拍板：尺寸这块照搬 2.1.3（= 基线）。
         //    基线这条"以附着边为基准缩放"本身就让贴边的宠物一直贴着，够用。
         v.setSizeFraction(prefs.sizeFraction)
+        // 尺寸一变，存档里的 pos_left/pos_top **就过期了**（它们是"足迹左上角"的
+        // 绝对坐标，跟尺寸绑定）。不更新的话，缩小以后下次呼出会用旧坐标摆位 ——
+        // 表现就是"呼出后不在屏幕边缘、调大小也不贴边"（用户反馈的正是这个）。
+        //（放大方向看不出来：旧坐标落到屏幕外，restore 的夹取会顺手把它推回边上。）
+        //
+        // ⚠️ 必须在**服务侧**、在视图已经落位之后写，不能在 PetView.setSizeFraction
+        //    里写：showPet() 是先 setSizeFraction（锚点还是 0,0）再 restore/reset，
+        //    在那里写会把存档写成 (0,0)，人物下次呼出就落在左上角（踩过）。
+        scheduleSave()
         // ⚠️ 这里**不要**再调 v.restore(...)。
         //
         // 曾经是"先 setSizeFraction，再 restore(state, posLeft, posTop)"。

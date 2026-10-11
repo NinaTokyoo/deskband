@@ -192,9 +192,19 @@ android {
         //   2.1.12 -> 20112（回到 2.1.10 的行为：撤销 2.1.11 那个"侧边钉竖直中心"的
         //                     锚点改动，纵向判据恢复基线三档 —— 贴上沿钉顶边 /
         //                     躺侧边居中 / 贴底钉底边。用户实测后拍板用 .10 这版）
+        //   2.1.13 -> 20113（尺寸变化后**更新位置存档**：pos_left/pos_top 是足迹左上角的
+        //                     绝对坐标、跟尺寸绑定，原来只有拖动松手与复位会写它，
+        //                     缩小尺寸后存档过期，下次呼出 restore() 就照旧坐标摆位 ——
+        //                     用户反馈的"呼出后/调大小时不在屏幕边缘"。
+        //                     现在 reloadPet 里 setSizeFraction 之后 scheduleSave()。
+        //                     ⚠️ 不能在 PetView.setSizeFraction 里上报：showPet 是先
+        //                     setSizeFraction（锚点还是 0,0）再 restore/resetToMid，
+        //                     那样会把存档写成 (0,0)、人物下次落在左上角）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
-        // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏。
-        val vName = "2.1.12"
+        // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
+        //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
+        //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
+        val vName = "2.1.13"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()
