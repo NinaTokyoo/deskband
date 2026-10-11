@@ -963,11 +963,19 @@ class MainActivity : Activity() {
                 ).apply { if (rowsCustomManage.childCount > 0) topMargin = gap }
             }
             row.addView(makeCustomTag(ids[i], startMargin = 0))
-            // 奇数个：右列补一个等宽空位，最后一个标签才与左列对齐
+            // 奇数个：右列补一个占位，最后一个标签才与左列对齐。
+            //
+            // ⚠️ 占位的 layoutParams 必须跟真标签**一模一样**（0 宽 + 同权重 + 同样
+            //    的左边距）。曾写成 `LayoutParams(1, 1, 1f)`，看着"也是个空格"，
+            //    但权重分配对"宽 0"和"宽 1px"走的是两条分支：成对的行里每格拿到
+            //    (W − 间距)/2，而单独一行的标签拿到 ≈ W/2 —— 宽出半个间距，
+            //    表现就是"名字短的标签比成对的窄"（实测 621 vs 638px，用户反馈）。
             row.addView(
                 if (i + 1 < ids.size) makeCustomTag(ids[i + 1], startMargin = gap)
                 else android.widget.Space(this).apply {
-                    layoutParams = android.widget.LinearLayout.LayoutParams(1, 1, 1f)
+                    layoutParams = android.widget.LinearLayout.LayoutParams(
+                        0, 1, 1f
+                    ).apply { marginStart = gap }
                 }
             )
             rowsCustomManage.addView(row)
