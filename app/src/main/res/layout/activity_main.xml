@@ -276,7 +276,7 @@
                 <Button
                     android:id="@+id/btnCustomManage"
                     style="@style/CardAction"
-                    android:text="@string/custom_manage" />
+                    android:text="@string/card_manage" />
             </LinearLayout>
 
             <!-- ============ 展开区一：新增表单（默认隐藏） ============ -->
@@ -468,7 +468,7 @@
             </LinearLayout>
         </LinearLayout>
 
-        <!-- ③ 外观 -->
+        <!-- ③ 外观：默认只有一横条（标题 + 管理），点「管理」展开参数 -->
         <LinearLayout style="@style/Card" android:tag="card" android:layout_marginStart="12dp" android:layout_marginEnd="12dp">
 
             <LinearLayout style="@style/CardTitleRow">
@@ -480,10 +480,18 @@
                     android:text="@string/section_look" />
 
                 <Button
-                    android:id="@+id/btnResetSize"
+                    android:id="@+id/btnManageSize"
                     style="@style/CardAction"
-                    android:text="@string/restore_default" />
+                    android:text="@string/card_manage" />
             </LinearLayout>
+
+            <!-- 展开区：参数 + 底部两个整行按钮（保存并应用 / 恢复默认值） -->
+            <LinearLayout
+                android:id="@+id/panelSize"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
 
             <!-- 标签 + 当前值 + 输入框挤在同一行，滑条紧随其下（提高密度） -->
             <LinearLayout
@@ -525,6 +533,13 @@
                 android:id="@+id/btnSaveSize"
                 style="@style/PrimaryButton"
                 android:text="@string/save_apply" />
+
+                <!-- 恢复默认值：挪到卡片最底下（用户要求），整行宽、次要样式 -->
+                <Button
+                    android:id="@+id/btnResetSize"
+                    style="@style/CardWideAction"
+                    android:text="@string/restore_default" />
+            </LinearLayout>
         </LinearLayout>
 
         <!-- ④ 呼出回弹（滑入 + 回摆那一段，独立于边框回弹） -->
@@ -544,10 +559,19 @@
                     android:text="@string/summon_on" />
 
                 <Button
-                    android:id="@+id/btnResetSummon"
+                    android:id="@+id/btnManageSummon"
                     style="@style/CardAction"
-                    android:text="@string/restore_default" />
+                    android:text="@string/card_manage" />
             </LinearLayout>
+
+            <!-- 展开区：参数 + 底部两个整行按钮（保存并应用 / 恢复默认值）。
+                 「停用」留在标题行里不动，两个状态下都能点。 -->
+            <LinearLayout
+                android:id="@+id/panelSummon"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
 
             <!-- 总时长 -->
             <LinearLayout
@@ -661,6 +685,12 @@
                 android:id="@+id/btnSaveSummon"
                 style="@style/PrimaryButton"
                 android:text="@string/save_apply" />
+
+                <Button
+                    android:id="@+id/btnResetSummon"
+                    style="@style/CardWideAction"
+                    android:text="@string/restore_default" />
+            </LinearLayout>
         </LinearLayout>
 
         <!-- ⑤ 松手回弹 -->
@@ -681,10 +711,18 @@
                     android:text="@string/bounce_on" />
 
                 <Button
-                    android:id="@+id/btnResetBounce"
+                    android:id="@+id/btnManageBounce"
                     style="@style/CardAction"
-                    android:text="@string/restore_default" />
+                    android:text="@string/card_manage" />
             </LinearLayout>
+
+            <!-- 展开区：参数 + 底部两个整行按钮（保存并应用 / 恢复默认值） -->
+            <LinearLayout
+                android:id="@+id/panelBounce"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
 
             <!-- 幅度：标签+值+输入框一行，滑条紧随 -->
             <LinearLayout
@@ -762,6 +800,12 @@
                 android:id="@+id/btnSaveBounce"
                 style="@style/PrimaryButton"
                 android:text="@string/save_apply" />
+
+                <Button
+                    android:id="@+id/btnResetBounce"
+                    style="@style/CardWideAction"
+                    android:text="@string/restore_default" />
+            </LinearLayout>
         </LinearLayout>
 
         <!-- ⑥ 呼吸 -->
@@ -781,10 +825,18 @@
                     android:text="@string/breath_on" />
 
                 <Button
-                    android:id="@+id/btnResetBreath"
+                    android:id="@+id/btnManageBreath"
                     style="@style/CardAction"
-                    android:text="@string/restore_default" />
+                    android:text="@string/card_manage" />
             </LinearLayout>
+
+            <!-- 展开区：参数 + 底部两个整行按钮（保存并应用 / 恢复默认值） -->
+            <LinearLayout
+                android:id="@+id/panelBreath"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
 
             <!-- 速度：决定呼吸动画播得快慢（周期 = 基准 2600ms / 速度倍率） -->
             <LinearLayout
@@ -861,14 +913,39 @@
                 android:id="@+id/btnSaveBreath"
                 style="@style/PrimaryButton"
                 android:text="@string/save_apply" />
+
+                <Button
+                    android:id="@+id/btnResetBreath"
+                    style="@style/CardWideAction"
+                    android:text="@string/restore_default" />
+            </LinearLayout>
         </LinearLayout>
 
         <!-- ⑦ 通知栏自定义 -->
         <LinearLayout style="@style/Card" android:tag="card" android:layout_marginStart="12dp" android:layout_marginEnd="12dp">
 
-            <TextView
-                style="@style/CardTitle"
-                android:text="@string/section_notify" />
+            <LinearLayout style="@style/CardTitleRow">
+
+                <TextView
+                    style="@style/CardTitle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:text="@string/section_notify" />
+
+                <Button
+                    android:id="@+id/btnManageNotify"
+                    style="@style/CardAction"
+                    android:text="@string/card_manage" />
+            </LinearLayout>
+
+            <!-- 展开区：两个输入框 + 底部「保存并应用」。
+                 这张卡没有可恢复的参数，所以**不放**「恢复默认值」。 -->
+            <LinearLayout
+                android:id="@+id/panelNotify"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
 
             <!-- 标题：用 {name} 表示角色名 -->
             <TextView
@@ -933,6 +1010,7 @@
                 style="@style/PrimaryButton"
                 android:layout_marginTop="10dp"
                 android:text="@string/save_apply" />
+            </LinearLayout>
         </LinearLayout>
 
         <!-- ⑥ 明暗模式：放在最下方（用户要求） -->

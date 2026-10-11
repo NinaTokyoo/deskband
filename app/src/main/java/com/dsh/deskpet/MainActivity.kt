@@ -116,6 +116,18 @@ class MainActivity : Activity() {
     /** 切换形象卡片右下角的素材预览（不可交互） */
     private lateinit var imgCornerPreview: android.widget.ImageView
 
+    // ---- 「一横条 + 点管理展开」那几张卡的按钮与展开区 ----
+    private lateinit var btnManageSize: Button
+    private lateinit var btnManageSummon: Button
+    private lateinit var btnManageBounce: Button
+    private lateinit var btnManageBreath: Button
+    private lateinit var btnManageNotify: Button
+    private lateinit var panelSize: View
+    private lateinit var panelSummon: View
+    private lateinit var panelBounce: View
+    private lateinit var panelBreath: View
+    private lateinit var panelNotify: View
+
     // ---- 自定义形象卡 ----
     /** 卡片形态：收起（一横条）/ 新增表单 / 管理列表 */
     private var customMode = CUSTOM_NONE
@@ -252,6 +264,16 @@ class MainActivity : Activity() {
         txtNotifyCount = findViewById(R.id.txtNotifyCount)
         btnSaveNotify = findViewById(R.id.btnSaveNotify)
         imgCornerPreview = findViewById(R.id.imgCornerPreview)
+        btnManageSize = findViewById(R.id.btnManageSize)
+        btnManageSummon = findViewById(R.id.btnManageSummon)
+        btnManageBounce = findViewById(R.id.btnManageBounce)
+        btnManageBreath = findViewById(R.id.btnManageBreath)
+        btnManageNotify = findViewById(R.id.btnManageNotify)
+        panelSize = findViewById(R.id.panelSize)
+        panelSummon = findViewById(R.id.panelSummon)
+        panelBounce = findViewById(R.id.panelBounce)
+        panelBreath = findViewById(R.id.panelBreath)
+        panelNotify = findViewById(R.id.panelNotify)
         btnCustomAdd = findViewById(R.id.btnCustomAdd)
         btnCustomManage = findViewById(R.id.btnCustomManage)
         panelCustomAdd = findViewById(R.id.panelCustomAdd)
@@ -270,6 +292,12 @@ class MainActivity : Activity() {
         btnThemeDark = findViewById(R.id.btnThemeDark)
 
         applyEdgeToEdge()
+        // 五张"一横条 + 点管理展开"的卡片（外观尺寸…通知栏内容）
+        registerExpandCard(panelSize, btnManageSize)
+        registerExpandCard(panelSummon, btnManageSummon)
+        registerExpandCard(panelBounce, btnManageBounce)
+        registerExpandCard(panelBreath, btnManageBreath)
+        registerExpandCard(panelNotify, btnManageNotify)
         setupSummonControls()
         setupBounceControls()
         // 滑条只允许按住滑块拖动 —— 必须在各 setup* 之前装好
@@ -346,6 +374,39 @@ class MainActivity : Activity() {
         }
 
         bindSizeControls()
+    }
+
+    // ---------------------------------------------------------------- 可展开卡片
+
+    /** 一张"一横条 + 点管理展开"的卡片：展开区 + 右上角那个「管理 / 取消」按钮 */
+    private class ExpandCard(val body: View, val manage: Button)
+
+    private val expandCards = ArrayList<ExpandCard>()
+
+    /**
+     * 登记一张可展开卡片（用户要求：外观尺寸 / 呼出回弹 / 边框回弹 / 呼吸 /
+     * 通知栏内容 都做成自定义形象那种"平常收起、点管理展开"）。
+     *
+     * 两个状态只差两件事：展开区可见性、右上角按钮文案在「管理 / 取消」之间切换。
+     * **「停用 / 启用」按钮留在标题行不动**，两个状态下都能点（用户确认的交互）。
+     *
+     * ⚠️ 这里**不调 applyTheme()**：展开区里的控件都是 XML 里的静态视图，
+     *    上一次主题刷色已经把它们刷好了；而 applyTheme() 会顺带
+     *    `refreshNotifyFields()`，那会把通知栏两个输入框里**正在编辑**的内容
+     *    覆盖成存档值（展开/收起任何一张卡都会误伤）。
+     */
+    private fun registerExpandCard(body: View, manage: Button) {
+        expandCards.add(ExpandCard(body, manage))
+        manage.setOnClickListener { setCardExpanded(body, body.visibility != View.VISIBLE) }
+        setCardExpanded(body, false)
+    }
+
+    private fun setCardExpanded(body: View, expanded: Boolean) {
+        body.visibility = if (expanded) View.VISIBLE else View.GONE
+        expandCards.firstOrNull { it.body === body }?.manage?.text =
+            getString(if (expanded) R.string.card_cancel else R.string.card_manage)
+        // 收起时收掉焦点与键盘，免得输入框在看不见的地方亮着
+        if (!expanded) clearInputFocus()
     }
 
     // ---------------------------------------------------------------- 复位
@@ -781,7 +842,7 @@ class MainActivity : Activity() {
             if (mode == CUSTOM_ADD) R.string.custom_save else R.string.custom_add
         )
         btnCustomManage.text = getString(
-            if (mode == CUSTOM_NONE) R.string.custom_manage else R.string.custom_cancel
+            if (mode == CUSTOM_NONE) R.string.card_manage else R.string.card_cancel
         )
         if (mode == CUSTOM_ADD) {
             // 名称框的**浅色占位**就是"留空时会用的默认名"（用户要求）：

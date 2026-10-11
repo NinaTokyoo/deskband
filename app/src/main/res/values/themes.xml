@@ -52,8 +52,20 @@
         <item name="android:stateListAnimator">@null</item>
     </style>
 
-    <style name="StatusLine">
+    <!--
+      卡片底部的**次要整行按钮**（「恢复默认值」）：占满一行，但不抢主按钮
+      （「保存并应用」）的视觉重量 —— 字号小一号、非加粗。
+      颜色照样由 AccentTheme 下发，所以这里不设 background / textColor。
+    -->
+    <style name="CardWideAction" parent="CardAction">
         <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_marginStart">0dp</item>
+        <item name="android:layout_marginTop">8dp</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:gravity">center</item>
+    </style>
+
+    <style name="StatusLine">        <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:textColor">@color/text_secondary</item>
         <item name="android:textSize">13sp</item>
