@@ -306,11 +306,76 @@ class MainActivity : Activity() {
 
         applyEdgeToEdge()
         // 五张"一横条 + 点管理展开"的卡片（外观尺寸…通知栏内容）
-        registerExpandCard(panelSize, btnManageSize)
-        registerExpandCard(panelSummon, btnManageSummon)
-        registerExpandCard(panelBounce, btnManageBounce)
-        registerExpandCard(panelBreath, btnManageBreath)
-        registerExpandCard(panelNotify, btnManageNotify)
+        // 每张卡展开时抄一份参数，点「取消」原样写回 ——
+        // 用户要求：改了数值/文案但没点保存，点取消时改动**不保留**。
+        // 快照在三个时刻更新：展开时、保存后（新基线 = 刚存下的值）、恢复默认值后。
+        val sizeSnap = FloatArray(1)
+        registerExpandCard(
+            panelSize, btnManageSize,
+            capture = { sizeSnap[0] = prefs.sizeScale },
+            restore = {
+                prefs.sizeScale = sizeSnap[0]
+                bindSizeControls()
+                // 大小会改窗口尺寸：不通知服务的话人物还停在旧尺寸上
+                PetService.notifyChanged(this)
+            }
+        )
+        val summonSnap = FloatArray(3)
+        registerExpandCard(
+            panelSummon, btnManageSummon,
+            capture = {
+                summonSnap[0] = prefs.summonTimeScale
+                summonSnap[1] = prefs.summonPopScale
+                summonSnap[2] = prefs.summonSpringScale
+            },
+            restore = {
+                prefs.summonTimeScale = summonSnap[0]
+                prefs.summonPopScale = summonSnap[1]
+                prefs.summonSpringScale = summonSnap[2]
+                bindSummonControls()
+            }
+        )
+        val bounceSnap = FloatArray(2)
+        registerExpandCard(
+            panelBounce, btnManageBounce,
+            capture = {
+                bounceSnap[0] = prefs.bounceAmpScale
+                bounceSnap[1] = prefs.bounceTimeScale
+            },
+            restore = {
+                prefs.bounceAmpScale = bounceSnap[0]
+                prefs.bounceTimeScale = bounceSnap[1]
+                bindBounceControls()
+            }
+        )
+        val breathSnap = FloatArray(2)
+        registerExpandCard(
+            panelBreath, btnManageBreath,
+            capture = {
+                breathSnap[0] = prefs.breathScale
+                breathSnap[1] = prefs.breathSpeed
+            },
+            restore = {
+                prefs.breathScale = breathSnap[0]
+                prefs.breathSpeed = breathSnap[1]
+                bindBreathControls()
+            }
+        )
+        // 通知栏这条是两段**文案**（按当前形象分开存），快照也存原始模板
+        val notifySnap = arrayOf("", "")
+        registerExpandCard(
+            panelNotify, btnManageNotify,
+            capture = {
+                notifySnap[0] = prefs.notifyTitle
+                notifySnap[1] = prefs.notifyText
+            },
+            restore = {
+                prefs.notifyTitle = notifySnap[0]
+                prefs.notifyText = notifySnap[1]
+                refreshNotifyFields()
+                PetService.refreshNotification(this)
+            }
+        )
         setupSummonControls()
         setupBounceControls()
         // 滑条只允许按住滑块拖动 —— 必须在各 setup* 之前装好
@@ -407,7 +472,14 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------------- 可展开卡片
 
     /** 一张"一横条 + 点管理展开"的卡片：展开区 + 右上角那个「管理 / 取消 / 收起」按钮 */
-    private class ExpandCard(val body: View, val manage: Button) {
+    private class ExpandCard(
+        val body: View,
+        val manage: Button,
+        /** 展开时把这张卡的参数抄一份 */
+        val capture: () -> Unit,
+        /** 把抄下来的那份原样写回（点「取消」时用） */
+        val restore: () -> Unit
+    ) {
         /**
          * 展开之后是否已经"操作完成"（点过「保存」或「恢复默认值」）。
          *
@@ -428,13 +500,26 @@ class MainActivity : Activity() {
      *    `refreshNotifyFields()`，那会把通知栏两个输入框里**正在编辑**的内容
      *    覆盖成存档值（展开/收起任何一张卡都会误伤）。
      */
-    private fun registerExpandCard(body: View, manage: Button) {
-        val card = ExpandCard(body, manage)
+    private fun registerExpandCard(
+        body: View,
+        manage: Button,
+        capture: () -> Unit = {},
+        restore: () -> Unit = {}
+    ) {
+        val card = ExpandCard(body, manage, capture, restore)
         expandCards.add(card)
         // 「用户碰过这张卡」由 CardPanel 上报（它是 dispatchTouchEvent 那一层才收得到，
         //  挂在容器上的 OnTouchListener 收不到 —— 触摸目标是子控件）
         (body as? CardPanel)?.onUserTouch = { markCardDirty(card) }
-        manage.setOnClickListener { setCardExpanded(body, body.visibility != View.VISIBLE) }
+        manage.setOnClickListener {
+            if (body.visibility == View.VISIBLE) {
+                // 收起前：这次展开后没点过保存 -> 把改动丢掉（用户要求）
+                if (!card.saved) card.restore()
+                setCardExpanded(body, false)
+            } else {
+                setCardExpanded(body, true)
+            }
+        }
         setCardExpanded(body, false)
     }
 
@@ -455,7 +540,11 @@ class MainActivity : Activity() {
         }
         body.visibility = if (expanded) View.VISIBLE else View.GONE
         expandCards.firstOrNull { it.body === body }?.let { card ->
-            if (expanded) card.saved = false
+            if (expanded) {
+                card.saved = false
+                // 记下展开这一刻的取值：这次展开里如果没点保存，点「取消」就回到这里
+                card.capture()
+            }
             refreshCardButton(card)
         }
         // 收起时收掉焦点与键盘，免得输入框在看不见的地方亮着
@@ -473,6 +562,8 @@ class MainActivity : Activity() {
     private fun markCardSaved(body: View) {
         val card = expandCards.firstOrNull { it.body === body } ?: return
         card.saved = true
+        // 刚存下的值成为新基线：之后再改再点「取消」，回到的是这里而不是展开前的值
+        card.capture()
         refreshCardButton(card)
     }
 
@@ -951,6 +1042,37 @@ class MainActivity : Activity() {
      * "新增表单下面挂着删除标签"的错位画面。
      * 也正因为互斥，两个按钮的文案必须在这里一起定，不能各写各的。
      */
+    /**
+     * 自定义形象卡右上角按钮的**文案与颜色**（用户要求）：
+     *
+     * | 状态 | 文案 | 颜色 |
+     * |---|---|---|
+     * | 收起（CUSTOM_NONE） | 管理 | 中性文字 + 发色描边 |
+     * | 管理列表、没有待确认的删除 | **收起** | 同上 |
+     * | 管理列表、有标签等着确认删除 | 取消 | **文字红**、描边仍是发色 |
+     * | 新增表单 | 取消 | 同上 |
+     *
+     * 也就是说：只有"按下去会**丢掉**东西"的时候才叫「取消」（丢掉表单输入、
+     * 或退掉那个待确认的删除），红的是**这两个字**，框仍然跟人物发色、与其它卡片一致。
+     *
+     * 描边**不在这里设**：交给 AccentTheme.apply 统一发（它是发色镂空样式），
+     * 这里只覆盖文字色。
+     */
+    private fun refreshCustomManageButton() {
+        val cancel = customMode == CUSTOM_ADD ||
+            (customMode == CUSTOM_MANAGE && pendingDeleteId != null)
+        btnCustomManage.text = getString(
+            when {
+                customMode == CUSTOM_NONE -> R.string.card_manage
+                cancel -> R.string.card_cancel
+                else -> R.string.card_collapse
+            }
+        )
+        btnCustomManage.setTextColor(
+            if (cancel) TAG_DELETE_RED else AccentTheme.skinBoxText(lightMode)
+        )
+    }
+
     private fun setCustomMode(mode: Int) {
         customMode = mode
         // 手风琴：**自定义形象卡展开时，其余卡片也要一并收起**（用户要求）。
@@ -966,9 +1088,8 @@ class MainActivity : Activity() {
         btnCustomAdd.text = getString(
             if (mode == CUSTOM_ADD) R.string.custom_save else R.string.custom_add
         )
-        btnCustomManage.text = getString(
-            if (mode == CUSTOM_NONE) R.string.card_manage else R.string.card_cancel
-        )
+        // 文案与颜色由状态机统一算（管理/收起/取消、取消时文字红）
+        refreshCustomManageButton()
         if (mode == CUSTOM_ADD) {
             // 名称框的**浅色占位**就是"留空时会用的默认名"（用户要求）：
             // 每次进来按当前数量重算（已有 2 个就是「自定义人物3」）。
@@ -1000,18 +1121,20 @@ class MainActivity : Activity() {
         btnCustomAdd.setOnClickListener {
             if (customMode == CUSTOM_ADD) saveCustomSkin() else setCustomMode(CUSTOM_ADD)
         }
-        // 「取消」= 退一级（用户要求）：
-        //   · 管理态下若有标签正等着"确认删除" -> 先退回管理列表（那个标签复位）
-        //   · 其余展开态 -> 收回一横条
-        //   · 收起态 -> 展开管理列表
+        // 「取消 / 收起 / 管理」= 三个不同意思（用户要求）：
+        //   · 管理列表里有点错的标签 -> 「取消」先把那个待确认的删除退掉（退回列表）
+        //   · 管理列表本身 -> 「收起」，列表里没有"未保存的东西"
+        //   · 新增表单 -> 「取消」= 放弃本次新增（名字与素材一起清掉）
+        //   · 横条态 -> 「管理」= 展开列表
         btnCustomManage.setOnClickListener {
             when {
                 customMode == CUSTOM_MANAGE && pendingDeleteId != null -> {
                     pendingDeleteId = null
-                    renderCustomTags()
+                    renderCustomTags()      // 里面会把按钮文案/颜色刷回去
                 }
-                customMode == CUSTOM_NONE -> setCustomMode(CUSTOM_MANAGE)
-                else -> setCustomMode(CUSTOM_NONE)
+                else -> setCustomMode(
+                    if (customMode == CUSTOM_NONE) CUSTOM_MANAGE else CUSTOM_NONE
+                )
             }
         }
         boxCustomUpright.setOnClickListener { pickCustomImage(REQ_PICK_UPRIGHT) }
@@ -1172,6 +1295,8 @@ class MainActivity : Activity() {
             rowsCustomManage.addView(row)
             i += 2
         }
+        // 待确认删除的有无会改变右上角按钮的文案与颜色（取消 / 收起），一起刷
+        refreshCustomManageButton()
     }
 
     /**
