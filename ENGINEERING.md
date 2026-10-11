@@ -643,11 +643,21 @@ canvas.scale(sx, sy, cx, squashPivotLocalY())
 - 五张卡**手风琴**（用户后加的要求）：展开任意一张时其余立刻关闭。
   ⚠️ **两个方向都要写**：`setCardExpanded` 里收别的卡、`setCustomMode` 里也要收别的卡 ——
   上一版只写了前者，于是"先展开呼出回弹、再展开自定义形象"会出现两张卡同时展开。
-- **进入应用时全部收起**（用户要求）：冷启动必然收起；热启动只在**离开超过
-  `CARD_RESET_AFTER_MS`（1 分钟）**时重置。离开时刻在 `onStop` 用
-  `SystemClock.elapsedRealtime()` 记（单调时钟，改系统时间不影响判断），
-  初值 0 让冷启动必然满足条件。比 1 分钟短就保留展开状态 ——
-  切出去看一眼再回来不该打断手上的调整。
+- **退出应用再回来一律全部收起**（用户要求；2.1.2 去掉了最初的"离开 1 分钟才算"门槛）：
+  `onResume` 里调 `collapseAllCards()`，冷启动、热启动都算，二级菜单一起收。
+  ⚠️ **必须给"从相册 / 文件选择器返回"留豁免**：那条路也走 `onResume`，
+  无条件收起会连带 `clearCustomForm()` 把新增表单里**刚选好的图**清掉
+  （表现："选完图回来，表单没了"）。做法是在 `onActivityResult` 记
+  `returningFromPickerAt`，`onResume` 里 5 秒内视为"选择器返回"、跳过这次收起；
+  记**时刻**而不是布尔 —— 万一 onActivityResult 之后没走 onResume，
+  布尔会一直把后续的收起动作吞掉。
+- **「当前形象」的二级菜单也算"一张展开的卡片"**（用户要求）：开菜单会收起所有卡片，
+  展开任何卡片（含自定义形象卡）也会收起菜单，进应用重置时同样收菜单。
+  ⚠️ 因此 `closeSkinMenuNow()` 里**不能再调 `applyTheme()`**：手风琴每次展开别的卡
+  都会收一次菜单，而 `applyTheme()` 会顺带 `refreshNotifyFields()`，
+  把通知栏里正在编辑的文字刷掉。它真正需要的那一件事（名称框恢复圆角）
+  现在直接改 `boxSkin.background` 就够了；同时给
+  `applyTheme(refreshNotify: Boolean = true)` 加了开关，纯粹开合菜单时传 false。
 - 「恢复默认值」用新样式 `CardBottomAction`，与「保存」并排一行、**宽度按文字量走**
   （wrap_content，用户要求"大小根据文字数量来"）；通知栏内容卡的"恢复默认值"是
   **清空当前形象那两条自定义文案**（留空 = 用默认，本来就是这张卡的语义）。

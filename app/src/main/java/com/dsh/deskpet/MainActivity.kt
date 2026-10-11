@@ -191,12 +191,15 @@ class MainActivity : Activity() {
     private var notifyAsked = false
 
     /**
-     * 上次离开应用的时刻（[onStop] 记，用单调时钟）。
+     * 刚刚从**相册 / 文件选择器**返回的时刻（[onActivityResult] 记）。
      *
-     * 用来判断热启动要不要把卡片恢复成"全收起"：离开超过 [CARD_RESET_AFTER_MS]
-     * 再回来就重置（用户要求）。初值 0 = 还没离开过 -> 冷启动必然满足条件。
+     * 这种"离开"不算真的退出应用 —— [onResume] 会据此豁免一次"全部收起"，
+     * 否则新增表单里刚选好的图会被收起时的 `clearCustomForm()` 清掉
+     * （用户会遇到"选完图回来，表单没了"）。
+     * 记时刻而不是布尔：万一 onActivityResult 之后没走 onResume，也不会一直
+     * 把后续的收起动作吞掉。
      */
-    private var lastLeftAt = 0L
+    private var returningFromPickerAt = 0L
 
     /** 当前强调色（由角色发色推出） */
     private var accent = AccentTheme.FALLBACK
@@ -433,6 +436,8 @@ class MainActivity : Activity() {
         if (expanded) {
             for (c in expandCards) if (c.body !== body) setCardExpanded(c.body, false)
             collapseCustomCard()
+            // 二级菜单也算"展开的卡片"（用户要求）
+            closeSkinMenuIfOpen()
         }
         body.visibility = if (expanded) View.VISIBLE else View.GONE
         expandCards.firstOrNull { it.body === body }?.manage?.text =
@@ -450,6 +455,8 @@ class MainActivity : Activity() {
     private fun collapseAllCards() {
         for (c in expandCards) setCardExpanded(c.body, false)
         collapseCustomCard()
+        // 二级菜单同样要收（用户要求：它也算一张展开的卡片）
+        closeSkinMenuIfOpen()
     }
 
     // ---------------------------------------------------------------- 复位
@@ -489,20 +496,14 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        // 进入应用时把卡片恢复成"全收起"（用户要求）：
-        //   · 冷启动一定收起（此时 lastLeftAt 还是 0，差值为设备开机时长，必然超时）；
-        //   · 热启动（从后台回来）只在**离开超过 1 分钟**时才收起 ——
-        //     切出去看一眼、马上回来的情况保留当前展开的那张卡，不打断手上的调整。
-        if (android.os.SystemClock.elapsedRealtime() - lastLeftAt >= CARD_RESET_AFTER_MS) {
-            collapseAllCards()
-        }
+        // 退出应用再回来（冷启动、热启动都算）一律把卡片恢复成"全收起"，
+        // 二级菜单也收（用户要求：不再等 1 分钟）。
+        // 唯一豁免：刚从相册 / 文件选择器返回 —— 那不是"退出应用"，
+        // 而且收起会把新增表单里刚选的图清掉（见 returningFromPickerAt）。
+        val fromPicker = android.os.SystemClock.elapsedRealtime() - returningFromPickerAt < 5_000
+        returningFromPickerAt = 0L
+        if (!fromPicker) collapseAllCards()
         refreshUi()
-    }
-
-    override fun onStop() {
-        super.onStop()
-        // 记"离开时刻"。用 elapsedRealtime（单调时钟）：改系统时间不会影响这个判断
-        lastLeftAt = android.os.SystemClock.elapsedRealtime()
     }
 
     override fun onRequestPermissionsResult(
@@ -816,6 +817,10 @@ class MainActivity : Activity() {
     private fun toggleSkinMenu() {
         val open = skinMenuWrap.visibility != View.VISIBLE
         if (open) {
+            // 二级菜单也算"一张展开的卡片"（用户要求）：开它就收起其余所有展开区
+            // （五张参数卡 + 自定义形象卡的展开区）
+            for (c in expandCards) setCardExpanded(c.body, false)
+            collapseCustomCard()
             buildSkinMenu()
             skinMenuWrap.visibility = View.VISIBLE
             // 展开 -> 三角正立（旋转 180°）。直接设值，没有过渡动画。
@@ -829,9 +834,11 @@ class MainActivity : Activity() {
         }
         // ⚠️ 必须重刷一次主题，而且要在 visibility 与菜单项都就绪之后：
         //   · 菜单项是**刚新造**的视图，不在上一次 AccentTheme.apply 的遍历里，
-        //     不补这次的话分隔线是透明的（表现："线看不见"）；
+        //     不补这次的话文字色/分隔线不对；
         //   · 名称框的圆角要跟着开合变（展开 -> 下方两角直角，与菜单连成一整块）。
-        applyTheme()
+        // ⚠️ 但**不要**顺带刷新通知栏两个输入框（refreshNotify = false）：
+        //    角色没变、模板不需要重新解析，刷了只会把正在编辑的文字覆盖成存档值。
+        applyTheme(refreshNotify = false)
     }
 
     /**
@@ -848,8 +855,20 @@ class MainActivity : Activity() {
             r.alpha = 1f
         }
         icoSkinArrow.rotation = 0f
-        // 名称框的下方两角要恢复圆角（菜单收起了，不再与它相连）
-        applyTheme()
+        // 名称框的下方两角要恢复圆角（菜单收起了，不再与它相连）。
+        //
+        // ⚠️ 这里**只改这一处背景**，不调 applyTheme()：手风琴每次展开别的卡都会
+        //    收一次菜单，而 applyTheme() 会顺带 refreshNotifyFields()，
+        //    把通知栏里正在编辑的文字刷掉。（选中角色那条路会自己再调一次
+        //    applyTheme()，该刷的照样刷得到。）
+        boxSkin.background = AccentTheme.skinBoxBackground(this, accent, lightMode, connected = false)
+    }
+
+    /** 二级菜单开着就收起来（手风琴与"进应用全收起"都要用） */
+    private fun closeSkinMenuIfOpen() {
+        if (::skinMenuWrap.isInitialized && skinMenuWrap.visibility == View.VISIBLE) {
+            closeSkinMenuNow()
+        }
     }
 
     /** 菜单里那些"内容行"（跳过 1.5dp 的分隔线），淡入淡出只作用在它们身上 */
@@ -895,8 +914,10 @@ class MainActivity : Activity() {
         // 手风琴：**自定义形象卡展开时，其余卡片也要一并收起**（用户要求）。
         // 反方向（别的卡展开时收起这张）在 setCardExpanded 里 —— 两个方向都要写，
         // 少一个方向就会出现"两张卡同时展开"（上一版就漏了这个方向）。
+        // 二级菜单也算"展开的卡片"，同样要收。
         if (mode != CUSTOM_NONE) {
             for (c in expandCards) setCardExpanded(c.body, false)
+            closeSkinMenuIfOpen()
         }
         panelCustomAdd.visibility = if (mode == CUSTOM_ADD) View.VISIBLE else View.GONE
         panelCustomManage.visibility = if (mode == CUSTOM_MANAGE) View.VISIBLE else View.GONE
@@ -977,6 +998,8 @@ class MainActivity : Activity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        // 先记下"这是从选择器回来的"（取消也算），让紧随其后的 onResume 别收起卡片
+        returningFromPickerAt = android.os.SystemClock.elapsedRealtime()
         if (resultCode != RESULT_OK) return
         val uri = data?.data ?: return
         // 有些来源只给"本次会话有效"的临时授权，能持久就持久 ——
@@ -1794,13 +1817,6 @@ class MainActivity : Activity() {
          */
         const val SKIN_MENU_VISIBLE_ROWS = 5
 
-        /**
-         * 离开应用多久之后回来，把卡片恢复成"全收起"（用户要求：1 分钟）。
-         *
-         * 比这短就保留当前展开的那张卡 —— 切出去看一眼再回来不该打断手上的调整。
-         */
-        const val CARD_RESET_AFTER_MS = 60_000L
-
         // ---- 自定义形象卡 ----
         /** 收起：只有标题那一横条 */
         const val CUSTOM_NONE = 0
@@ -1925,8 +1941,13 @@ class MainActivity : Activity() {
      *
      * 强调色取自**角落素材**（头最大、发色面积最多，提取最稳）。
      * 明暗切换是"就地重绘"，不重建 Activity，所以立刻生效。
+     *
+     * @param refreshNotify 是否顺带把通知栏两个输入框按当前角色重新解析一遍。
+     *        **只有"角色变了 / 明暗变了 / 界面刚建好"才需要**；纯粹开合菜单、
+     *        展开收起卡片这类 UI 状态变化要传 `false` —— 否则会把用户正在编辑的
+     *        文案覆盖成存档值（踩过：开一下二级菜单，正在敲的通知文案就没了）。
      */
-    private fun applyTheme() {
+    private fun applyTheme(refreshNotify: Boolean = true) {
         lightMode = AccentTheme.isLight(this, prefs.themeMode)
         val sa = assetsFor(prefs.skin)
         accent = if (lightMode) sa.accentLight else sa.accentDark
@@ -1957,8 +1978,9 @@ class MainActivity : Activity() {
         refreshSummonLabel()
 
         // 通知标题与正文里都可能带角色名（存的都是 {name} 模板），
-        // 换角色后要重新解析，否则框里留着上一个角色的名字
-        refreshNotifyFields()
+        // 换角色后要重新解析，否则框里留着上一个角色的名字。
+        // ⚠️ 只在需要时刷：纯 UI 开合传 refreshNotify = false（见函数注释）
+        if (refreshNotify) refreshNotifyFields()
 
         // ⚠️ 必须放在 AccentTheme.apply 之后：三个按钮的镂空样式是那一趟发的，
         // 选中态要覆盖它才看得出来。
