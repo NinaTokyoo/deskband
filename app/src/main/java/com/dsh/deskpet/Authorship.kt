@@ -33,10 +33,13 @@ object Authorship {
 
     /**
      * 完整的一句作者声明，例如
-     * `DeskBand 2.1.28 是 NinaTokyoo 于 2026年10月11日21时 在陕西西安完成的。`
+     * 形如 `DeskBand <版本号> 是 NinaTokyoo 于 <年>年<月>月<日>日<时>时 在陕西西安完成的。`
+     *
+     * ⚠️ 这里**不写具体版本号和日期**（写了下次发版就过期 —— 本文档曾经踩过这个坑）。
      *
      * ⚠️ 内容来自 [BuildConfig.AUTHORSHIP]（构建时注入），**不要**在这里手写死字符串 ——
-     *    版本号与完成时间都该跟着构建走。
+     *    版本号取自 `app/build.gradle.kts` 的 `vName`，完成时间取**构建时刻**，
+     *    所以**发版时只改 vName 一处，这句里的版本号和时间会自动跟着变**。
      */
     val line: String get() = BuildConfig.AUTHORSHIP
 

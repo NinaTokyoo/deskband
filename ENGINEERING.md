@@ -935,6 +935,27 @@ python tools/stage_assets.py     # 转换 + 入库 + 生成 pet.json
 
 签名用 `keystore/deskpet.jks`（仓库里不含，需自备；口令见 `app/build.gradle.kts`）。
 
+### 发版清单（每次都要走一遍）
+
+1. **改一处版本号**：`app/build.gradle.kts` 里的 `val vName`（`versionName`/`versionCode`
+   自动派生），并在上面的版本历史注释里加一行中文说明。
+2. `.\gradlew.bat testDebugUnitTest assembleRelease` —— 85 个单测必须全绿。
+3. **自检作者声明跟没跟上**（就是这一节的由来）：
+   ```powershell
+   # 解压 APK 看第一行，版本号必须 == vName，时间应是刚刚的构建时刻
+   python -c "import zipfile;print(zipfile.ZipFile(r'app\build\outputs\apk\release\app-release.apk').read('assets/AUTHORSHIP.txt').decode('utf-8'))"
+   ```
+   ✅ **版本号与完成时间都是自动的**：版本号 = `vName`，完成时间 = 构建时刻（`buildStamp`，
+   见 `app/build.gradle.kts` 顶部）。**只要不改 vName 以外的硬编码版本号/日期就行** ——
+   源码、注释、文档里一律**不要**写死具体版本号或日期（本文件与 `Authorship.kt` 都曾踩过，
+   写着"例如 2.1.28 于 …"，下次发版就过期）。
+
+   ⚠️ 顺带：`assets/AUTHORSHIP.txt` 第二行是**签名指纹**，换签名密钥时要同步改
+   `build.gradle.kts` 里写死的那一行。
+4. 模拟器（`pet36`，1440×3168）验证本次改动；实机覆盖安装后核对三方哈希（本地/桌面/手机）。
+5. 提交：`git commit -F <临时文件>`（中文说明，别用 `-m` 拼长文本）；桌面只留最新一个 APK。
+
+
 ---
 
 ## 九、代码结构
