@@ -1,34 +1,55 @@
-MIT License
+# 版权声明 / License
 
-Copyright (c) 2026 NinaTokyoo
+Copyright (c) 2026 NinaTokyoo. All rights reserved.
+版权所有 © 2026 NinaTokyoo，保留所有权利。
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+## 中文
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+DeskBand（桌宠，包名 `com.dsh.deskpet`）由 **NinaTokyoo** 独立开发完成。
+作者声明：**DeskBand 是 NinaTokyoo 在陕西西安完成的。**
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+未经著作权人事先书面许可，**不得**：
 
----
+1. 复制、转载、镜像、再分发本软件或其任何部分（含经修改后的版本）；
+2. 反编译、反汇编、二次打包后发布，或以本软件为基础制作衍生作品并对外提供；
+3. 将本软件（或其代码、素材、UI 设计）用于商业用途，或声称由自己开发；
+4. 移除、遮挡、篡改本软件内的作者署名、版权声明、签名信息；
+5. 在公开仓库/公开渠道发布本工程的**完整源码**（本工程为闭源发布）。
 
-注意 / NOTICE
+**允许**：个人在自有设备上安装、使用本软件；为学习目的阅读作者公开的说明文档。
 
-本许可证仅覆盖本仓库中的**源代码**。
+## 第三方素材（重要）
 
-本仓库**不包含任何角色美术素材**。被本软件加载的角色形象版权归各自原作者
-所有，不在本许可证范围内，也不得随本软件再分发。
+本工程**不包含**任何第三方角色立绘等美术素材的授权：App 中出现的角色形象
+（如《孤独摇滚》相关角色）**版权归其原作者/权利方所有**，不在本声明授权范围内，
+也不得随本软件一并再分发或商用。公开分发请自行替换为原创素材。
 
-The character artwork loaded by this software is NOT part of this repository
-and is NOT covered by this license. All rights to such artwork belong to their
-respective original authors.
+## English
+
+DeskBand (package `com.dsh.deskpet`) is developed solely by **NinaTokyoo**.
+The authorship statement is: *DeskBand was created by NinaTokyoo in Xi'an, Shaanxi.*
+
+All rights reserved. No part of this software may be copied, redistributed,
+repackaged, decompiled for redistribution, or used commercially without the
+prior written permission of the copyright holder. You may not remove or alter
+the authorship notices, copyright headers, or signing information contained in
+this software.
+
+Third-party character artwork is **not** covered by this license and remains the
+property of its respective rights holders.
+
+## 核验官方包
+
+官方 APK 由固定密钥签名，证书 SHA-256 指纹：
+
+```
+77cd22901fc2286fc7fad8c1a7606344e123a2cb125b9cb64839f7bde35b69e9
+```
+
+核对方式：
+
+```bash
+apksigner verify --print-certs DeskBand-vX.Y.Z.apk
+```
+
+指纹不一致 = 不是官方包（多为二次打包），请勿安装。
