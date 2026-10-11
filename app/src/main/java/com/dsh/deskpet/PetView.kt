@@ -414,7 +414,21 @@ class PetView(context: Context) : View(context) {
         return out
     }
 
-    fun setSizeFraction(f: Float) {
+    /**
+     * 应用新的尺寸倍率。
+     *
+     * @param resnapSide 是否**顺便横向吸回当前所在的那一侧**（用户要求：调大小时吸附到边）。
+     *
+     * ⚠️ 吸附必须在这里、**在 syncWindow() 之前**算完，不能事后单独再搬一次窗口：
+     *    曾经的做法是 setSizeFraction(...) 之后再调一次 resnapSideNow()（内部又
+     *    syncWindow 一次）。一次重载里窗口被搬两次 —— 拖动滑条时看着在抽搐，
+     *    点「取消」回退大小时先摆到中间位置再挪回来，就是"飞出去又飞回来"。
+     *    现在只同步一次窗口，两个症状一起没了。
+     *
+     * ⚠️ 也不要**每拖动一格**都传 true：吸附是"落位"动作，拖动过程中只该缩放，
+     *    松手那一下再吸附（见 MainActivity 里 onStopTrackingTouch / 输入停顿）。
+     */
+    fun setSizeFraction(f: Float, resnapSide: Boolean = false) {
         // 与 Prefs 用同一套边界，别在这里写另一组数（否则两处不一致）
         sizeFrac = f.coerceIn(Prefs.MIN_SIZE, Prefs.MAX_SIZE)
         // 缩放前先记下**吸附边的屏幕位置**
@@ -464,32 +478,20 @@ class PetView(context: Context) : View(context) {
             )
             anchorX = cl[0] + centerFromTrackX()
             anchorY = cl[1] + centerFromTrackY()
+
+            // 吸附：横向直接落到当前那一侧的**标准位置**（纵向不动 ——
+            // 改尺寸不该顺手把宠物从屏幕上方挪到下方）。
+            // 放在夹取之后：标准位置本来就是合法位置，不需要再夹。
+            if (resnapSide) {
+                val trackLeft =
+                    if (PetState.isLeft(state)) 0f else (b.width() - trackW).toFloat()
+                anchorX = trackLeft + centerFromTrackX()
+            }
         }
         dragOffsetX = 0f
         dragOffsetY = 0f
         cancelTween()
         clearPendingSnap()
-        syncWindow()
-        markRest(anchorX, anchorY)
-    }
-
-    /**
-     * 尺寸变化之后，**把宠物重新吸回它当前所在的那一侧**（用户要求：调大小时实时吸附到边）。
-     *
-     * 与 [setSizeFraction] 的区别：那个是"保持附着边不动"，只在宠物本来就贴边时才等价。
-     * 宠物被拖到屏幕中间、或「复位保留」留下了自定义位置时，保持旧坐标会一直留着一道缝，
-     * 看上去就是"调大小的时候不吸附了"。
-     *
-     * 这里**只动横向**（强制靠回左/右那一列），纵向保留用户当前所在的位置 ——
-     * 尺寸变化不该顺手把宠物从屏幕上方挪到下方。
-     */
-    fun resnapSideNow() {
-        val b = host?.bounds() ?: return
-        cacheSizes()
-        val trackLeft = if (PetState.isLeft(state)) 0f else (b.width() - trackW).toFloat()
-        anchorX = trackLeft + centerFromTrackX()
-        dragOffsetX = 0f
-        cancelTween()
         syncWindow()
         markRest(anchorX, anchorY)
     }

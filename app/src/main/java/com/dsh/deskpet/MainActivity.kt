@@ -199,6 +199,16 @@ class MainActivity : Activity() {
     private var suppressSizeWatcher = false
 
     /**
+     * "输入停顿之后吸附一次"的延时任务（见尺寸输入框的文本监听）。
+     *
+     * 拖滑条时吸附在 `onStopTrackingTouch`；打字没有"松手"这个事件，
+     * 所以用 400ms 的停顿当收尾。
+     */
+    private val sizeResnapRunnable = Runnable {
+        PetService.notifySizeChanged(this, resnap = true)
+    }
+
+    /**
      * 刚刚从**相册 / 文件选择器**返回的时刻（[onActivityResult] 记）。
      *
      * 这种"离开"不算真的退出应用 —— [onResume] 会据此豁免一次"全部收起"，
@@ -324,9 +334,10 @@ class MainActivity : Activity() {
             restore = {
                 prefs.sizeScale = sizeSnap[0]
                 bindSizeControls()
-                // 大小会改窗口尺寸：不通知服务的话人物还停在旧尺寸上。
-                // 走 notifySizeChanged —— 和"实时吸附"同一条路（用户要求）
-                PetService.notifySizeChanged(this)
+                editSize.removeCallbacks(sizeResnapRunnable)
+                // 回退也走这一条：缩放 + 吸附在**同一次窗口同步**里做完。
+                // 分两次搬窗口就是用户看到的"飞出一段再飞回来"
+                PetService.notifySizeChanged(this, resnap = true)
             }
         )
         val summonSnap = FloatArray(3)
@@ -422,14 +433,17 @@ class MainActivity : Activity() {
                 if (!fromUser) return
                 prefs.sizeScale = sizeScaleOf(progress)
                 bindSizeControls()
-                // 大小变了要重新计算绘制尺寸与窗口尺寸，必须通知服务。
-                // 用 notifySizeChanged：它会额外要求"重新吸回当前那一侧"
-                //（用户要求：调大小时实时吸附到边）
+                // 拖动过程中**只缩放、不落位**：每一格都重算位置会让窗口被搬两次，
+                // 看起来就是在抽搐（用户反馈）。吸附留到松手那一下。
                 PetService.notifySizeChanged(this@MainActivity)
             }
 
             override fun onStartTrackingTouch(sb: SeekBar?) = Unit
-            override fun onStopTrackingTouch(sb: SeekBar?) = Unit
+
+            // 松手：这一次才吸附（用户要求：调大小时吸附到边）
+            override fun onStopTrackingTouch(sb: SeekBar?) {
+                PetService.notifySizeChanged(this@MainActivity, resnap = true)
+            }
         })
 
         // 数字输入：**边打边生效**（用户要求：填入数字实时反应大小），
@@ -456,16 +470,21 @@ class MainActivity : Activity() {
                     seekSize.progress = want
                     suppressSizeWatcher = false
                 }
+                // 打字过程中只缩放；**停手 400ms 之后**再吸附一次
+                //（每敲一格都吸附会抖，跟拖滑条同理）
                 PetService.notifySizeChanged(this@MainActivity)
+                editSize.removeCallbacks(sizeResnapRunnable)
+                editSize.postDelayed(sizeResnapRunnable, 400)
             }
         })
 
         // 数字输入：回车或失焦时再生效一次（支持小数，如 1.5）
         val applySize = {
+            editSize.removeCallbacks(sizeResnapRunnable)
             parseScale(editSize.text.toString(), Prefs.SIZE_SCALE_MIN, Prefs.SIZE_SCALE_MAX)
                 ?.let {
                     prefs.sizeScale = it
-                    PetService.notifySizeChanged(this)
+                    PetService.notifySizeChanged(this, resnap = true)
                 }
             bindSizeControls()
         }
@@ -473,10 +492,11 @@ class MainActivity : Activity() {
         editSize.setOnFocusChangeListener { _, has -> if (!has) applySize() }
 
         btnSaveSize.setOnClickListener {
+            editSize.removeCallbacks(sizeResnapRunnable)
             parseScale(editSize.text.toString(), Prefs.SIZE_SCALE_MIN, Prefs.SIZE_SCALE_MAX)
                 ?.let {
                     prefs.sizeScale = it
-                    PetService.notifySizeChanged(this)
+                    PetService.notifySizeChanged(this, resnap = true)
                 }
             bindSizeControls()
             clearInputFocus()
@@ -489,7 +509,8 @@ class MainActivity : Activity() {
             prefs.sizeScale = 1f
             bindSizeControls()
             clearInputFocus()
-            PetService.notifySizeChanged(this)
+            editSize.removeCallbacks(sizeResnapRunnable)
+            PetService.notifySizeChanged(this, resnap = true)
             markCardSaved(panelSize)
         }
 
