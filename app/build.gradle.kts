@@ -324,6 +324,9 @@ android {
         //                     素材 assets/bubble/*.png 由 tools/extract_bubble_parts.py
         //                     从原图抠出，尺寸与相对位置沿用记录基线
         //                     （整组宽 = 0.99219 × 人物正立素材宽））
+        //   2.1.31 -> 20131（修气泡的竖直位置：基线里"气泡竖直中心 = 人物的顶边
+        //                     高度 y = b"说的是**盒子**的边，2.1.30 实现成了"足迹盒
+        //                     中心"（对着脸），实机看着偏低 —— 改为对足迹盒**上沿**）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ✅ 作者声明里的版本号与完成时间**自动跟着这行走**：
         //    版本号 = vName；完成时间 = 构建时刻（buildStamp，见文件顶部）。
@@ -332,7 +335,7 @@ android {
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
         //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
         //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
-        val vName = "2.1.30"
+        val vName = "2.1.31"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()

@@ -898,7 +898,10 @@ class PetService : Service(), PetView.Host {
         val gap = Math.round(a[2] * BUBBLE_GAP_RATIO)
         val b = bounds()
         val x = (a[0] - gap - bw).coerceIn(0, (b.width() - bw).coerceAtLeast(0))
-        val y = (a[1] + a[3] / 2 - bh / 2).coerceIn(0, (b.height() - bh).coerceAtLeast(0))
+        // 纵向：气泡**竖直中心 = 人物足迹盒上沿**（记录基线原话："气泡的竖直中心 =
+        // 人物的顶边高度 y = b"）。人物躺倒时盒子是转过来的，但这条规则说的是
+        // **盒子**的边，所以照旧对盒子上沿 —— 不是盒中心（对着脸会明显偏低）。
+        val y = (a[1] - bh / 2).coerceIn(0, (b.height() - bh).coerceAtLeast(0))
 
         hideBubble()
         val view = BubbleView(this)
