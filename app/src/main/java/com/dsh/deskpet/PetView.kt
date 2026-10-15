@@ -2575,12 +2575,13 @@ class PetView(context: Context) : View(context) {
     // ---------------------------------------------------------------- 思考气泡
 
     /**
-     * 思考气泡的锚点：
-     * `[足迹左, 足迹上, 足迹宽, 足迹高, 气泡整组宽, 气泡整组高]`（屏幕坐标，px）。
+     * 思考气泡的锚点：`[人物盒中心X, 人物盒中心Y, 人物正立素材宽W, 人物旋转角]`。
      *
-     * 尺寸按记录的相对尺寸算：**气泡整组宽 = 0.99219 × 人物正立素材的屏幕宽度**。
-     * 那张正立素材（1024×875）就是"包围矩形 A"（宽 2a、高 b），
-     * 气泡整组为 1.984375a × 1.974609a —— 见 `气泡与人物_相对位置.md`。
+     * 全部按**记录基线**（合成图）来：
+     *   · 尺寸基准 W = 人物**正立素材**的屏幕宽度（那张 1024×875 就是"包围矩形 A"，
+     *     宽 2a 高 b；气泡整组 1.984375a × 1.974609a = 0.99219W × 0.98730W）；
+     *   · 中心 = 人物盒中心 + 旋转后的偏移（见 [BubbleView.OFFSET_RIGHT_RATIO]）；
+     *   · **整组随人物一起转**（吸附右边框时 -90°），所以要把角度一并交给服务。
      *
      * ⚠️ 用**正立素材**而不是当前素材来定尺寸：气泡大小只应跟人物大小有关，
      * 不能因为"躺倒 / 正立"两套素材尺寸不同而变。
@@ -2589,10 +2590,9 @@ class PetView(context: Context) : View(context) {
         val s = sprite ?: return IntArray(0)
         val screenH = (host?.bounds()?.height() ?: 1080).toFloat()
         val up = PetState.scaledSize(s.uprightW, s.uprightH, screenH * sizeFrac)
-        val size = BubbleView.windowSize(up[0].toFloat())
         return intArrayOf(
-            curTrackLeft().roundToInt(), curTrackTop().roundToInt(), trackW, trackH,
-            size[0], size[1]
+            curCenterX().roundToInt(), curCenterY().roundToInt(), up[0],
+            PetState.rotationForSnap(state).toInt()
         )
     }
 

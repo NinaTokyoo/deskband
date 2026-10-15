@@ -93,9 +93,18 @@ class BubbleViewTest {
     @Test
     fun window_size_follows_recorded_ratio() {
         // 记录：气泡整组宽 = 0.99219 × 人物正立素材宽；整组纵横比 1.00448
-        val size = BubbleView.windowSize(1024f)
+        val size = BubbleView.windowSize(1024f, 0f)
         assertEquals(1016, size[0])
         assertEquals(1011, size[1])
+    }
+
+    @Test
+    fun window_swaps_when_group_rotates_with_pet() {
+        // 人物躺倒（-90°）时整组跟着转，窗口宽高互换
+        val upright = BubbleView.windowSize(1024f, 0f)
+        val lying = BubbleView.windowSize(1024f, -90f)
+        assertEquals("转过 90° 后窗口宽 = 原来的高", upright[1], lying[0])
+        assertEquals("转过 90° 后窗口高 = 原来的宽", upright[0], lying[1])
     }
 
     @Test

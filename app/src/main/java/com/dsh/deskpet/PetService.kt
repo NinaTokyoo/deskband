@@ -882,32 +882,38 @@ class PetService : Service(), PetView.Host {
     override fun onJumpStart() = showBubble()
 
     /**
-     * 让思考气泡出现。位置与大小按记录的相对关系：
+     * 让思考气泡出现。位置与大小**整组跟着人物转**，与合成图（记录基线）一致：
      *
-     *   · **大小**：整组宽 = 0.99219 × 人物正立素材屏幕宽（见 [PetView.bubbleAnchor]）；
-     *   · **横向**：气泡贴着人物**左侧**（吸附右边框时人物头朝左，气泡在脸这一侧），
-     *     间隙 = 人物足迹宽的 0.39%（记录值 0.0078a ÷ 2a）；
-     *   · **纵向**：气泡竖直中心 = 人物足迹盒的竖直中心（躺倒形态下正好是头部高度）。
+     *   · **大小**：组自身 = 0.99219W × 0.98730W（W = 人物正立素材屏幕宽）；
+     *   · **方向**：组随人物一起转同一个角度 —— 人物躺倒在右边框时气泡也倒 90°，
+     *     于是大气泡整个飘到人物**上方**、两个小圈从下往上指着脑袋；
+     *   · **位置**：人物盒中心 + 旋转后的偏移（正立时是"向右上"，转完就成"向左上"）。
      */
     private fun showBubble() {
         val pet = petView ?: return
         val a = pet.bubbleAnchor()
-        if (a.size < 6) return
-        val bw = a[4]
-        val bh = a[5]
-        val gap = Math.round(a[2] * BUBBLE_GAP_RATIO)
+        if (a.size < 4) return
+        val w = a[2].toFloat()                                   // 人物正立素材宽 W = 2a
+        val rot = a[3].toFloat()
+        val size = BubbleView.windowSize(w, rot)
+        val bw = size[0]
+        val bh = size[1]
+        // 偏移：正立坐标系里 (向右 0.9292W, 向上 0.4268W)，按人物旋转角一起转过来
+        val rad = Math.toRadians(rot.toDouble())
+        val dx = w * BubbleView.OFFSET_RIGHT_RATIO
+        val dy = -w * BubbleView.OFFSET_UP_RATIO
+        val ox = dx * Math.cos(rad) - dy * Math.sin(rad)
+        val oy = dx * Math.sin(rad) + dy * Math.cos(rad)
         val b = bounds()
-        val x = (a[0] - gap - bw).coerceIn(0, (b.width() - bw).coerceAtLeast(0))
-        // 纵向：气泡**竖直中心 = 人物足迹盒上沿**（记录基线原话："气泡的竖直中心 =
-        // 人物的顶边高度 y = b"）。人物躺倒时盒子是转过来的，但这条规则说的是
-        // **盒子**的边，所以照旧对盒子上沿 —— 不是盒中心（对着脸会明显偏低）。
-        val y = (a[1] - bh / 2).coerceIn(0, (b.height() - bh).coerceAtLeast(0))
+        val x = Math.round(a[0] + ox - bw / 2f).toInt()
+            .coerceIn(0, (b.width() - bw).coerceAtLeast(0))
+        val y = Math.round(a[1] + oy - bh / 2f).toInt()
+            .coerceIn(0, (b.height() - bh).coerceAtLeast(0))
 
         hideBubble()
         val view = BubbleView(this)
-        // 素材本身是"大气泡在右、尾巴偏左上"；人物在右边框、气泡挂左侧，
-        // 整组镜像后尾巴才朝着人物（从头顶冒出来 → 飘向大气泡）
-        view.flipH = true
+        // 整组随人物一起转（吸附右边框 = -90）：不镜像、只旋转
+        view.rotationDeg = rot
         val p = WindowManager.LayoutParams(
             bw, bh,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -939,7 +945,7 @@ class PetService : Service(), PetView.Host {
         runCatching {
             android.util.Log.i(
                 "BubbleGeom",
-                "bubble=($x,$y ${bw}x$bh) foot=(${a[0]},${a[1]} ${a[2]}x${a[3]}) pet=" +
+                "bubble=($x,$y ${bw}x$bh rot=$rot) petCenter=(${a[0]},${a[1]}) W=${a[2]} pet=" +
                     (petParams?.let { "(${it.x},${it.y} ${it.width}x${it.height})" } ?: "?")
             )
         }
@@ -1008,14 +1014,6 @@ class PetService : Service(), PetView.Host {
 
         private const val CHANNEL_ID = "deskpet"
         private const val NOTIF_ID = 1001
-
-        /**
-         * 气泡与人物之间的横向间隙 ÷ 人物足迹宽。
-         *
-         * 记录的相对位置里，气泡左缘 = 人物右缘 + 0.0078a，而足迹宽 = 2a，
-         * 所以比例是 0.0039（约 1px）。
-         */
-        private const val BUBBLE_GAP_RATIO = 0.0039f
 
         /** 气泡时间轴走完后再多留一点余量才收窗口（毫秒） */
         private const val BUBBLE_TAIL_MS = 80L

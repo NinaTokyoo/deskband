@@ -46,13 +46,16 @@ class BubbleView(context: Context) : View(context) {
     private var startAt = 0L
 
     /**
-     * 整组水平镜像。
+     * 整组随**人物一起**旋转的角度（人物吸附右边框时 = -90，与 [PetState.rotationForSnap] 一致）。
      *
-     * 人物吸附**右边框**时头朝左（见 [PetState.rotationForSnap]），气泡挂在它左侧，
-     * 于是尾巴（两个小圈那一串）要朝右指向人物；素材本身是"大气泡在右、尾巴偏左上"，
-     * 整组翻一下正好。
+     * 用户要的效果是"合成图整体跟着人物转"：人物躺倒在右边框、头朝左时，
+     * 思考气泡也一起倒 90° —— 大气泡整个飘到人物**上方**，两个小圈从下往上
+     * 指着脑袋（气泡自己那圈也从竖椭圆变成横椭圆）。
      */
-    var flipH = false
+    var rotationDeg = 0f
+
+    /** 是否已经转过 90°（窗口宽高与组自身宽高互换） */
+    private val rotated: Boolean get() = (rotationDeg % 180f) != 0f
 
     /** 开始一次冒泡（重置时间轴） */
     fun start() {
@@ -68,16 +71,22 @@ class BubbleView(context: Context) : View(context) {
         val now = SystemClock.uptimeMillis()
         val t = if (startAt == 0L) 0f else (now - startAt).toFloat()
 
+        // 组自身坐标系：转过 90° 时，窗口的宽高与组宽高互换
+        val gw = if (rotated) height.toFloat() else width.toFloat()
+        val gh = if (rotated) width.toFloat() else height.toFloat()
+
         canvas.save()
-        if (flipH) canvas.scale(-1f, 1f, width / 2f, height / 2f)
+        canvas.translate(width / 2f, height / 2f)
+        if (rotationDeg != 0f) canvas.rotate(rotationDeg)
+        canvas.translate(-gw / 2f, -gh / 2f)
 
         for (i in parts.indices) {
             val bmp = parts[i] ?: continue          // 素材缺失就跳过这一块
             val pop = popOf(i, t) ?: continue
             val box = PART_BOX[i]
-            val l = box[0] * width
-            val tp = box[1] * height
-            dst.set(l, tp, l + box[2] * width, tp + box[3] * height)
+            val l = box[0] * gw
+            val tp = box[1] * gh
+            dst.set(l, tp, l + box[2] * gw, tp + box[3] * gh)
             canvas.save()
             // 从小到大：绕**自己的中心**缩放，位置不动
             canvas.scale(pop, pop, dst.centerX(), dst.centerY())
@@ -123,6 +132,19 @@ class BubbleView(context: Context) : View(context) {
          */
         const val GROUP_W_RATIO = 0.99219f
 
+        /**
+         * 气泡中心相对**人物包围盒中心**的偏移（单位 = 人物正立素材宽 W），
+         * 在"人物正立"的坐标系里：向右 [OFFSET_RIGHT_RATIO]、向上 [OFFSET_UP_RATIO]。
+         *
+         * 来自记录的合成图：人物盒 1024×875、气泡整组 871×867、组中心在 (1504.5, 474.5)，
+         * 人物盒中心在 (553, 911.5) —— 于是偏移 = (951.5, -437) px = (0.9292W, 0.4268W)。
+         *
+         * ⚠️ 人物躺倒时**整组跟着转同一个角度**，这两个偏移也要一起转
+         * （见 PetService.showBubble 里的旋转矩阵）—— 转完气泡就跑到人物上方去了。
+         */
+        const val OFFSET_RIGHT_RATIO = 0.9292f
+        const val OFFSET_UP_RATIO = 0.4268f
+
         /** 小圈开始出现到大气泡完全出现（用户指定 0.15s） */
         private const val APPEAR_MS = 150f
 
@@ -159,11 +181,22 @@ class BubbleView(context: Context) : View(context) {
             return if (pop < POP_MIN) null else pop
         }
 
-        /** 按人物正立素材的屏幕宽度，算气泡整组的窗口尺寸 */
-        fun windowSize(petUprightW: Float): IntArray {
+        /** 按人物正立素材的屏幕宽度，算气泡整组**自身**的尺寸（未旋转） */
+        fun groupSize(petUprightW: Float): IntArray {
             val w = (petUprightW * GROUP_W_RATIO).toInt().coerceIn(24, 4096)
             val h = (w / GROUP_ASPECT).toInt().coerceAtLeast(1)
             return intArrayOf(w, h)
+        }
+
+        /**
+         * 窗口尺寸 = 组自身尺寸按人物旋转角一起转（±90° 时宽高互换）。
+         *
+         * @param rotDeg 人物的吸附旋转角（[PetState.rotationForSnap]）
+         */
+        fun windowSize(petUprightW: Float, rotDeg: Float): IntArray {
+            val g = groupSize(petUprightW)
+            val q = ((rotDeg % 360f) + 360f) % 360f
+            return if (q == 90f || q == 270f) intArrayOf(g[1], g[0]) else g
         }
     }
 }
