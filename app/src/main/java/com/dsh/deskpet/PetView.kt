@@ -63,6 +63,14 @@ class PetView(context: Context) : View(context) {
         fun onSettled(state: Int, left: Int, top: Int)
 
         fun onTapped()
+
+        /**
+         * 点击动画走到"**压缩结束、开始弹起**"的那一刻（[TAP_PEAK_T] 处）。
+         *
+         * 服务据此让思考气泡与弹起**同步**出现（用户要求："当人物压缩完开始弹起时，
+         * 气泡……同步开始出现"）。只有 [bubbleAllowed] 成立时才会被调用。
+         */
+        fun onJumpStart()
     }
 
     var host: Host? = null
@@ -562,6 +570,14 @@ class PetView(context: Context) : View(context) {
     private var hopStart = 0L
 
     /**
+     * 这一次点击动画里"弹起那一刻"的气泡通知是否已经发过。
+     *
+     * 动画帧回调每帧都会经过 t = [TAP_PEAK_T]，用它保证**一次点击只冒一次泡**；
+     * 每次 [onTapped] 重新置 false。
+     */
+    private var bubbleFired = false
+
+    /**
      * 长按压缩：**按住不放就一直往下压**，最深 [PRESS_MAX_SQ]（50%），松手回弹。
      *
      * **四条边都启用**，规则统一为"**吸附边不动，另一侧压过来**"：
@@ -636,12 +652,13 @@ class PetView(context: Context) : View(context) {
 
     /** 压缩量：前 30% 压到最扁，之后回弹 */
     private fun squashAt(t: Float): Float =
-        if (t < 0.3f) SQ_MAX * (t / 0.3f) else SQ_MAX * (1f - (t - 0.3f) / 0.7f)
+        if (t < TAP_PEAK_T) SQ_MAX * (t / TAP_PEAK_T)
+        else SQ_MAX * (1f - (t - TAP_PEAK_T) / (1f - TAP_PEAK_T))
 
     /** 弹起位移：压扁结束后才起跳，正弦半波 */
     private fun jumpAt(t: Float): Float {
-        if (t < 0.3f) return 0f
-        val u = (t - 0.3f) / 0.7f
+        if (t < TAP_PEAK_T) return 0f
+        val u = (t - TAP_PEAK_T) / (1f - TAP_PEAK_T)
         return cellH * HOP_FRACTION * sin(u * Math.PI).toFloat()
     }
 
@@ -1016,6 +1033,12 @@ class PetView(context: Context) : View(context) {
             // 注：flipRunning 只在真正翻转时被置 true（见 startFlip）
             if (hopping) {
                 val t = ((now - hopStart).toFloat() / HOP_MS).coerceIn(0f, 1f)
+                // 压缩结束、开始弹起的那一刻：让思考气泡同步出现
+                // （只在"吸附右边框 + 下半屏"时，见 [bubbleAllowed]）
+                if (!bubbleFired && t >= TAP_PEAK_T) {
+                    bubbleFired = true
+                    if (bubbleAllowed()) host?.onJumpStart()
+                }
                 if (t >= 1f) {
                     hopping = false
                     // 轻跳落地 -> 落地回弹（用户要求"还有单击也是"）
@@ -2538,12 +2561,54 @@ class PetView(context: Context) : View(context) {
      *   点击动画第一段本来就是"从 0 压到 [SQ_MAX]"。
      */
     private fun onTapped(fromSquash: Float) {
-        val t0 = if (SQ_MAX > 0f) (0.3f * (fromSquash / SQ_MAX)).coerceIn(0f, 0.3f) else 0f
+        val t0 = if (SQ_MAX > 0f) {
+            (TAP_PEAK_T * (fromSquash / SQ_MAX)).coerceIn(0f, TAP_PEAK_T)
+        } else 0f
         hopping = true
         hopStart = SystemClock.uptimeMillis() - (t0 * HOP_MS).toLong()
+        bubbleFired = false          // 这一次点击还没冒过泡
         choreographer.removeFrameCallback(frameCallback)
         scheduleFrame()
         host?.onTapped()
+    }
+
+    // ---------------------------------------------------------------- 思考气泡
+
+    /**
+     * 思考气泡的锚点：
+     * `[足迹左, 足迹上, 足迹宽, 足迹高, 气泡整组宽, 气泡整组高]`（屏幕坐标，px）。
+     *
+     * 尺寸按记录的相对尺寸算：**气泡整组宽 = 0.99219 × 人物正立素材的屏幕宽度**。
+     * 那张正立素材（1024×875）就是"包围矩形 A"（宽 2a、高 b），
+     * 气泡整组为 1.984375a × 1.974609a —— 见 `气泡与人物_相对位置.md`。
+     *
+     * ⚠️ 用**正立素材**而不是当前素材来定尺寸：气泡大小只应跟人物大小有关，
+     * 不能因为"躺倒 / 正立"两套素材尺寸不同而变。
+     */
+    fun bubbleAnchor(): IntArray {
+        val s = sprite ?: return IntArray(0)
+        val screenH = (host?.bounds()?.height() ?: 1080).toFloat()
+        val up = PetState.scaledSize(s.uprightW, s.uprightH, screenH * sizeFrac)
+        val size = BubbleView.windowSize(up[0].toFloat())
+        return intArrayOf(
+            curTrackLeft().roundToInt(), curTrackTop().roundToInt(), trackW, trackH,
+            size[0], size[1]
+        )
+    }
+
+    /**
+     * 能不能冒泡 —— 用户规定：**当且仅当人物吸附在右边框、且位于下半屏**。
+     *
+     * 为什么限定下半屏：气泡挂在人物左侧、而且比人物还高（竖直中心对着头部），
+     * 人物贴在右上半屏时气泡会顶出屏幕上沿。
+     *
+     * 只认 [PetState.BORDER_R]（贴右边框的躺倒形态），不含右下角 [PetState.CORNER_BR]
+     * 与贴底边的 [PetState.BORDER_R_UPRIGHT] —— "右边框"就是右边框。
+     */
+    private fun bubbleAllowed(): Boolean {
+        if (state != PetState.BORDER_R) return false
+        val h = (host?.bounds()?.height() ?: return false).toFloat()
+        return curCenterY() > h / 2f
     }
 
     // ---------------------------------------------------------------- 绘制
@@ -2740,6 +2805,15 @@ class PetView(context: Context) : View(context) {
         const val BOUNCE_MIN_VISIBLE = 0.12f
         private const val HOP_MS = 380f
         private const val HOP_FRACTION = 0.08f
+
+        /**
+         * 点击动画里"**压到最扁**"的时刻（占整段的比例）。
+         *
+         * 前 30% 一路压扁、之后才是弹起（见 [squashAt] / [jumpAt]）。
+         * 气泡要与"弹起"同步出现，所以三处（压缩曲线 / 弹起曲线 / 气泡通知）
+         * 共用这一个常量，改一处不会失配。
+         */
+        private const val TAP_PEAK_T = 0.3f
 
         /** 点击时最大压缩比例（0.22 = 压掉 22% 的厚度） */
         private const val SQ_MAX = 0.22f

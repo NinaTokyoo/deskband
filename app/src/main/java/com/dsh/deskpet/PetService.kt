@@ -53,6 +53,16 @@ class PetService : Service(), PetView.Host {
     private var epoch = 0
     private var petParams: WindowManager.LayoutParams? = null
 
+    // ---------------------------------------------------------------- 思考气泡
+    //
+    // 气泡是**独立悬浮窗**：宠物窗口静止时收紧到"刚好包住人物"，气泡画在里面
+    // 一定被裁掉；临时把宠物窗口撑大又会让每次冒泡都 resize（WM 重新布局、
+    // 可能重建 Surface），观感是"闪一下"。
+
+    private var bubbleView: BubbleView? = null
+    private var bubbleParams: WindowManager.LayoutParams? = null
+    private var bubbleHide: Runnable? = null
+
     /**
      * 屏幕是否点亮。
      *
@@ -622,6 +632,8 @@ class PetService : Service(), PetView.Host {
     }
 
     private fun removePet() {
+        // 人物都收起来了，气泡不能自己留在屏幕上
+        hideBubble()
         val v = petView ?: return
         // ⚠️ 正在滑出时**不能**保存位置：那一刻锚点在屏幕外，
         // 存下去就成了"上次位置在屏幕外"，下次呼出 restore() 过去就看不见人。
@@ -861,6 +873,94 @@ class PetService : Service(), PetView.Host {
         // 悬浮时点击只做视觉反馈，不打开任何界面（用户要求）
     }
 
+    /**
+     * 人物"压缩完、开始弹起"的那一刻（PetView 只在**吸附右边框 + 下半屏**时回调）。
+     *
+     * 气泡就在这一刻开始出现，与弹起同步 —— 用户要求："当人物压缩完开始弹起时，
+     * 气泡按照上述相对位置和大小同步开始出现"。
+     */
+    override fun onJumpStart() = showBubble()
+
+    /**
+     * 让思考气泡出现。位置与大小按记录的相对关系：
+     *
+     *   · **大小**：整组宽 = 0.99219 × 人物正立素材屏幕宽（见 [PetView.bubbleAnchor]）；
+     *   · **横向**：气泡贴着人物**左侧**（吸附右边框时人物头朝左，气泡在脸这一侧），
+     *     间隙 = 人物足迹宽的 0.39%（记录值 0.0078a ÷ 2a）；
+     *   · **纵向**：气泡竖直中心 = 人物足迹盒的竖直中心（躺倒形态下正好是头部高度）。
+     */
+    private fun showBubble() {
+        val pet = petView ?: return
+        val a = pet.bubbleAnchor()
+        if (a.size < 6) return
+        val bw = a[4]
+        val bh = a[5]
+        val gap = Math.round(a[2] * BUBBLE_GAP_RATIO)
+        val b = bounds()
+        val x = (a[0] - gap - bw).coerceIn(0, (b.width() - bw).coerceAtLeast(0))
+        val y = (a[1] + a[3] / 2 - bh / 2).coerceIn(0, (b.height() - bh).coerceAtLeast(0))
+
+        hideBubble()
+        val view = BubbleView(this)
+        // 素材本身是"大气泡在右、尾巴偏左上"；人物在右边框、气泡挂左侧，
+        // 整组镜像后尾巴才朝着人物（从头顶冒出来 → 飘向大气泡）
+        view.flipH = true
+        val p = WindowManager.LayoutParams(
+            bw, bh,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            // ⚠️ 这里**不能**加 FLAG_NOT_TOUCHABLE：WMS 对"系统悬浮窗 + 不可触摸
+            //    + LayoutParams.alpha > 0.80"会把整窗 alpha 强制压到 0.80
+            //    （气泡描边与内部都会变半透明，深色壁纸会透上来）。
+            //    代价是这个窗口会挡住它自己那一小块的触摸 —— 它只活 1.8 秒、
+            //    又紧挨人物（不重叠），点人物不受影响。
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.RGBA_8888
+        )
+        p.gravity = Gravity.TOP or Gravity.START
+        p.x = x
+        p.y = y
+        p.alpha = 1f
+        try {
+            wm.addView(view, p)
+        } catch (e: Exception) {
+            return
+        }
+        bubbleView = view
+        bubbleParams = p
+        view.start()
+
+        // 布局自检：`adb logcat -s BubbleGeom` 可以量准"气泡窗口 / 人物足迹盒 / 宠物窗口"，
+        // 靠截图反推误差太大（这个功能的位置关系是靠像素说话的）。
+        runCatching {
+            android.util.Log.i(
+                "BubbleGeom",
+                "bubble=($x,$y ${bw}x$bh) foot=(${a[0]},${a[1]} ${a[2]}x${a[3]}) pet=" +
+                    (petParams?.let { "(${it.x},${it.y} ${it.width}x${it.height})" } ?: "?")
+            )
+        }
+
+        val hide = Runnable { hideBubble() }
+        bubbleHide = hide
+        // 时间轴走完再多留一点余量才收窗口，免得最后一帧被截掉
+        mainHandler.postDelayed(hide, BubbleView.TOTAL_MS + BUBBLE_TAIL_MS)
+    }
+
+    /** 收掉气泡窗口（时间到、人物收起、服务销毁都会走这里） */
+    private fun hideBubble() {
+        bubbleHide?.let { mainHandler.removeCallbacks(it) }
+        bubbleHide = null
+        val v = bubbleView ?: return
+        bubbleView = null
+        bubbleParams = null
+        try {
+            wm.removeView(v)
+        } catch (e: Exception) {
+            // 窗口可能已经被系统收走，忽略
+        }
+    }
+
     private fun scheduleSave() {
         if (saveScheduled) return
         saveScheduled = true
@@ -905,6 +1005,17 @@ class PetService : Service(), PetView.Host {
 
         private const val CHANNEL_ID = "deskpet"
         private const val NOTIF_ID = 1001
+
+        /**
+         * 气泡与人物之间的横向间隙 ÷ 人物足迹宽。
+         *
+         * 记录的相对位置里，气泡左缘 = 人物右缘 + 0.0078a，而足迹宽 = 2a，
+         * 所以比例是 0.0039（约 1px）。
+         */
+        private const val BUBBLE_GAP_RATIO = 0.0039f
+
+        /** 气泡时间轴走完后再多留一点余量才收窗口（毫秒） */
+        private const val BUBBLE_TAIL_MS = 80L
 
         /**
          * 当前正在显示的宠物视图（收起时为 null；[showPet]/[removePet] 维护）。
