@@ -1856,12 +1856,13 @@ class PetStateTest {
     // ---------------------------------------------------------------- 思考气泡摆哪一侧
 
     /**
-     * 气泡侧别规则（用户 2026-10-16 定，2.1.34 把两条线改成 1/5.5 与 1/7）。
+     * 气泡侧别规则（用户 2026-10-16 定）。
      *
-     * 屏幕 1440 x 3084：中线 x = 720，条件1 线 = 3084/5.5 = 560.7，条件2 线 = 3084/7 = 440.6。
+     * 线的沿革：条件1 = 1/3 → 1/5.5；条件2 = 1/5 → 1/7 → **1/15**。
+     * 屏幕 1440 x 3084：中线 x = 720，条件1 线 = 3084/5.5 = 560.7，条件2 线 = 3084/15 = 205.6。
      */
     private val EDGE_LINE = SH / 5.5f
-    private val TOP_LINE = SH / 7f
+    private val TOP_LINE = SH / 15f
 
     private fun sideOf(
         state: Int, x: Float, y: Float, defaultTop: Float = 1e5f
@@ -1888,12 +1889,14 @@ class PetStateTest {
     }
 
     @Test
-    fun bubble_flips_when_default_placement_would_cross_the_seventh_line() {
-        // 条件2：默认摆法的最上沿在"上 1/7 点"及以上（含正好压线）
+    fun bubble_flips_when_default_placement_would_cross_the_fifteenth_line() {
+        // 条件2：默认摆法的最上沿在"上 1/15 点"及以上（含正好压线）
         assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.BORDER_R, SW - 100f, SH * 0.6f, TOP_LINE))
         assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.BORDER_R, SW - 100f, SH * 0.6f, TOP_LINE - 1f))
         assertEquals(PetState.BUBBLE_SIDE_RIGHT, sideOf(PetState.BORDER_R, SW - 100f, SH * 0.6f, TOP_LINE + 1f))
-        // 旧的 1/5 线不再触发（1/5 = 616.8，低于新线 440.6）
+        // 旧的 1/7 线不再触发（1/7 = 440.6，明显低于新线 205.6）—— 这正是用户截图里
+        // "人物在屏幕 30% 高度、气泡没顶到屏幕沿" 那种位置从此改为走默认的关键
+        assertEquals(PetState.BUBBLE_SIDE_RIGHT, sideOf(PetState.BORDER_R, SW - 100f, SH * 0.6f, SH / 7f))
         assertEquals(PetState.BUBBLE_SIDE_RIGHT, sideOf(PetState.BORDER_R, SW - 100f, SH * 0.6f, SH / 5f))
     }
 
