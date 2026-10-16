@@ -285,6 +285,25 @@ object AccentTheme {
     ): StateListDrawable = ghostSelector(ctx.resources.displayMetrics, accent, light, radiusDp)
 
     /**
+     * 任意描边色 + **按压态**的圆角按钮背景（颜色可指定）。
+     *
+     * 存在的意义：删除 / 确定这类按钮用的是**固定的红**（不跟强调色），
+     * 早先只给了静态的 [accentBoxBackground] —— 于是"点下去有加暗反馈"这件事
+     * 只有普通按钮才有，红按钮点着一动不动（用户 2026-10-17 反馈）。
+     * 这里与 [ghostSelector] 完全同一套状态，只是描边色可换。
+     */
+    fun boxSelectorFor(
+        ctx: Context, color: Int, light: Boolean, radiusDp: Float = 8f
+    ): StateListDrawable = StateListDrawable().apply {
+        val dm = ctx.resources.displayMetrics
+        val pressed = if (light) 0x1A000000 else 0x24FFFFFF
+        val dim = Color.argb(90, Color.red(color), Color.green(color), Color.blue(color))
+        addState(intArrayOf(android.R.attr.state_pressed), rounded(dm, pressed, color, radiusDp))
+        addState(intArrayOf(-android.R.attr.state_enabled), rounded(dm, Color.TRANSPARENT, dim, radiusDp))
+        addState(intArrayOf(), rounded(dm, Color.TRANSPARENT, color, radiusDp))
+    }
+
+    /**
      * 「当前形象」选择框的背景。
      *
      * @param connected true = 下面接着二级菜单，此时**只有上面两角是圆的**

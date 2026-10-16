@@ -1460,13 +1460,11 @@ class MainActivity : Activity() {
             )
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             setTextColor(TAG_DELETE_RED)                       // 红字固定，不跟强调色
-            // 背景**立刻**给（圆角先用上限值），等这一帧量到高度后再按高度精修 ——
-            // 若留到 post 里才设，按钮会"先没背景、后出背景"，点一下所有按钮闪一下。
-            background = AccentTheme.accentBoxBackground(
-                this@MainActivity, TAG_DELETE_RED, lightMode, radiusDp = 8f
-            )
+            // 红描边 + **按压态**（与普通按钮同一套"按下加暗再恢复"；
+            // 早先只给静态描边，点着没有反馈 —— 用户 2026-10-17 反馈）
+            background = AccentTheme.boxSelectorFor(this@MainActivity, TAG_DELETE_RED, lightMode)
             post {
-                background = AccentTheme.accentBoxBackground(
+                background = AccentTheme.boxSelectorFor(
                     this@MainActivity, TAG_DELETE_RED, lightMode,
                     radiusDp = AccentTheme.radiusForHeight(height, resources.displayMetrics, 8f)
                 )
@@ -1915,10 +1913,9 @@ class MainActivity : Activity() {
             setPadding(dp(dm, 8f), 0, dp(dm, 8f), 0)
             // ⚠️ **两态都要描边**：原先常态是纯文字（✕ 时代留下的写法），
             //    改成「删除」之后就成了"一行红字"，看着不像按钮（用户 2026-10-17：
-            //    "删除加上边框呀"）。现在常态与确定态都是红描边圆角框。
-            background = AccentTheme.accentBoxBackground(
-                this@MainActivity, TAG_DELETE_RED, lightMode, radiusDp = 8f
-            )
+            //    "删除加上边框呀"）。现在常态与确定态都是红描边圆角框，
+            //    并且带**按压态**（与普通按钮同一套加暗反馈）。
+            background = AccentTheme.boxSelectorFor(this@MainActivity, TAG_DELETE_RED, lightMode)
             setOnClickListener {
                 if (pending) {
                     deleteCustomSkin(id, name)
@@ -2550,12 +2547,12 @@ class MainActivity : Activity() {
         const val BUBBLE_KIND = 3
 
         /**
-         * 图片条目的标签框高度 = **几行字的高度**（用户 2026-10-17：三行）。
+         * 图片条目的标签框高度 = **几行字的高度**（用户 2026-10-17：先要三行，随后改为五行）。
          *
          * 行高按 `字号 × 1.2` 估（与 TextView 的默认行距一致）；框的上下内边距留作
-         * "图与描边之间的空隙"，所以图的实际可用高度 = 三行字高 − 上下内边距。
+         * "图与描边之间的空隙"，所以图的实际可用高度 = 该高度 − 上下内边距。
          */
-        const val BUBBLE_TAG_IMAGE_LINES = 3f
+        const val BUBBLE_TAG_IMAGE_LINES = 5f
 
         /**
          * 气泡内容标签里"删除控件"那格的**固定宽度**（dp）。
