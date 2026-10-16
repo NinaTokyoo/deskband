@@ -92,6 +92,19 @@ class BubbleViewTest {
     }
 
     @Test
+    fun pop_uses_easing_not_linear() {
+        // 出现：ease-out（快出慢定）—— 半程时已经明显大于线性中值（0.25 + 0.75*0.5 = 0.625）
+        // 小圈 i=0：appear = 0，STEP = 50ms，所以 t = 25ms 正好是半程
+        val halfAppear = BubbleView.popOf(small, 25f)!!
+        assertTrue("出现半程应已接近满尺寸（ease-out）", halfAppear > 0.85f)
+
+        // 消失：ease-in（慢起快收）—— 半程时明显小于线性中值
+        // 大气泡 i=big：vanish = 1650ms，STEP = 50ms，所以 t = 1675ms 正好半程
+        val halfVanish = BubbleView.popOf(big, 1675f)!!
+        assertTrue("消失半程应还比较小（ease-in）", halfVanish < 0.35f)
+    }
+
+    @Test
     fun everything_gone_at_1800ms() {
         for (i in 0 until BubbleView.PART_COUNT) {
             assertNull("第 $i 块在 1.8s 应当已经消失", BubbleView.popOf(i, 1800f))

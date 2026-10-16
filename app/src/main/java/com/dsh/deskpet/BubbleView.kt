@@ -284,8 +284,13 @@ class BubbleView(context: Context) : View(context) {
             val inA = ((t - appear) / STEP_MS).coerceIn(0f, 1f)
             val outA = 1f - ((t - vanish) / STEP_MS).coerceIn(0f, 1f)
             if (inA <= 0f || outA <= 0f) return null
+            // 缓动：**出现 ease-out、消失 ease-in**。
+            // 0.15s 这么短的动画用线性插值看起来就是"顿"，加缓动后同样的帧率下观感明显更顺
+            // （总时长不变，仍是用户指定的 0.15s —— 只是把位移量在时间上重新分配）。
+            val inEase = 1f - (1f - inA) * (1f - inA) * (1f - inA)   // 快出慢定
+            val outEase = outA * outA                                  // 慢起快收
             // 从 25% 大小"弹"出来：从 0 开始的话第一帧只是个看不见的点，白跑一帧
-            val pop = (0.25f + 0.75f * inA) * outA
+            val pop = (0.25f + 0.75f * inEase) * outEase
             return if (pop < POP_MIN) null else pop
         }
 
