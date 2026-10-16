@@ -577,7 +577,9 @@ class MainActivity : Activity() {
         /** 展开时把这张卡的参数抄一份 */
         val capture: () -> Unit,
         /** 把抄下来的那份原样写回（点「取消」时用） */
-        val restore: () -> Unit
+        val restore: () -> Unit,
+        /** 展开时按钮恒为「收起」（见 [registerExpandCard] 的说明） */
+        val alwaysCollapse: Boolean = false
     ) {
         /**
          * 展开之后是否已经"操作完成"（点过「保存」或「恢复默认值」）。
@@ -608,9 +610,15 @@ class MainActivity : Activity() {
          * 锁定时**照样可以展开**（用户要求）。
          * 目前只有「通知栏内容」用它 —— 那两项是文案，不属于锁定要拦的"数值"。
          */
-        lockExempt: Boolean = false
+        lockExempt: Boolean = false,
+        /**
+         * 展开时按钮**直接显示「收起」**、不显示「取消」（用户 2026-10-17，用在「气泡设置」卡）。
+         * 那张卡里只有开关，点一下立即生效，没有"会丢东西"的中间态 —— 叫「取消」会让人
+         * 以为改动没生效。
+         */
+        alwaysCollapse: Boolean = false
     ) {
-        val card = ExpandCard(body, manage, capture, restore)
+        val card = ExpandCard(body, manage, capture, restore, alwaysCollapse)
         expandCards.add(card)
         // 「用户碰过这张卡」由 CardPanel 上报（它是 dispatchTouchEvent 那一层才收得到，
         //  挂在容器上的 OnTouchListener 收不到 —— 触摸目标是子控件）
@@ -682,13 +690,13 @@ class MainActivity : Activity() {
         refreshCardButton(card)
     }
 
-    /** 右上角按钮的文案：收起态=管理，展开且已保存=收起，展开未保存=取消 */
+    /** 右上角按钮的文案：收起态=管理，展开且已保存=收起，展开未保存=取消（[alwaysCollapse] 恒为收起） */
     private fun refreshCardButton(card: ExpandCard) {
         val expanded = card.body.visibility == View.VISIBLE
         card.manage.text = getString(
             when {
                 !expanded -> R.string.card_manage
-                card.saved -> R.string.card_collapse
+                card.saved || card.alwaysCollapse -> R.string.card_collapse
                 else -> R.string.card_cancel
             }
         )
@@ -1256,7 +1264,9 @@ class MainActivity : Activity() {
      * 所以这张卡不需要「保存 / 取消」那一对）。
      */
     private fun setupBubbleSettingsControls() {
-        registerExpandCard(panelBubbleSettings, btnManageBubbleSettings)
+        // alwaysCollapse：这张卡没有"会丢东西"的中间态（开关点一下即生效），
+        // 所以展开时按钮直接显示「收起」，不显示「取消」（用户 2026-10-17）
+        registerExpandCard(panelBubbleSettings, btnManageBubbleSettings, alwaysCollapse = true)
         btnBubbleOnTap.setOnClickListener {
             prefs.bubbleOnTap = !prefs.bubbleOnTap
             refreshBubbleSettings()
@@ -1273,90 +1283,12 @@ class MainActivity : Activity() {
     private fun refreshBubbleSettings() {
         if (!::btnBubbleOnTap.isInitialized) return
         val on = prefs.bubbleOnTap
-        val dm = resources.displayMetrics
         btnBubbleOnTap.apply {
-            // ⚠️ 几何量（宽/高）**只由 [syncBubbleToggleWidth] 一处决定**：这里早先也写了一份
-            //    （宽度兜底 64dp、高度 DELETE_SLOT_DP），两边互相覆盖 —— 同步刚把宽度改成
-            //    标题按钮的实测值，这里又按兜底值写回去，于是"永远差 29px"
-            //    （用户 2026-10-17 连续三次反馈没对齐）。
-            minWidth = 0
-            minHeight = 0
+            // ⚠️ 宽/高/内边距**全部交给 XML**（style=CardAction + minWidth=72dp，与上方
+            //    「管理/取消/收起」逐项相同）——运行时代码改 layoutParams 在这个 TextView 上
+            //    实测不生效（日志：want=254x157 actual=223x81），所以这里只改文字与颜色。
             text = getString(if (on) R.string.bubble_text_enabled else R.string.bubble_pending)
-            isSingleLine = true
-            maxLines = 1
-            ellipsize = null
-            setPadding(dp(dm, 2f), 0, dp(dm, 2f), 0)
-            // 与"已启用"那套一致：未启用用中性文字色，启用用强调色
             setTextColor(if (on) accent else AccentTheme.skinBoxText(lightMode))
-            background = AccentTheme.ghostSelectorFor(this@MainActivity, accent, lightMode)
-        }
-        alignBubbleToggleWithManage()
-    }
-
-    /**
-     * 把「单击时出现」那个开关与上方「管理」按钮**左右对齐**。
-     *
-     * ⚠️ 光抄宽度不够：开关在展开面板里、「管理」在标题行里，两者所属容器的右侧留白
-     *    未必相同（用户 2026-10-17："启用按钮要跟上面的管理按钮左右对齐"）。
-     *    这里按两者**实测右边界之差**补右边距。
-     *
-     * ⚠️ 必须挂在**布局变化**上：面板默认是 GONE，onCreate 里那次宽度是 0，
-     *    一次性 post 会在"还没展开"时白白跑掉（用户后来反馈"气泡设置的你没改"就是这个）。
-     */
-    private fun alignBubbleToggleWithManage() {
-        if (!::btnBubbleOnTap.isInitialized || !::btnManageBubbleSettings.isInitialized) return
-        btnBubbleOnTap.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-            syncBubbleToggleWidth()
-        }
-        syncBubbleToggleWidth()
-    }
-
-    /**
-     * 让「单击时出现」的开关与上方「管理 / 取消 / 收起」按钮**同宽同列**。
-     *
-     * ⚠️ 为什么必须"赋完再自检"：`refreshBubbleSettings()` 在 onCreate 里就会跑一次，
-     *    那一刻标题行按钮**还没被测量**（width = 0），只能落兜底值 64dp；
-     *    而实测宽度只有 50dp 上下 —— 宽出来的那一截，光靠补边距是救不回来的
-     *    （用户 2026-10-17 连续两次反馈"没对齐""还是没对齐"）。
-     *    所以这里每赋一次就 post 再核一次，直到宽度与列位都稳定。
-     */
-    private fun syncBubbleToggleWidth() {
-        if (!::btnBubbleOnTap.isInitialized || !::btnManageBubbleSettings.isInitialized) return
-        val target = btnManageBubbleSettings.width
-        if (target <= 0) return
-        val lp = btnBubbleOnTap.layoutParams as? android.widget.LinearLayout.LayoutParams ?: return
-        var changed = false
-        if (lp.width != target) {
-            lp.width = target
-            changed = true
-        }
-        val wantH = btnManageBubbleSettings.height
-        if (wantH > 0 && lp.height != wantH) {
-            lp.height = wantH
-            changed = true
-        }
-        // ⚠️ **右边距必须是 0**：宽度已经等于标题按钮，只要让开关贴住行尾，
-        //    它的右边界就与「管理/取消」在同一条线上，左边界也随之相同 ——
-        //    位置**不需要**任何计算。
-        //    早先这里按"实测坐标差"累加 marginEnd，读到的是上一帧坐标 -> 越修越偏，
-        //    开关被推到左边 124px（用户 2026-10-17 截图："跑哪去了"）。
-        if (lp.marginEnd != 0) {
-            lp.marginEnd = 0
-            changed = true
-        }
-        if (changed) {
-            btnBubbleOnTap.minWidth = 0
-            btnBubbleOnTap.minHeight = 0
-            btnBubbleOnTap.layoutParams = lp
-            android.util.Log.i(
-                "BubbleGeom",
-                "toggle sync: want=${lp.width}x${lp.height} actual=${btnBubbleOnTap.width}x${btnBubbleOnTap.height}"
-            )
-        } else if (btnBubbleOnTap.width != target) {
-            android.util.Log.i(
-                "BubbleGeom",
-                "toggle still off: manage=$target actual=${btnBubbleOnTap.width}"
-            )
         }
     }
 
