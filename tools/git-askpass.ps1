@@ -1,4 +1,4 @@
-# git 凭据辅助脚本（由 GIT_ASKPASS 调用）
+﻿# git 凭据辅助脚本（由 GIT_ASKPASS 调用）
 #
 # 为什么需要它：把令牌拼进 URL（https://user:token@host/...）时，
 # 令牌里只要出现 @ : / ? # 这类字符，URL 就会被解析坏，报
