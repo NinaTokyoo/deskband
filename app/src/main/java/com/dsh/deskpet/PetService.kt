@@ -912,12 +912,14 @@ class PetService : Service(), PetView.Host {
         val b = bounds()
         var fx = Math.round(a[0] + off[0] - bw / 2f).toInt()
         var fy = Math.round(a[1] + off[1] - bh / 2f).toInt()
-        // 个别状态再挪一点（右下角/底边：移动 0.3 个气泡宽、上移 0.2 个气泡高）。
+        // 个别状态再挪一点（下边/下角：移动 0.3 个气泡宽、上移 0.2 个气泡高）。
         // ⚠️ 横向是"**朝人物**一侧"为正：右下角那套气泡在人物左上角、往右挪 = 朝人物；
         //    气泡摆在屏幕右侧时（左半屏/左下角）朝人物就是往左，符号取反。
+        // ⚠️ 竖直方向：上边组（flipV）是下边组的上下镜像，所以"上移"要变成"下移"。
         val nudgeSign = PetState.bubbleNudgeSign(screenSide)
+        val vSign = if (flipV) -1 else 1
         fx += nudgeSign * Math.round(nudge[0] * bw)
-        fy -= Math.round(nudge[1] * bh)
+        fy -= vSign * Math.round(nudge[1] * bh)
 
         // 原则（用户对右下角提的）：气泡**有效区域**（可见的椭圆/小圈）不得进入人物素材矩形。
         // ⚠️ 按椭圆判、不按外框判 —— 外框四角是透明的，拿外框判会把"只是角擦到"误判成相交。

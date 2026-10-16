@@ -393,6 +393,14 @@ android {
         //                     （尾巴小圈会从气泡下方跑到上方）。改为：气泡在屏幕**右**侧时
         //                     用 **+90° + 镜像**，在屏幕**左**侧用 -90°（C 形态）。
         //                     PetState.bubbleRotation 增加 screenSide 参数）
+        //   2.1.43 -> 20143（用户："上边和左右上角的气泡完全上下镜像对称底边包括左右下角的
+        //                     效果，如跟以前的规则冲突，以此条为准"。
+        //                     ① bubbleScreenSide（原 bottomScreenSide）放开到上边/上角：
+        //                        竖镜像左右不变，所以判据相同；
+        //                     ② bubbleRotation 对 isTop 取**相反**角度（下边 -90/+90 ->
+        //                        上边 +90/-90），配合 flipV 画出来正好是上下镜像；
+        //                     ③ bubbleNudge 放开到上边/上角，服务里竖直方向按 flipV 取反；
+        //                     ④ bubbleKeepOutOfPetRect 放开到贴顶边两个状态）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ✅ 作者声明里的版本号与完成时间**自动跟着这行走**：
         //    版本号 = vName；完成时间 = 构建时刻（buildStamp，见文件顶部）。
@@ -401,7 +409,7 @@ android {
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
         //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
         //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
-        val vName = "2.1.42"
+        val vName = "2.1.43"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()

@@ -1933,24 +1933,30 @@ class PetStateTest {
         assertEquals(90f, PetState.bubbleRotation(PetState.BORDER_L, 90f, 0))
         // 上边/上角不在这条规则里，照旧跟人物一致
         assertEquals(0f, PetState.bubbleRotation(PetState.EDGE_TOP_R, 0f, 0))
-        // 右下角另有规定（用户确认的 C）：顺时针 90° + 左右镜像 的净效果 = -90 且不镜像
-        assertEquals(-90f, PetState.bubbleRotation(PetState.CORNER_BR, 0f, -1))
-        // 用户 2026-10-16 追加：下边（两个半屏）与左下角按"右下角现在的做法"，
-        // 摆屏幕左侧 = -90（C 形态）、摆屏幕右侧 = +90 + 镜像（严格左右镜像）
+        // 上边组 = 下边组的上下镜像 -> 旋转角取反（左右不变）
         assertEquals(-90f, PetState.bubbleRotation(PetState.BORDER_R_UPRIGHT, 0f, -1))
+        assertEquals(90f, PetState.bubbleRotation(PetState.EDGE_TOP_R, 0f, -1))
         assertEquals(90f, PetState.bubbleRotation(PetState.BORDER_L_UPRIGHT, 0f, 1))
+        assertEquals(-90f, PetState.bubbleRotation(PetState.EDGE_TOP_L, 0f, 1))
+        assertEquals(-90f, PetState.bubbleRotation(PetState.CORNER_BR, 0f, -1))
+        assertEquals(90f, PetState.bubbleRotation(PetState.CORNER_TR, 0f, -1))
         assertEquals(90f, PetState.bubbleRotation(PetState.CORNER_BL, 0f, 1))
-        // 屏幕侧别：中点在屏幕中线及右侧 -> 屏幕左侧（气泡在人物左上角）；否则屏幕右侧
-        assertEquals(-1, PetState.bottomScreenSide(PetState.CORNER_BR, SW - 100f, SW))
-        assertEquals(1, PetState.bottomScreenSide(PetState.CORNER_BL, 100f, SW))
-        assertEquals(-1, PetState.bottomScreenSide(PetState.BORDER_R_UPRIGHT, SW / 2f, SW))
-        assertEquals(1, PetState.bottomScreenSide(PetState.BORDER_R_UPRIGHT, SW / 2f - 1f, SW))
-        assertEquals(-1, PetState.bottomScreenSide(PetState.BORDER_L_UPRIGHT, SW / 2f + 1f, SW))
-        assertEquals(1, PetState.bottomScreenSide(PetState.BORDER_L_UPRIGHT, SW * 0.2f, SW))
-        // 不走这条规则的状态返回 0（贴左/右边框、贴顶边、上角）
-        assertEquals(0, PetState.bottomScreenSide(PetState.BORDER_R, SW - 100f, SW))
-        assertEquals(0, PetState.bottomScreenSide(PetState.EDGE_TOP_R, SW - 100f, SW))
-        assertEquals(0, PetState.bottomScreenSide(PetState.CORNER_TR, SW - 100f, SW))
+        assertEquals(-90f, PetState.bubbleRotation(PetState.CORNER_TL, 0f, 1))
+        // 屏幕侧别：中点在屏幕中线及右侧 -> 屏幕左侧（气泡在人物左上角）；否则屏幕右侧。
+        // 2.1.43 起上边组（贴上沿 / 上角）共用同一判据 —— 竖镜像左右不变
+        assertEquals(-1, PetState.bubbleScreenSide(PetState.CORNER_BR, SW - 100f, SW))
+        assertEquals(1, PetState.bubbleScreenSide(PetState.CORNER_BL, 100f, SW))
+        assertEquals(-1, PetState.bubbleScreenSide(PetState.BORDER_R_UPRIGHT, SW / 2f, SW))
+        assertEquals(1, PetState.bubbleScreenSide(PetState.BORDER_R_UPRIGHT, SW / 2f - 1f, SW))
+        assertEquals(-1, PetState.bubbleScreenSide(PetState.BORDER_L_UPRIGHT, SW / 2f + 1f, SW))
+        assertEquals(1, PetState.bubbleScreenSide(PetState.BORDER_L_UPRIGHT, SW * 0.2f, SW))
+        assertEquals(-1, PetState.bubbleScreenSide(PetState.EDGE_TOP_R, SW - 100f, SW))
+        assertEquals(1, PetState.bubbleScreenSide(PetState.EDGE_TOP_L, 100f, SW))
+        assertEquals(-1, PetState.bubbleScreenSide(PetState.CORNER_TR, SW - 100f, SW))
+        assertEquals(1, PetState.bubbleScreenSide(PetState.CORNER_TL, 100f, SW))
+        // 不走这条规则的状态返回 0（贴左/右边框）
+        assertEquals(0, PetState.bubbleScreenSide(PetState.BORDER_R, SW - 100f, SW))
+        assertEquals(0, PetState.bubbleScreenSide(PetState.BORDER_L, 100f, SW))
         // 下角/下边：摆屏幕右侧要镜像（= 右下角 C 形态的镜像），摆屏幕左侧不镜像
         assertFalse(
             "右下角摆屏幕左侧 -> 不镜像",

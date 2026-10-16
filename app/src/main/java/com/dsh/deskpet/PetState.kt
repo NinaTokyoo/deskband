@@ -251,28 +251,36 @@ object PetState {
      *    （R∘M），而"把右边那张图整体左右翻"是 M∘R —— 两者差 180°（尾巴小圈会从
      *    气泡下方跑到上方）。要让左半边严格等于右半边的镜像，就得用 +90 + 镜像。
      *    这正是用户 2026-10-16 截图里"左右不对称"的根源。
+     *
+     * 上边组（上角 / 贴上沿）取**相反**的旋转角：它们的 flipV=true，画出来正好是
+     * 下边组的**上下镜像**（用户 2026-10-16："上边和左右上角完全上下镜像对称底边
+     * 包括左右下角"）。竖镜像把旋转角取反即可（左右不变）。
      */
     fun bubbleRotation(state: Int, spriteRot: Float, screenSide: Int): Float = when {
-        screenSide < 0 -> -90f
-        screenSide > 0 -> 90f
+        screenSide < 0 -> if (isTop(state)) 90f else -90f
+        screenSide > 0 -> if (isTop(state)) -90f else 90f
         else -> spriteRot
     }
 
     /**
-     * 下边（两个半屏）与两个**下角**：气泡摆在**屏幕**上的哪一侧。
-     *
-     * 用户 2026-10-16："吸附至底边时，以人物吸附边中点为准，若在底边中点及右侧，
-     * 则出现在左上角；否则（包括左下角）在右上角" —— 注意这条是按**屏幕视角**说的
-     * （人在屏幕左边 -> 气泡在屏幕右上角，朝屏幕内侧），而不是素材坐标系。
+     * 用户 2026-10-16：**上边与两个上角的气泡 = 下边与两个下角的严格上下镜像**
+     * （"如跟以前的规则冲突，以此条为准"）。竖镜像 **左右不变**，所以这条规则
+     * 对下边组和上边组是同一个判据：吸附边中点在屏幕中线及右侧 -> 气泡在屏幕左上。
      *
      * @return 屏幕侧别：+1 = 屏幕右侧、-1 = 屏幕左侧、0 = 该状态不走这条规则
      */
-    fun bottomScreenSide(state: Int, petCenterX: Float, screenW: Float): Int {
+    fun bubbleScreenSide(state: Int, petCenterX: Float, screenW: Float): Int {
         val applies = state == CORNER_BR || state == CORNER_BL ||
-            state == BORDER_R_UPRIGHT || state == BORDER_L_UPRIGHT
+            state == BORDER_R_UPRIGHT || state == BORDER_L_UPRIGHT ||
+            state == CORNER_TR || state == CORNER_TL ||
+            state == EDGE_TOP_R || state == EDGE_TOP_L
         if (!applies) return 0
         return if (petCenterX >= screenW / 2f) -1 else 1
     }
+
+    /** 兼容旧名字（下边那条规则最早只覆盖下边组） */
+    fun bottomScreenSide(state: Int, petCenterX: Float, screenW: Float): Int =
+        bubbleScreenSide(state, petCenterX, screenW)
 
     /**
      * 气泡整组的**左右镜像**标志（在"人物素材变换"之上再叠加的那一层）。
@@ -290,7 +298,8 @@ object PetState {
 
     /** 该状态的气泡要不要保证"有效区域不进入人物素材矩形" */
     fun bubbleKeepOutOfPetRect(state: Int): Boolean =
-        isCorner(state) || state == BORDER_R_UPRIGHT || state == BORDER_L_UPRIGHT
+        isCorner(state) || state == BORDER_R_UPRIGHT || state == BORDER_L_UPRIGHT ||
+            state == EDGE_TOP_R || state == EDGE_TOP_L
 
     /**
      * 个别状态在"标准摆位"之上再挪一点（单位 = 气泡窗口自身的宽 / 高）。
@@ -305,7 +314,8 @@ object PetState {
      * @return `[向右比例（屏幕侧别为左时取负）, 向上比例]`
      */
     fun bubbleNudge(state: Int): FloatArray = when (state) {
-        CORNER_BR, CORNER_BL, BORDER_R_UPRIGHT, BORDER_L_UPRIGHT -> floatArrayOf(0.3f, 0.2f)
+        CORNER_BR, CORNER_BL, BORDER_R_UPRIGHT, BORDER_L_UPRIGHT,
+        CORNER_TR, CORNER_TL, EDGE_TOP_R, EDGE_TOP_L -> floatArrayOf(0.3f, 0.2f)
         else -> floatArrayOf(0f, 0f)
     }
 
