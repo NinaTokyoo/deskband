@@ -7,19 +7,41 @@ package com.dsh.deskpet
  * 于是这里可以放心写单测：版本号比较是最容易写错、又最不该出错的地方
  * （`2.3.10` 必须大于 `2.3.9` ✗，按字符串比就会错 ✓）。
  *
- * 数据来源：GitHub Releases。**发布 Release 就等于"推送到用户"** ——
- * 不需要服务器、不需要推送通道；公开仓库读这个接口也不需要令牌。
+ * 数据来源：**Gitee Releases 优先、GitHub 兜底**（用户 2026-10-17 定）。
+ * 「发布一个 Release」就等于"推送给用户" —— 不需要服务器、不需要推送通道；
+ * 公开仓库读这两个接口都不需要令牌。
+ *
+ * ⚠️ 为什么以 Gitee 为主：GitHub 在国内**打不开或极慢**（网页时好时坏、附件下载常常失败），
+ *    而"检查更新"是个静默的后台请求 —— 失败时用户什么也看不到。以 Gitee 为主、
+ *    GitHub 兜底，国内用户才真的能收到"有新版本"的提示。
  */
 object UpdateCheck {
 
-    /** 仓库（用户 2026-10-17 指定） */
-    const val OWNER_REPO = "ninatokyoo/deskband"
+    /** Gitee 仓库（国内主渠道，全小写） */
+    const val GITEE_OWNER = "ninatokyoo"
+    const val GITEE_REPO = "deskband"
 
-    /** 取"最新正式版"的接口；没有正式版（全是草稿/预发布）时会返回 404，按"查不到"处理 */
-    const val API_URL = "https://api.github.com/repos/$OWNER_REPO/releases/latest"
+    /** GitHub 仓库（备用渠道；⚠️ 账号的规范大小写是 NinaTokyoo） */
+    const val GITHUB_OWNER = "NinaTokyoo"
+    const val GITHUB_REPO = "deskband"
 
-    /** 给人点开下载的页面（浏览器打开，不需要任何权限） */
-    const val RELEASES_URL = "https://github.com/$OWNER_REPO/releases/latest"
+    /**
+     * 依次尝试的接口：**先 Gitee，失败再 GitHub**。
+     *
+     * 两个接口返回的 JSON 里版本号字段都叫 `tag_name`，所以同一套解析就够。
+     * 没有正式版（全是草稿/预发布）时返回 404，按"查不到"处理。
+     */
+    val API_URLS = listOf(
+        "https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO/releases/latest",
+        "https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"
+    )
+
+    /** 给人点开下载的页面：Gitee（国内直连） */
+    const val RELEASES_URL = "https://gitee.com/$GITEE_OWNER/$GITEE_REPO/releases/latest"
+
+    /** 上面那个打不开时的备用页面 */
+    const val RELEASES_URL_FALLBACK =
+        "https://github.com/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"
 
     /**
      * 把 `v2.3.1` / `2.3.1` / `2.3.1-beta.2` 解析成数字段 `[2,3,1]`。

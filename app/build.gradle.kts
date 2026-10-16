@@ -784,6 +784,15 @@ android {
         //                     四张卡传 true；setCardExpanded 展开时 saved = keepExpandedOnCancel；
         //                     管理按钮的点击分支里，这类卡点取消 = restore + saved=true + 原地刷新。
         //                     ⚠️ 版本号从 2.3.11 起恢复正常推导（回退版曾临时写死 20310））
+        //   2.3.12  -> 20312（「检查更新」改为**Gitee 优先、GitHub 兜底**（用户 2026-10-17：
+        //                     "Gitee Release吧"）：
+        //                     · UpdateCheck.API_URLS 改成列表，依次尝试
+        //                       gitee.com/api/v5/repos/.../releases/latest
+        //                       -> api.github.com/repos/NinaTokyoo/deskband/releases/latest
+        //                       （两边 JSON 的版本号字段都叫 tag_name，解析同一套）；
+        //                     · 下载入口也给两个：Gitee 页优先、GitHub 页备用；
+        //                     · 原因：GitHub 在国内时好时坏、附件常下不动，而检查更新是
+        //                       静默请求 —— 失败时用户毫无感知。以 Gitee 为主国内才收得到提示）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ✅ 作者声明里的版本号与完成时间**自动跟着这行走**：
         //    版本号 = vName；完成时间 = 构建时刻（buildStamp，见文件顶部）。
@@ -792,7 +801,7 @@ android {
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
         //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
         //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
-        val vName = "2.3.11"
+        val vName = "2.3.12"
         versionName = vName
         // 回退到 2.3.1 那次为了让手机能覆盖安装（当时装着内部码 20309 的 2.3.9），
         // 这里曾临时写死 versionCode = 20310。现在恢复正常推导（2.3.11 -> 20311）。

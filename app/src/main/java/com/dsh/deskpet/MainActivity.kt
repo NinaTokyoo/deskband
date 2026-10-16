@@ -1426,24 +1426,30 @@ class MainActivity : Activity() {
             txtAboutLatest.setOnClickListener(null)
         }
         Thread {
-            val tag = try {
-                val conn = (java.net.URL(UpdateCheck.API_URL).openConnection()
-                        as java.net.HttpURLConnection).apply {
-                    connectTimeout = 6000
-                    readTimeout = 6000
-                    requestMethod = "GET"
-                    // GitHub 要求带 User-Agent，否则直接 403
-                    setRequestProperty("User-Agent", "DeskBand-Android")
-                    setRequestProperty("Accept", "application/vnd.github+json")
+            // 依次试：Gitee（国内直连）-> GitHub（兜底）。
+            // 任何一个拿到合法 tag_name 就用它，全失败返回 null（静默）。
+            var tag: String? = null
+            for (url in UpdateCheck.API_URLS) {
+                tag = try {
+                    val conn = (java.net.URL(url).openConnection()
+                            as java.net.HttpURLConnection).apply {
+                        connectTimeout = 6000
+                        readTimeout = 6000
+                        requestMethod = "GET"
+                        // 两个平台都要求/建议带 User-Agent（GitHub 不带会直接 403）
+                        setRequestProperty("User-Agent", "DeskBand-Android")
+                        setRequestProperty("Accept", "application/json")
+                    }
+                    val body = try {
+                        conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+                    } finally {
+                        conn.disconnect()
+                    }
+                    UpdateCheck.tagFromJson(body)
+                } catch (e: Exception) {
+                    null
                 }
-                val body = try {
-                    conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
-                } finally {
-                    conn.disconnect()
-                }
-                UpdateCheck.tagFromJson(body)
-            } catch (e: Exception) {
-                null
+                if (tag != null) break
             }
             runOnUiThread { onUpdateChecked(tag, manual) }
         }.start()
