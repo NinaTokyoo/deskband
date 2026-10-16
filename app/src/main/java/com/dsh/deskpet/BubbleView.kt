@@ -110,14 +110,25 @@ class BubbleView(context: Context) : View(context) {
     var textColor: Int = 0xFF000000.toInt()
 
     /**
-     * 点击气泡时的回调（用户 2026-10-16：点大气泡要有"缩小回弹"效果，并随机换一条文案）。
+     * 点击气泡时的回调（用户 2026-10-16：点大气泡要有"缩小回弹"效果）。
      *
      * ⚠️ 只在"大气泡稳定存在"（停留段）里才回调 —— 出现/消失过程中点它不做事。
      */
     var onPressed: (() -> Unit)? = null
 
+    /**
+     * 压缩回弹走到**最低点**（即将开始变大）时的回调。
+     *
+     * 用户 2026-10-16："缩到最小之前是当前文案，开始变大之后随机切换到下一条" ——
+     * 所以换文案挂在这里，而不是按下那一刻。
+     */
+    var onPressRebound: (() -> Unit)? = null
+
     /** 按压缩放动画的起点（0 = 没有动画） */
     private var pressAt = 0L
+
+    /** 本次按下是否已经报过最低点（保证只报一次） */
+    private var pressRebounded = false
 
     /**
      * 触发一次"压缩回弹"（用户要求：大气泡明显、中圈弱一些、小圈最弱）。
@@ -127,6 +138,7 @@ class BubbleView(context: Context) : View(context) {
      */
     fun press() {
         pressAt = SystemClock.uptimeMillis()
+        pressRebounded = false
         invalidate()
     }
 
@@ -217,6 +229,14 @@ class BubbleView(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         val now = SystemClock.uptimeMillis()
         val t = if (startAt == 0L) 0f else (now - startAt).toFloat()
+
+        // 压缩到**最低点**时报一次（用户要求：此刻才随机换下一条文案，见 [onPressRebound]）
+        if (pressAt != 0L && !pressRebounded &&
+            (now - pressAt) / PRESS_MS.toFloat() >= PRESS_REBOUND_T
+        ) {
+            pressRebounded = true
+            onPressRebound?.invoke()
+        }
 
         // 组自身坐标系：转过 90° 时，窗口的宽高与组宽高互换
         val gw = if (rotated) height.toFloat() else width.toFloat()
@@ -325,10 +345,18 @@ class BubbleView(context: Context) : View(context) {
         //    只减 (n-1)/2*lh 的话整块会往下偏半个字（实测 0.4em，行数越多越明显，
         //    用户截图里 4 行文字明显贴到了椭圆下沿）。
         val y0 = cy - (lines.size - 1) / 2f * lh - size / 2f - size * OPTICAL_DY_EM
+
+        // ⚠️ 文字**跟着大气泡一起缩放**（用户 2026-10-16："大气泡缩小的时候不要遮盖文字"）：
+        //    按压缩小时椭圆内缘往里收，文字若保持原尺寸就会被环压住/露到环外；
+        //    以椭圆中心为基准同比例缩放，两者始终同步 —— 看起来是"整块气泡在呼吸"。
+        val k = pressScale(PART_COUNT - 1, SystemClock.uptimeMillis())
+        canvas.save()
+        canvas.scale(k, k, cx, cy)
         for ((j, line) in lines.withIndex()) {
             val w = paint.measureText(line)
             canvas.drawText(line, cx - w / 2f, y0 + j * lh + size * BASELINE_RATIO, paint)
         }
+        canvas.restore()
     }
 
     /**
@@ -549,6 +577,12 @@ class BubbleView(context: Context) : View(context) {
         // ---- 点气泡时的"压缩回弹" ----
         /** 整段动画时长 */
         private const val PRESS_MS = 220f
+
+        /**
+         * 包络 `sin(2πt)*(1-t)` 的最低点大概落在 t ≈ 0.27（此处最扁），
+         * 也就是"缩到最小、马上要变大"的时刻 —— 换文案就卡在这一刻。
+         */
+        private const val PRESS_REBOUND_T = 0.27f
 
         /**
          * 各块的压缩幅度（下标同 [PART_IDS]：0 = 小圈、1 = 中圈、2 = 大气泡）。
