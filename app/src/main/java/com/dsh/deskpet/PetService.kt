@@ -73,6 +73,22 @@ class PetService : Service(), PetView.Host {
         get() = !AccentTheme.isLight(this, prefs.themeMode)
 
     /**
+     * 气泡里文字的**颜色**：人物发色经 `accentFrom(light)` 派生（用户 2026-10-16 指定
+     * "就用派生色"）—— 原发色在白底上对比度偏低，派生色才读得清，
+     * 深色模式那块灰底上也同样能读。
+     *
+     * 发色算法与 App 主题用的是同一个（[AccentTheme.extractHairColor]），
+     * 所以气泡文字的颜色和界面强调色天然同源。
+     */
+    private fun bubbleTextColor(pet: PetView): Int {
+        // 取"正立素材"那张估算发色（与 MainActivity 里估强调色同一张图、同一套算法）
+        val hair = AccentTheme.extractHairColor(
+            pet.sprite?.bitmap(PetState.CORNER_BR, mirror = false, flipV = false)
+        )
+        return if (hair == null) AccentTheme.FALLBACK else AccentTheme.accentFrom(hair, light = true)
+    }
+
+    /**
      * 屏幕是否点亮。
      *
      * ⚠️ 初值必须**真读一次** `PowerManager.isInteractive`，不能写死 true：
@@ -1029,6 +1045,15 @@ class PetService : Service(), PetView.Host {
         val view = BubbleView(this)
         // 深色模式：只把气泡内部的**白底换成灰底**，几何/描边不动
         view.grayFill = bubbleGrayFill
+        // 气泡内容（用户 2026-10-16）：**顺序轮播** —— 每点一下显示下一条，到底回到第一条。
+        // 文字色用**人物发色的派生色**（accentFrom(light)），与预览图一致。
+        val texts = BubbleTextStore.list(this)
+        if (texts.isNotEmpty()) {
+            val i = ((prefs.bubbleTextCursor % texts.size) + texts.size) % texts.size
+            view.text = texts[i]
+            view.textColor = bubbleTextColor(pet)
+            prefs.bubbleTextCursor = (i + 1) % texts.size
+        }
         // 与人物素材同一套变换；"摆素材左侧"时整组要在素材系里翻过来（尾巴才朝着人物）
         // —— 右下角例外（用户确认的 C 形态），由 PetState.bubbleArtMirror 统一决定
         view.rotationDeg = bubbleRot

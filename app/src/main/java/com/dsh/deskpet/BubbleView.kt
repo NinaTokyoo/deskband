@@ -97,6 +97,25 @@ class BubbleView(context: Context) : View(context) {
     var mirror = false
     var flipV = false
 
+    /**
+     * 要显示在气泡里的文字（用户 2026-10-16）。
+     *
+     * 空串 = 不画字（没内容时的默认样子）。排版规则见 [drawText]：
+     * 大椭圆内部水平垂直居中、需要换行就换行、与椭圆四周留空隙。
+     */
+    var text: String = ""
+
+    /** 文字颜色（= 人物发色经 accentFrom(light) 派生，由服务下发） */
+    var textColor: Int = 0xFF000000.toInt()
+
+    /** 粗黑体（与预览用的同一类：系统中粗黑体，不带衬线） */
+    private val textPaint = android.text.TextPaint().apply {
+        typeface = android.graphics.Typeface.create(
+            android.graphics.Typeface.SANS_SERIF, android.graphics.Typeface.BOLD
+        )
+        isAntiAlias = true
+    }
+
     /** 是否已经转过 90°（窗口宽高与组自身宽高互换） */
     private val rotated: Boolean get() = (rotationDeg % 180f) != 0f
 
@@ -188,7 +207,154 @@ class BubbleView(context: Context) : View(context) {
         }
         canvas.restore()
 
+        // 文字：画在**窗口坐标系**里（不跟着气泡图案转）——图案可能转了 ±90°，
+        // 文字必须永远是正的（用户 2026-10-16 定的排版原则见 [drawText]）。
+        if (text.isNotEmpty()) drawText(canvas)
+
         if (!finished(now)) postInvalidateOnAnimation()
+    }
+
+    /**
+     * 把 [text] 画进大椭圆里。三条原则（用户 2026-10-16 定稿）：
+     *
+     *   1. **在大椭圆内部水平垂直居中**；
+     *   2. **需要换行就换行**（每行宽度上限 = 该行高度处椭圆的弦宽）；
+     *   3. **与椭圆周围留出空隙**。
+     *
+     * 具体做法与预览脚本（`deskband-bubble-feature/render_bubble_text.py`）逐条对应：
+     *   · 可用区 = 大椭圆外框**扣掉描边**（实测约短半轴的 4%）；
+     *   · 先定行数：取"能排下的最少行数"，但字号不得小于短轴的 16%
+     *     （否则 3 个字会变成「这是／一」、10 个字会挤成一行看不清）；
+     *   · 再定字号：该行数下能放下的最大字号，并受 [textCapRatio] 封顶
+     *     （≈ 3 个字的字号，免得一个字撑满气泡）；
+     *   · 折行：有空格就在空格处断（英文不切单词），没有就逐字断（中文）；
+     *   · 居中：以椭圆中心为基准，再上移 0.05em 做**视觉居中补偿**
+     *     （墨迹中心天生比 em 中心低一点）。
+     */
+    private fun drawText(canvas: Canvas) {
+        val box = bigEllipseScreenBox() ?: return
+        val cx = box[0]
+        val cy = box[1]
+        val rx = box[2]
+        val ry = box[3]
+        if (rx <= 2f || ry <= 2f) return
+
+        // 抠掉描边后的内缘椭圆（半轴）
+        val inset = minOf(rx, ry) * STROKE_INSET_RATIO
+        val ew = (rx - inset) * 2f
+        val eh = (ry - inset) * 2f
+        if (ew <= 4f || eh <= 4f) return
+
+        val minSize = eh * MIN_SIZE_RATIO
+        val cap = ew * CHAR_W_RATIO / 3f      // ≈ 3 个字的字号（封顶）
+        val paint = textPaint.apply { color = textColor }
+
+        // 行数由少到多试，取"字号不低于最小可读字号"的第一个行数
+        var chosen: Pair<Float, List<String>>? = null
+        for (k in 1..6) {
+            if (k * minSize * LINE_SPACING > eh * V_MARGIN) break
+            var size = cap
+            var found: Pair<Float, List<String>>? = null
+            while (size >= 9f) {
+                paint.textSize = size
+                val lh = size * LINE_SPACING
+                if (k * lh <= eh * V_MARGIN) {
+                    val lines = wrapForEllipse(paint, k, lh, ew, eh)
+                    if (lines != null) {
+                        found = size to lines
+                        break
+                    }
+                }
+                size -= 1f
+            }
+            if (found != null && found.first >= minSize) {
+                chosen = found
+                break
+            }
+        }
+        val (size, lines) = chosen ?: return
+        paint.textSize = size
+        val lh = size * LINE_SPACING
+        // 居中：块的竖直中心对齐椭圆中心，再上移 0.05em
+        val y0 = cy - (lines.size - 1) / 2f * lh - size * OPTICAL_DY_EM
+        for ((j, line) in lines.withIndex()) {
+            val w = paint.measureText(line)
+            canvas.drawText(line, cx - w / 2f, y0 + j * lh + size * BASELINE_RATIO, paint)
+        }
+    }
+
+    /**
+     * 按椭圆的**弦宽**折行；放不下返回 null。
+     *
+     * 第 j 行（共 k 行、行高 lh）在竖直方向相对块中心偏移 `(j-(k-1)/2)*lh`，
+     * 该高度处的弦宽 = `2*rx*sqrt(1-(dy/ry)^2)`。
+     *
+     * 断行位置：**有空格就优先在空格处断**（英文不切单词），
+     * 否则逐字断（中文可以任意字之间断）。
+     */
+    private fun wrapForEllipse(
+        paint: android.text.TextPaint, k: Int, lh: Float, ew: Float, eh: Float
+    ): List<String>? {
+        val widths = FloatArray(k) { j ->
+            val dy = (j - (k - 1) / 2f) * lh
+            val t = minOf(0.995f, Math.abs(2f * dy / eh))
+            ew * kotlin.math.sqrt((1f - t * t).coerceAtLeast(0f)) * CHORD_MARGIN
+        }
+        val lines = ArrayList<String>()
+        var i = 0
+        val s = text
+        while (i < s.length && lines.size < k) {
+            val limit = widths[lines.size]
+            var end = i
+            var lastSpace = -1
+            while (end < s.length && paint.measureText(s, i, end + 1) <= limit) {
+                if (s[end] == ' ') lastSpace = end
+                end++
+            }
+            if (end == i) return null                      // 一个字都放不下
+            // 断点：优先退到最后一个空格（且不是行首）；否则就近断
+            val cut = if (end < s.length && lastSpace > i) lastSpace else end
+            lines.add(s.substring(i, cut).trim())
+            i = cut
+            while (i < s.length && s[i] == ' ') i++          // 行首空格吃掉
+        }
+        if (i < s.length) return null                        // 还有剩下的 -> 这组放不下
+        return lines.filter { it.isNotEmpty() }
+    }
+
+    /**
+     * 大椭圆（含描边）在**窗口坐标系**里的中心与半轴。
+     *
+     * 用与绘制完全相同的变换链算：把 [PART_BOX] 里大气泡那一格的四个角
+     * 依次过 `mapGroupPoint`（镜像 -> 上下翻转 -> 旋转），取包围盒。
+     * 旋转都是 90° 的整数倍，所以包围盒就是轴对齐的，椭圆内切其中。
+     */
+    private fun bigEllipseScreenBox(): FloatArray? {
+        val gw = if (rotated) height.toFloat() else width.toFloat()
+        val gh = if (rotated) width.toFloat() else height.toFloat()
+        if (gw <= 0f || gh <= 0f) return null
+        val box = PART_BOX[PART_COUNT - 1]      // 大气泡那一格
+        val l = box[0] * gw
+        val t = box[1] * gh
+        val r = l + box[2] * gw
+        val b = t + box[3] * gh
+        var minX = Float.MAX_VALUE
+        var maxX = -Float.MAX_VALUE
+        var minY = Float.MAX_VALUE
+        var maxY = -Float.MAX_VALUE
+        for (px in floatArrayOf(l, r)) {
+            for (py in floatArrayOf(t, b)) {
+                val p = mapGroupPoint(
+                    px, py, gw, gh, width.toFloat(), height.toFloat(),
+                    rotationDeg, mirror, flipV
+                )
+                minX = minOf(minX, p[0]); maxX = maxOf(maxX, p[0])
+                minY = minOf(minY, p[1]); maxY = maxOf(maxY, p[1])
+            }
+        }
+        return floatArrayOf(
+            (minX + maxX) / 2f, (minY + maxY) / 2f, (maxX - minX) / 2f, (maxY - minY) / 2f
+        )
     }
 
     /**
@@ -275,6 +441,24 @@ class BubbleView(context: Context) : View(context) {
 
         /** 部件数：小圈 / 中圈 / 大气泡 */
         const val PART_COUNT = 3
+
+        // ---- 气泡内文字的排版参数（与预览脚本同值，用户已验收） ----
+        /** 可用区相对描边的内缩比例（实测描边 13px / 短半轴 171px ≈ 4%） */
+        private const val STROKE_INSET_RATIO = 0.04f
+        /** 每行最多占该处椭圆弦宽的比例（留出与椭圆之间的空隙） */
+        private const val CHORD_MARGIN = 0.78f
+        /** 文字块总高最多占椭圆高的比例 */
+        private const val V_MARGIN = 0.86f
+        /** 最小可读字号 = 椭圆高 × 这个比例，用来决定行数 */
+        private const val MIN_SIZE_RATIO = 0.16f
+        /** 行高倍数 */
+        private const val LINE_SPACING = 1.18f
+        /** 视觉居中补偿：墨迹中心比 em 中心低约 5%，整体上移这么多 */
+        private const val OPTICAL_DY_EM = 0.05f
+        /** 居中对齐时"行顶 -> 基线"的比例（近似 ascent 在 em 里的位置） */
+        private const val BASELINE_RATIO = 0.80f
+        /** 一个汉字约占字号的这个比例（用于算"3 个字的字号"封顶） */
+        private const val CHAR_W_RATIO = 1.0f
 
         /**
          * 每个部件在**整组外接框**里的相对矩形 `[左, 上, 宽, 高]`（0..1）。

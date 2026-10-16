@@ -64,6 +64,21 @@
     <string name="custom_delete_done">已删除 %1$s</string>
     <string name="custom_no_picker">没有找到可用的图片选择器</string>
 
+    <!-- ⑦.5 气泡内容（放在「通知栏内容」之后，用户要求）
+         内容以**标签**形式管理：一行一个、每个最多两行、多余省略号；
+         删除同样是就地两步（✕ -> 确认删除），与自定义形象一致。 -->
+    <string name="section_bubble_text">气泡内容</string>
+    <string name="bubble_text_input">气泡里要显示的内容</string>
+    <string name="bubble_text_empty">尚无气泡内容，点击新增按钮以添加</string>
+    <!-- 字数提示：%1$d = 已输入字数，%2$d = 上限 -->
+    <string name="bubble_text_count">%1$d / %2$d 字</string>
+    <!-- 条数上限提示（达到 20 条后再点新增时弹） -->
+    <string name="bubble_text_full">最多添加 20 条</string>
+    <!-- 上限内的两种提示：需要删字 / 空内容 -->
+    <string name="bubble_text_need_text">请先输入内容</string>
+    <string name="bubble_text_saved">已添加</string>
+    <string name="bubble_text_delete_done">已删除：%1$s</string>
+
     <!-- ③ 外观 -->
     <string name="section_look">外观尺寸</string>
     <!-- 标签与当前值合并成一行，提高信息密度。

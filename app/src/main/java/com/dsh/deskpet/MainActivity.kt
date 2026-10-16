@@ -158,6 +158,29 @@ class MainActivity : Activity() {
     private var pickedUpright: Uri? = null
     private var pickedCorner: Uri? = null
 
+    // ---- 气泡内容卡（用户 2026-10-16 新增，位置在「通知栏内容」之后） ----
+    /** 卡片形态：收起（一横条）/ 新增表单 / 管理列表 —— 与自定义形象卡同一套 */
+    private var bubbleTextMode = BUBBLE_NONE
+
+    /**
+     * 「管理」列表里**正处于"待确认删除"**的那一条下标（null = 没有）。
+     *
+     * 与自定义形象同一套：同一时刻只允许一个标签处于待确认，
+     * 否则连点几个错号会攒出一排「确认删除」。
+     * 用**下标**而不是内容：内容允许重复，下标才是唯一的。
+     */
+    private var pendingBubbleDelete: Int? = null
+    private lateinit var btnBubbleTextAdd: Button
+    private lateinit var btnBubbleTextManage: Button
+    private lateinit var panelBubbleTextAdd: View
+    private lateinit var panelBubbleTextManage: View
+    private lateinit var rowsBubbleText: android.widget.LinearLayout
+    private lateinit var txtBubbleTextEmpty: TextView
+    private lateinit var editBubbleText: EditText
+    private lateinit var txtBubbleTextCount: TextView
+    private lateinit var btnBubbleTextSave: Button
+    private lateinit var btnBubbleTextCancel: Button
+
     /** 保存/解码在后台线程跑，这个标志挡住连点（否则会存出两个一样的形象） */
     private var customSaving = false
 
@@ -307,6 +330,16 @@ class MainActivity : Activity() {
         btnThemeSystem = findViewById(R.id.btnThemeSystem)
         btnThemeLight = findViewById(R.id.btnThemeLight)
         btnThemeDark = findViewById(R.id.btnThemeDark)
+        btnBubbleTextAdd = findViewById(R.id.btnBubbleTextAdd)
+        btnBubbleTextManage = findViewById(R.id.btnBubbleTextManage)
+        panelBubbleTextAdd = findViewById(R.id.panelBubbleTextAdd)
+        panelBubbleTextManage = findViewById(R.id.panelBubbleTextManage)
+        rowsBubbleText = findViewById(R.id.rowsBubbleText)
+        txtBubbleTextEmpty = findViewById(R.id.txtBubbleTextEmpty)
+        editBubbleText = findViewById(R.id.editBubbleText)
+        txtBubbleTextCount = findViewById(R.id.txtBubbleTextCount)
+        btnBubbleTextSave = findViewById(R.id.btnBubbleTextSave)
+        btnBubbleTextCancel = findViewById(R.id.btnBubbleTextCancel)
 
         applyEdgeToEdge()
         // 五张"一横条 + 点管理展开"的卡片（外观尺寸…通知栏内容）
@@ -390,6 +423,7 @@ class MainActivity : Activity() {
         setupBreathControls()
         setupNotifyControls()
         setupCustomSkinControls()
+        setupBubbleTextControls()
         // ⚠️ loadSkins() 必须在 applyTheme() **之前**。
         //
         // applyTheme() 会顺带刷"呼出 <角色名>"按钮与通知栏那两个输入框，而角色名
@@ -591,6 +625,7 @@ class MainActivity : Activity() {
         if (expanded) {
             for (c in expandCards) if (c.body !== body) setCardExpanded(c.body, false)
             collapseCustomCard()
+            collapseBubbleTextCard()
             // 二级菜单也算"展开的卡片"（用户要求）
             closeSkinMenuIfOpen()
         }
@@ -1183,8 +1218,210 @@ class MainActivity : Activity() {
         //    **正在编辑**的内容覆盖成存档值 —— 手风琴收起别的卡时会被误伤。
     }
 
-    private fun setupCustomSkinControls() {
-        // 不在新增态时是「新增」，在新增态时是「保存」（文案在 setCustomMode 里定）
+    // ---------------------------------------------------------------- 气泡内容卡
+
+    /**
+     * 「气泡内容」卡：形态切换（收起 / 新增 / 管理）。
+     *
+     * 与自定义形象卡同一套约定，只有两点不同（都是用户要求）：
+     *   · **锁定时照常可用**（内容是文案，与「通知栏内容」同性质）；
+     *   · 管理列表**一行一个**标签（自定义形象是一行两个）。
+     */
+    private fun setBubbleTextMode(mode: Int) {
+        bubbleTextMode = mode
+        // 手风琴：这张卡展开时其余卡片一并收起（反方向在 setCardExpanded 里）
+        if (mode != BUBBLE_NONE) {
+            for (c in expandCards) setCardExpanded(c.body, false)
+            collapseCustomCard()
+            closeSkinMenuIfOpen()
+        }
+        panelBubbleTextAdd.visibility = if (mode == BUBBLE_ADD) View.VISIBLE else View.GONE
+        panelBubbleTextManage.visibility = if (mode == BUBBLE_MANAGE) View.VISIBLE else View.GONE
+        btnBubbleTextAdd.text = getString(
+            if (mode == BUBBLE_ADD) R.string.custom_save else R.string.custom_add
+        )
+        refreshBubbleTextButton()
+        if (mode == BUBBLE_ADD) {
+            // 进表单就把字数提示刷成当前值（输入框在 addTextChangedListener 里实时更新）
+            refreshBubbleTextCount()
+        } else {
+            // 离开新增态：待确认删除一并作废（否则下次进来那个标签直接顶着「确认删除」）
+            if (mode != BUBBLE_MANAGE) pendingBubbleDelete = null
+            editBubbleText.setText("")
+            clearInputFocus()
+        }
+        pendingBubbleDelete = if (mode == BUBBLE_MANAGE) pendingBubbleDelete else null
+        if (mode == BUBBLE_MANAGE) renderBubbleTextTags()
+        // ⚠️ 这里不调 applyTheme()：理由与 setCustomMode 相同（会误刷通知栏输入框）
+    }
+
+    /** 把这张卡收回一横条（手风琴展开别的卡时调） */
+    private fun collapseBubbleTextCard() {
+        if (!::btnBubbleTextManage.isInitialized) return
+        if (bubbleTextMode == BUBBLE_NONE) return
+        setBubbleTextMode(BUBBLE_NONE)
+    }
+
+    /**
+     * 右上角按钮的文案与颜色 —— 与自定义形象同一套状态机：
+     *   收起 -> 「管理」；新增表单 / 有待确认删除 -> 「取消」（红字）；
+     *   管理列表（无待确认） -> 「收起」。
+     */
+    private fun refreshBubbleTextButton() {
+        val cancel = bubbleTextMode == BUBBLE_ADD ||
+            (bubbleTextMode == BUBBLE_MANAGE && pendingBubbleDelete != null)
+        btnBubbleTextManage.text = getString(
+            when {
+                bubbleTextMode == BUBBLE_NONE -> R.string.card_manage
+                cancel -> R.string.card_cancel
+                else -> R.string.card_collapse
+            }
+        )
+        btnBubbleTextManage.setTextColor(
+            if (cancel) TAG_DELETE_RED else AccentTheme.skinBoxText(lightMode)
+        )
+    }
+
+    /** 输入框下方的「n / 20 字」（按码点数，emoji 算 1 个字） */
+    private fun refreshBubbleTextCount() {
+        txtBubbleTextCount.text = getString(
+            R.string.bubble_text_count,
+            BubbleTextStore.charCount(editBubbleText.text?.toString() ?: ""),
+            BubbleTextStore.MAX_CHARS
+        )
+    }
+
+    /**
+     * 管理列表：**一行一个**标签（用户要求）。
+     *
+     * 每次进管理、每次删除、每次切明暗都要重建 —— 标签的描边与文字色都跟强调色走。
+     */
+    private fun renderBubbleTextTags() {
+        rowsBubbleText.removeAllViews()
+        val items = BubbleTextStore.list(this)
+        txtBubbleTextEmpty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
+
+        val gap = (resources.displayMetrics.density * 8f).toInt()
+        for (i in items.indices) {
+            val tag = makeBubbleTextTag(i, items[i])
+            if (rowsBubbleText.childCount > 0) {
+                (tag.layoutParams as android.widget.LinearLayout.LayoutParams).topMargin = gap
+            }
+            rowsBubbleText.addView(tag)
+        }
+        refreshBubbleTextButton()
+    }
+
+    /**
+     * 一条气泡内容的标签。
+     *
+     * 删除是**就地两步**（与自定义形象一致）：红错号「✕」点一下 -> 变成红描边的
+     * 「确认删除」-> 再点才真删；同一时刻只允许一条处于待确认。
+     *
+     * ⚠️ 错号的宽度**写死成「确认删除」的宽度**（[BUBBLE_DELETE_SLOT_DP]）：
+     *    两态共用同一格，切换时内容不会重排、也不会多截掉几个字（用户要求）。
+     */
+    private fun makeBubbleTextTag(index: Int, content: String): View {
+        val tag = layoutInflater.inflate(R.layout.item_bubble_text_tag, rowsBubbleText, false)
+        tag.layoutParams = android.widget.LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+        tag.background = AccentTheme.accentBoxBackground(this, accent, lightMode)
+
+        tag.findViewById<TextView>(R.id.txtBubbleTagText).apply {
+            text = content
+            setTextColor(AccentTheme.skinBoxText(lightMode))
+        }
+
+        val pending = index == pendingBubbleDelete
+        val dm = resources.displayMetrics
+        tag.findViewById<TextView>(R.id.txtBubbleTagDelete).apply {
+            // 高度：两态写死同一个值（✕ 17sp / 确认删除 13sp 的行高不同，不写死会"标签变窄"）
+            val slotH = DELETE_SLOT_DP * resources.configuration.fontScale
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                dp(dm, BUBBLE_DELETE_SLOT_DP * resources.configuration.fontScale),
+                dp(dm, slotH)
+            )
+            includeFontPadding = false
+            gravity = android.view.Gravity.CENTER
+            text = getString(
+                if (pending) R.string.custom_confirm_delete else R.string.custom_delete_mark
+            )
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, if (pending) 13f else 17f)
+            setTextColor(TAG_DELETE_RED)      // 红色固定，不跟强调色（与自定义形象一致）
+            setPadding(dp(dm, 4f), 0, dp(dm, 4f), 0)
+            background = if (pending) {
+                AccentTheme.accentBoxBackground(
+                    this@MainActivity, TAG_DELETE_RED, lightMode, radiusDp = 8f
+                )
+            } else {
+                null
+            }
+            setOnClickListener {
+                if (pending) {
+                    BubbleTextStore.removeAt(this@MainActivity, index)
+                    pendingBubbleDelete = null
+                    renderBubbleTextTags()
+                    Toast.makeText(
+                        this@MainActivity,
+                        getString(R.string.bubble_text_delete_done, content),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                } else {
+                    pendingBubbleDelete = index
+                    renderBubbleTextTags()
+                }
+            }
+        }
+        return tag
+    }
+
+    /** 保存按钮：把输入框里的内容存成一条（达到 20 条 / 内容为空时给提示，不关表单） */
+    private fun saveBubbleText() {
+        val raw = editBubbleText.text?.toString() ?: ""
+        if (raw.isBlank()) {
+            Toast.makeText(this, R.string.bubble_text_need_text, Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (BubbleTextStore.list(this).size >= BubbleTextStore.MAX_ITEMS) {
+            Toast.makeText(this, R.string.bubble_text_full, Toast.LENGTH_SHORT).show()
+            return
+        }
+        BubbleTextStore.add(this, raw)
+        Toast.makeText(this, R.string.bubble_text_saved, Toast.LENGTH_SHORT).show()
+        // 存完回到一横条（与自定义形象的「保存」一致）
+        setBubbleTextMode(BUBBLE_NONE)
+    }
+
+    private fun setupBubbleTextControls() {
+        btnBubbleTextAdd.setOnClickListener {
+            // 不受锁定限制（用户要求）：增删照常可用
+            if (bubbleTextMode == BUBBLE_ADD) saveBubbleText() else setBubbleTextMode(BUBBLE_ADD)
+        }
+        btnBubbleTextManage.setOnClickListener {
+            when {
+                bubbleTextMode == BUBBLE_MANAGE && pendingBubbleDelete != null -> {
+                    pendingBubbleDelete = null
+                    renderBubbleTextTags()
+                }
+                else -> setBubbleTextMode(
+                    if (bubbleTextMode == BUBBLE_NONE) BUBBLE_MANAGE else BUBBLE_NONE
+                )
+            }
+        }
+        btnBubbleTextSave.setOnClickListener { saveBubbleText() }
+        btnBubbleTextCancel.setOnClickListener { setBubbleTextMode(BUBBLE_NONE) }
+        editBubbleText.filters = arrayOf(BubbleTextStore.inputFilter())
+        editBubbleText.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) = refreshBubbleTextCount()
+        })
+        editBubbleText.setOnEditorActionListener { _, _, _ -> clearInputFocus(); true }
+        renderBubbleTextTags()
+    }
+
+    private fun setupCustomSkinControls() {        // 不在新增态时是「新增」，在新增态时是「保存」（文案在 setCustomMode 里定）
         btnCustomAdd.setOnClickListener {
             // 自定义形象**不受锁定限制**（用户要求）：新增/管理照常可用
             if (customMode == CUSTOM_ADD) saveCustomSkin() else setCustomMode(CUSTOM_ADD)
@@ -2050,6 +2287,22 @@ class MainActivity : Activity() {
         /** 展开管理列表 */
         const val CUSTOM_MANAGE = 2
 
+        // ---- 气泡内容卡（与上面三个值一一对应） ----
+        const val BUBBLE_NONE = 0
+        const val BUBBLE_ADD = 1
+        const val BUBBLE_MANAGE = 2
+
+        /**
+         * 气泡内容标签里"删除控件"那格的**固定宽度**（dp）。
+         *
+         * ⚠️ 用户要求："标签显示的内容应留出足够空间防止确认删除按钮与标签内容冲突"。
+         *    删除控件是**两态**（窄的「✕」/ 宽的「确认删除」），宽度若跟着文字走，
+         *    一点错号整格就变宽 —— 内容会被挤得重新折行、甚至被省略号多截掉几个字。
+         *    所以两态**共用这一格的宽度**（=「确认删除」在最坏字号下的宽度 + 余量），
+         *    ✕ 在格子里居中，切换时内容纹丝不动。
+         */
+        const val BUBBLE_DELETE_SLOT_DP = 68f
+
         /** 选图请求码：主素材 / 角落素材各一个 */
         const val REQ_PICK_UPRIGHT = 9001
         const val REQ_PICK_CORNER = 9002
@@ -2203,6 +2456,9 @@ class MainActivity : Activity() {
 
         // 「自定义形象」管理列表里的标签同理：描边与名字色都跟着强调色
         renderCustomTags()
+
+        // 「气泡内容」管理列表里的标签同理（内容色跟强调色、错号固定红）
+        if (::rowsBubbleText.isInitialized) renderBubbleTextTags()
 
         // 按钮上的文字里有形象名，名字要用强调色，所以每次都重建一次
         refreshSummonLabel()

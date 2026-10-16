@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  「气泡内容」-> 管理：一条内容的标签（内容 + 删除控件）。
+
+  用户 2026-10-16 定的规则：
+  · 一行一个标签；内容**最多两行**，超出用省略号（3 个点）；
+  · 删除错号：只有一行时在整个标签的最后；两行时在**第二行最后**
+    —— 所以这一行用 gravity="bottom"，错号贴底右，正好落在末行末尾；
+  · 「标签显示的内容应留出足够空间防止确认删除按钮与标签内容冲突」：
+    删除控件那格**宽度写死 = 「确认删除」的宽度**（见 MainActivity
+    DELETE_SLOT_DP 的说明），所以从 ✕ 变确认删除时内容不会重排。
+
+  ⚠️ 背景与文字色不在 XML 里写死：标签是动态视图，由
+  MainActivity.renderBubbleTextTags() 按当前强调色 / 明暗模式现给。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="bottom"
+    android:paddingStart="10dp"
+    android:paddingEnd="8dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp">
+
+    <TextView
+        android:id="@+id/txtBubbleTagText"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:maxLines="2"
+        android:ellipsize="end"
+        android:lineSpacingExtra="2dp"
+        android:textSize="14sp" />
+
+    <!-- 删除控件：文字、字号、背景、**宽度**都在 MainActivity 里按状态给
+         （「✕」<->「确认删除」），XML 里只定对齐 -->
+    <TextView
+        android:id="@+id/txtBubbleTagDelete"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:gravity="center"
+        android:maxLines="1" />
+</LinearLayout>

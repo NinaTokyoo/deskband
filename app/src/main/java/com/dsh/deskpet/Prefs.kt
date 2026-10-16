@@ -384,6 +384,25 @@ class Prefs(context: Context) {
         get() = sp.getInt(KEY_THEME_MODE, AccentTheme.MODE_SYSTEM)
         set(v) { sp.edit().putInt(KEY_THEME_MODE, v).apply() }
 
+    /**
+     * 「气泡内容」的原始存档串（转义后用 `\n` 分隔）。
+     *
+     * ⚠️ 业务代码请走 [BubbleTextStore]（list / add / removeAt），
+     *    这里只做最小的读写，格式与限制都在那边统一。
+     */
+    var bubbleTextsRaw: String
+        get() = sp.getString(KEY_BUBBLE_TEXTS, "") ?: ""
+        set(v) { sp.edit().putString(KEY_BUBBLE_TEXTS, v).apply() }
+
+    /**
+     * 气泡内容**顺序轮播**的下标（用户 2026-10-16：点一下人物显示下一条，到底回到第一条）。
+     *
+     * 存在 prefs 里而不是内存里：服务被系统重启后不会又从第一条开始。
+     */
+    var bubbleTextCursor: Int
+        get() = sp.getInt(KEY_BUBBLE_CURSOR, 0)
+        set(v) { sp.edit().putInt(KEY_BUBBLE_CURSOR, v).apply() }
+
     companion object {
         private const val NAME = "deskpet"
         private const val KEY_RUNNING = "running"
@@ -402,6 +421,8 @@ class Prefs(context: Context) {
     private const val KEY_NOTIFY_TITLE = "notify_title"
         private const val KEY_ACCENT = "accent_color"
         private const val KEY_THEME_MODE = "theme_mode"
+        private const val KEY_BUBBLE_TEXTS = "bubble_texts"
+        private const val KEY_BUBBLE_CURSOR = "bubble_text_cursor"
         private const val KEY_BOUNCE_ON = "bounce_on"
         private const val KEY_RESET_KEEP = "reset_keep"
         private const val KEY_LOCKED = "locked"

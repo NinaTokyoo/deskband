@@ -1106,6 +1106,113 @@
             </com.dsh.deskpet.CardPanel>
         </LinearLayout>
 
+        <!-- ⑦.5 气泡内容：一横条（标题 + 新增 / 管理），放在「通知栏内容」之后（用户要求）。
+             点「新增」向下展开成输入表单、点「管理」向下展开成标签列表。
+
+             ⚠️ 两个展开区**互斥**，可见性只在 MainActivity.setBubbleTextMode 一处改
+             （与自定义形象卡同一个道理：同时展开会出现"表单下面挂着删除标签"的错位画面）。
+
+             锁定时照常可用：内容是文案，与「通知栏内容」同性质（用户要求）。  -->
+        <LinearLayout
+            style="@style/Card"
+            android:tag="card"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="12dp">
+
+            <LinearLayout style="@style/CardTitleRow">
+
+                <TextView
+                    style="@style/CardTitle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:text="@string/section_bubble_text" />
+
+                <!-- 新增 / 保存：进入"新增"后这个按钮变成「保存」（与自定义形象一致） -->
+                <Button
+                    android:id="@+id/btnBubbleTextAdd"
+                    style="@style/CardAction"
+                    android:text="@string/custom_add" />
+
+                <Button
+                    android:id="@+id/btnBubbleTextManage"
+                    style="@style/CardAction"
+                    android:text="@string/card_manage" />
+            </LinearLayout>
+
+            <!-- ============ 展开区一：新增表单（默认隐藏） ============ -->
+            <LinearLayout
+                android:id="@+id/panelBubbleTextAdd"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <EditText
+                    android:id="@+id/editBubbleText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:inputType="text"
+                    android:imeOptions="actionDone"
+                    android:maxLines="2"
+                    android:textSize="15sp"
+                    android:hint="@string/bubble_text_input" />
+
+                <TextView
+                    android:id="@+id/txtBubbleTextCount"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:orientation="horizontal"
+                    android:gravity="center">
+
+                    <Button
+                        android:id="@+id/btnBubbleTextSave"
+                        style="@style/CardBottomAction"
+                        android:text="@string/card_save" />
+
+                    <Button
+                        android:id="@+id/btnBubbleTextCancel"
+                        style="@style/CardBottomAction"
+                        android:layout_marginStart="10dp"
+                        android:text="@string/card_cancel" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- ============ 展开区二：管理（默认隐藏） ============
+                 标签**一行一个**（用户要求），由代码添加。 -->
+            <LinearLayout
+                android:id="@+id/panelBubbleTextManage"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/rowsBubbleText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="vertical" />
+
+                <TextView
+                    android:id="@+id/txtBubbleTextEmpty"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp"
+                    android:visibility="gone"
+                    android:text="@string/bubble_text_empty" />
+            </LinearLayout>
+        </LinearLayout>
+
         <!-- ⑥ 明暗模式：放在最下方（用户要求） -->
         <LinearLayout
             style="@style/Card"
