@@ -1396,16 +1396,16 @@ class MainActivity : Activity() {
         tag.findViewById<TextView>(R.id.txtBubbleTagText).apply {
             text = item.text
             setTextColor(AccentTheme.skinBoxText(lightMode))
-            maxLines = 3
+            maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
             // 显示不下就用**省略号（三个点）**收尾（用户要求）。
             // ⚠️ 不只靠 ellipsize：它画的是单个"…"字形、点数不是三个 ——
-            //    所以按真实可用宽度自行截到三行，再补三个点。
+            //    所以按真实可用宽度自行截到两行，再补三个点。
             post {
                 val avail = width - paddingStart - paddingEnd
                 if (avail <= 0) return@post
                 val full = text?.toString() ?: return@post
-                val fit = fitLines(full, paint, avail, lineSpacingExtra, 3)
+                val fit = fitLines(full, paint, avail, lineSpacingExtra, 2)
                 if (fit != full) text = fit + "..."
             }
         }
