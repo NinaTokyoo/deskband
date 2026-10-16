@@ -74,6 +74,24 @@ class BubbleViewTest {
     }
 
     @Test
+    fun drag_vanish_starts_from_the_natural_vanish_frame() {
+        // 用户 2026-10-16 新增："拖动人物时，气泡立刻播放消失动画并消失"。
+        // 实现是把时间轴拨到 APPEAR + HOLD（= 自然消失的起点）：
+        // 该帧三块都还是满的，随后按"由大到小"依次缩没，0.15s 内走完。
+        val dragFrame = 150f + 1500f            // APPEAR_MS + HOLD_MS
+        for (i in 0 until BubbleView.PART_COUNT) {
+            assertEquals("拨到消失起点时第 $i 块应仍是满的", 1f, BubbleView.popOf(i, dragFrame)!!, 1e-4f)
+        }
+        // 往后 1/3 段：大气泡开始缩，另两块还满
+        assertTrue(BubbleView.popOf(big, dragFrame + 25f)!! < 1f)
+        assertEquals(1f, BubbleView.popOf(small, dragFrame + 25f)!!, 1e-4f)
+        // 再走完这一段就全没了
+        for (i in 0 until BubbleView.PART_COUNT) {
+            assertNull(BubbleView.popOf(i, dragFrame + 150f))
+        }
+    }
+
+    @Test
     fun everything_gone_at_1800ms() {
         for (i in 0 until BubbleView.PART_COUNT) {
             assertNull("第 $i 块在 1.8s 应当已经消失", BubbleView.popOf(i, 1800f))

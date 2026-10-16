@@ -80,6 +80,22 @@ class BubbleView(context: Context) : View(context) {
     fun finished(now: Long = SystemClock.uptimeMillis()): Boolean =
         startAt != 0L && now - startAt >= TOTAL_MS
 
+    /**
+     * 立刻进入**消失段** —— 用户 2026-10-16 新增规则："拖动人物时，气泡立刻播放消失动画并消失"。
+     *
+     * 做法是把时间轴直接拨到"停留结束、消失开始"的那一刻（`APPEAR + HOLD`），
+     * 于是三块仍然按既定的**由大到小**顺序在 [APPEAR_MS] 内缩没 ——
+     * 和自然消失是**同一套动画**，不用另写一份。
+     *
+     * ⚠️ 只往前拨、不往回拨：气泡本来就已经在消失段时就不动（否则会越拖越长）。
+     */
+    fun vanishNow() {
+        if (startAt == 0L) return
+        val target = SystemClock.uptimeMillis() - (APPEAR_MS + HOLD_MS).toLong()
+        if (target > startAt) startAt = target
+        invalidate()
+    }
+
     override fun onDraw(canvas: Canvas) {
         val now = SystemClock.uptimeMillis()
         val t = if (startAt == 0L) 0f else (now - startAt).toFloat()

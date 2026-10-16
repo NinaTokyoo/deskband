@@ -71,6 +71,14 @@ class PetView(context: Context) : View(context) {
          * 气泡……同步开始出现"）。只有 [bubbleAllowed] 成立时才会被调用。
          */
         fun onJumpStart()
+
+        /**
+         * 开始**拖动**人物（越过 touchSlop 真正进入拖动分支的那一刻）。
+         *
+         * 服务据此让正在显示 / 正在播放的思考气泡**立刻进入消失段**再消失
+         * （用户 2026-10-16 新增规则："当拖动人物时，气泡立刻播放消失动画并消失"）。
+         */
+        fun onDragStart()
     }
 
     var host: Host? = null
@@ -2237,6 +2245,8 @@ class PetView(context: Context) : View(context) {
                     anchorY = downRawY
                     dragOffsetX = 0f
                     dragOffsetY = 0f
+                    // 用户 2026-10-16 新增：一开始拖动，气泡就立刻播放消失动画
+                    host?.onDragStart()
                 }
                 if (dragging) {
                     // 用户规则：**手指按在哪里，素材中心点就在哪里**
