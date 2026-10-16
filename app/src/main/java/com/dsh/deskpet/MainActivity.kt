@@ -390,7 +390,8 @@ class MainActivity : Activity() {
                 // 取消回退：只是把倍率改回去并通知服务（与 2.1.3 的尺寸路径同一条），
                 // 不做任何额外的"吸附/落位" —— 那套在手机上会抖、会甩到另一侧
                 PetService.notifyChanged(this)
-            }
+            },
+            keepExpandedOnCancel = true
         )
         val summonSnap = FloatArray(3)
         registerExpandCard(
@@ -405,7 +406,8 @@ class MainActivity : Activity() {
                 prefs.summonPopScale = summonSnap[1]
                 prefs.summonSpringScale = summonSnap[2]
                 bindSummonControls()
-            }
+            },
+            keepExpandedOnCancel = true
         )
         val bounceSnap = FloatArray(2)
         registerExpandCard(
@@ -418,7 +420,8 @@ class MainActivity : Activity() {
                 prefs.bounceAmpScale = bounceSnap[0]
                 prefs.bounceTimeScale = bounceSnap[1]
                 bindBounceControls()
-            }
+            },
+            keepExpandedOnCancel = true
         )
         val breathSnap = FloatArray(2)
         registerExpandCard(
@@ -431,7 +434,8 @@ class MainActivity : Activity() {
                 prefs.breathScale = breathSnap[0]
                 prefs.breathSpeed = breathSnap[1]
                 bindBreathControls()
-            }
+            },
+            keepExpandedOnCancel = true
         )
         // 通知栏这条是两段**文案**（按当前形象分开存），快照也存原始模板
         val notifySnap = arrayOf("", "")
@@ -591,7 +595,19 @@ class MainActivity : Activity() {
         /** 把抄下来的那份原样写回（点「取消」时用） */
         val restore: () -> Unit,
         /** 展开时按钮恒为「收起」（见 [registerExpandCard] 的说明） */
-        val alwaysCollapse: Boolean = false
+        val alwaysCollapse: Boolean = false,
+        /**
+         * 「取消」**原地还原、不收起卡片**（用户 2026-10-17，用在四张数值卡：
+         * 外观尺寸 / 呼出回弹 / 边框回弹 / 呼吸）。
+         *
+         * 语义与普通卡不同：
+         *   · 展开时按钮就是**收起**（不是取消）；
+         *   · 一动这张卡（编辑 / 拖滑块）-> 变**取消**；
+         *   · 点「取消」-> 数据还原到展开那一刻、按钮变回**收起**、**卡片保持展开**
+         *     （普通卡是"取消 = 收起"）；
+         *   · 点「保存」-> 仍是**收起**。
+         */
+        val keepExpandedOnCancel: Boolean = false
     ) {
         /**
          * 展开之后是否已经"操作完成"（点过「保存」或「恢复默认值」）。
@@ -628,9 +644,14 @@ class MainActivity : Activity() {
          * 那张卡里只有开关，点一下立即生效，没有"会丢东西"的中间态 —— 叫「取消」会让人
          * 以为改动没生效。
          */
-        alwaysCollapse: Boolean = false
+        alwaysCollapse: Boolean = false,
+        /**
+         * 四张数值卡用（用户 2026-10-17）：展开即「收起」态、一动变「取消」、
+         * 点「取消」**原地还原且不收起卡片**。详见 [ExpandCard.keepExpandedOnCancel]。
+         */
+        keepExpandedOnCancel: Boolean = false
     ) {
-        val card = ExpandCard(body, manage, capture, restore, alwaysCollapse)
+        val card = ExpandCard(body, manage, capture, restore, alwaysCollapse, keepExpandedOnCancel)
         expandCards.add(card)
         // 「用户碰过这张卡」由 CardPanel 上报（它是 dispatchTouchEvent 那一层才收得到，
         //  挂在容器上的 OnTouchListener 收不到 —— 触摸目标是子控件）
@@ -647,7 +668,15 @@ class MainActivity : Activity() {
                 return@setOnClickListener
             }
             if (body.visibility == View.VISIBLE) {
-                // 收起前：这次展开后没点过保存 -> 把改动丢掉（用户要求）
+                // 四张数值卡：点「取消」= **原地还原**（数据回到展开那一刻），
+                // 按钮变回「收起」，**卡片保持展开**（用户 2026-10-17）
+                if (card.keepExpandedOnCancel && !card.saved) {
+                    card.restore()
+                    card.saved = true          // 还原完就是"没有未保存改动"的状态
+                    refreshCardButton(card)
+                    return@setOnClickListener
+                }
+                // 其它卡：收起前，这次展开后没点过保存 -> 把改动丢掉（用户要求）
                 if (!card.saved) card.restore()
                 setCardExpanded(body, false)
             } else {
@@ -676,9 +705,10 @@ class MainActivity : Activity() {
         body.visibility = if (expanded) View.VISIBLE else View.GONE
         expandCards.firstOrNull { it.body === body }?.let { card ->
             if (expanded) {
-                card.saved = false
                 // 记下展开这一刻的取值：这次展开里如果没点保存，点「取消」就回到这里
                 card.capture()
+                // 展开即"没有未保存改动"：普通卡显示「取消」，四张数值卡显示「收起」
+                card.saved = card.keepExpandedOnCancel
             }
             refreshCardButton(card)
         }
