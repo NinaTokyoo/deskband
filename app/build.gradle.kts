@@ -384,6 +384,10 @@ android {
         //                        0.3 宽 / 0.2 高），镜像侧由屏幕侧别把 x 分量取负；
         //                     ② PetState.bubbleKeepOutOfPetRect 同样放开到这四个状态
         //                        （防重叠 = 右下角那套规则的一部分））
+        //   2.1.41 -> 20141（修微调量的横向符号：它是"**朝人物一侧**"为正 —— 右下角那套
+        //                     气泡在人物左上角、往右挪 = 朝人物；2.1.40 按屏幕侧别取符号，
+        //                     于是左半屏/左下角朝**远离**人物的方向挪了 0.3 个气泡宽
+        //                     （实机截图里气泡明显离人物更远）。新增 PetState.bubbleNudgeSign）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ✅ 作者声明里的版本号与完成时间**自动跟着这行走**：
         //    版本号 = vName；完成时间 = 构建时刻（buildStamp，见文件顶部）。
@@ -392,7 +396,7 @@ android {
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
         //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
         //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
-        val vName = "2.1.40"
+        val vName = "2.1.41"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()

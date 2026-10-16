@@ -1998,6 +1998,10 @@ class PetStateTest {
         }
         assertEquals(0f, PetState.bubbleNudge(PetState.BORDER_R)[0], 1e-6f)
         assertEquals(0f, PetState.bubbleNudge(PetState.BORDER_R)[1], 1e-6f)
+        // 微调横向符号：朝人物一侧为正。气泡在屏幕右侧（左半屏/左下角）时往左 = 朝人物 -> -1
+        assertEquals("气泡在屏幕左侧 -> 朝人物是往右", 1, PetState.bubbleNudgeSign(-1))
+        assertEquals("气泡在屏幕右侧 -> 朝人物是往左", -1, PetState.bubbleNudgeSign(1))
+        assertEquals(1, PetState.bubbleNudgeSign(0))
     }
 
     @Test

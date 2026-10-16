@@ -912,9 +912,10 @@ class PetService : Service(), PetView.Host {
         val b = bounds()
         var fx = Math.round(a[0] + off[0] - bw / 2f).toInt()
         var fy = Math.round(a[1] + off[1] - bh / 2f).toInt()
-        // 个别状态再挪一点（右下角/底边：右移 0.3 个气泡宽、上移 0.2 个气泡高）。
-        // 摆屏幕**左**侧的状态（左下角、底边左半）取负 —— 就是右边那套的左右镜像。
-        val nudgeSign = if (screenSide < 0) -1 else 1
+        // 个别状态再挪一点（右下角/底边：移动 0.3 个气泡宽、上移 0.2 个气泡高）。
+        // ⚠️ 横向是"**朝人物**一侧"为正：右下角那套气泡在人物左上角、往右挪 = 朝人物；
+        //    气泡摆在屏幕右侧时（左半屏/左下角）朝人物就是往左，符号取反。
+        val nudgeSign = PetState.bubbleNudgeSign(screenSide)
         fx += nudgeSign * Math.round(nudge[0] * bw)
         fy -= Math.round(nudge[1] * bh)
 
