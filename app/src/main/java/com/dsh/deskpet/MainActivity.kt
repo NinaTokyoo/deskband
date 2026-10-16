@@ -771,6 +771,14 @@ class MainActivity : Activity() {
         returningFromPickerAt = 0L
         if (!fromPicker) collapseAllCards()
         refreshUi()
+        // 回到前台再核一次「气泡设置」开关的尺寸（此时标题按钮一定量好了）
+        if (::btnBubbleOnTap.isInitialized) btnBubbleOnTap.post { applyToggleSize() }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        // 获得焦点时标题按钮已经有实测尺寸了，是补尺寸最稳的时机之一
+        if (hasFocus && ::btnBubbleOnTap.isInitialized) applyToggleSize()
     }
 
     override fun onRequestPermissionsResult(
@@ -1317,8 +1325,12 @@ class MainActivity : Activity() {
     private fun applyToggleSize() {
         val w = btnManageBubbleSettings.width
         val h = btnManageBubbleSettings.height
+        android.util.Log.i("BubbleGeom", "applyToggleSize: title=${w}x$h toggle=${btnBubbleOnTap.width}x${btnBubbleOnTap.height}")
         if (w <= 0 || h <= 0) return
-        val lp = btnBubbleOnTap.layoutParams as? android.widget.LinearLayout.LayoutParams ?: return
+        val lp = btnBubbleOnTap.layoutParams as? android.widget.LinearLayout.LayoutParams ?: run {
+            android.util.Log.i("BubbleGeom", "applyToggleSize: layoutParams 类型不是 LinearLayout.LayoutParams")
+            return
+        }
         if (lp.width == w && lp.height == h && lp.marginEnd == 0) return
         lp.width = w
         lp.height = h
@@ -1326,10 +1338,7 @@ class MainActivity : Activity() {
         btnBubbleOnTap.minWidth = 0
         btnBubbleOnTap.minHeight = 0
         btnBubbleOnTap.layoutParams = lp
-        android.util.Log.i(
-            "BubbleGeom",
-            "toggle size -> ${w}x$h (title=${btnManageBubbleSettings.width}x${btnManageBubbleSettings.height})"
-        )
+        android.util.Log.i("BubbleGeom", "applyToggleSize -> set ${w}x$h")
     }
 
     // ---------------------------------------------------------------- 气泡内容卡
