@@ -139,13 +139,28 @@ class PetSprite private constructor(
         fun listSkins(ctx: Context): List<String> =
             builtinSkins(ctx.assets) + CustomSkinStore.list(ctx)
 
-        /** APK 内置素材：`assets/pet/` 下带 pet.json 的子目录 */
-        private fun builtinSkins(assets: AssetManager): List<String> =
-            (assets.list(ROOT) ?: emptyArray())
-                .filter { dir ->
-                    (assets.list("$ROOT/$dir") ?: emptyArray()).contains("pet.json")
-                }
-                .sorted()
+        /** APK 内置素材：`assets/pet/` 下带 pet.json 的子目录，按 [BUILTIN_ORDER] 排序 */
+        private fun builtinSkins(assets: AssetManager): List<String> {
+            val dirs = (assets.list(ROOT) ?: emptyArray()).filter { dir ->
+                (assets.list("$ROOT/$dir") ?: emptyArray()).contains("pet.json")
+            }
+            // 用户 2026-10-17 指定的默认顺序：QDS、后藤、虹夏、凉、郁代；
+            // 名单里没提到的（以后新增的）按目录名接在后面，顺序仍然稳定。
+            return dirs.sortedWith(
+                compareBy({ BUILTIN_ORDER.indexOf(it).let { i -> if (i < 0) Int.MAX_VALUE else i } }, { it })
+            )
+        }
+
+        /**
+         * 内置形象在「当前形象」列表里的**固定顺序**（用户 2026-10-17 指定）。
+         *
+         * ⚠️ 目录名是形象的唯一标识（prefs 里存的就是它、pet.json 里另有显示名），
+         *    所以顺序没法靠改目录名来排 —— 那份名单在这里显式写明，
+         *    没列到的（含以后新加的内置形象）按目录名排在后面。
+         */
+        private val BUILTIN_ORDER = listOf(
+            "QDS", "后藤一里", "伊地知虹夏", "山田凉", "喜多郁代"
+        )
 
         /**
          * 只读一个形象的**显示名**，不解码任何图片。
