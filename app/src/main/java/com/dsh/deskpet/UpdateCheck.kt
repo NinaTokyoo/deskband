@@ -17,22 +17,34 @@ package com.dsh.deskpet
  */
 object UpdateCheck {
 
-    /** Gitee 仓库（国内主渠道，全小写） */
+    /** Gitee 账号（国内主渠道） */
     const val GITEE_OWNER = "ninatokyoo"
-    const val GITEE_REPO = "deskband"
+
+    /**
+     * Gitee 仓库名：**实际用的是 `deskband01`**（用户 2026-10-17 确认）。
+     *
+     * 由来：最初建的空仓库叫 `deskband`，后来用 Gitee 的「导入 GitHub 仓库」时
+     * 它自动建成了 `deskband01`（没覆盖原来那个空的）。用户决定就用 `deskband01`。
+     *
+     * ⚠️ 下面的 [API_URLS] 里 `deskband01` 与 `deskband` **都试** —— 万一以后把仓库
+     *    改名回 `deskband`，App 不用重新发版也照样能查到更新。
+     */
+    const val GITEE_REPO = "deskband01"
+    const val GITEE_REPO_ALT = "deskband"
 
     /** GitHub 仓库（备用渠道；⚠️ 账号的规范大小写是 NinaTokyoo） */
     const val GITHUB_OWNER = "NinaTokyoo"
     const val GITHUB_REPO = "deskband"
 
     /**
-     * 依次尝试的接口：**先 Gitee，失败再 GitHub**。
+     * 依次尝试的接口：**先 Gitee（deskband01 -> deskband），失败再 GitHub**。
      *
-     * 两个接口返回的 JSON 里版本号字段都叫 `tag_name`，所以同一套解析就够。
+     * 三个接口返回的 JSON 里版本号字段都叫 `tag_name`，所以同一套解析就够。
      * 没有正式版（全是草稿/预发布）时返回 404，按"查不到"处理。
      */
     val API_URLS = listOf(
         "https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO/releases/latest",
+        "https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO_ALT/releases/latest",
         "https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"
     )
 

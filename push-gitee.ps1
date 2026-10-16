@@ -18,12 +18,16 @@
 #     特殊字符一律安全，也不会出现在命令行与日志里。
 # ============================================================================
 
+#  ⚠️ 仓库名是 deskband01（不是 deskband）：最初建的空仓库叫 deskband，
+#     后来用 Gitee 的「导入 GitHub 仓库」时它自动建成了 deskband01，
+#     用户 2026-10-17 决定就用这个名字。App 里的检查更新两个名字都会试。
+
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-$RepoUrl = 'https://gitee.com/ninatokyoo/deskband.git'
+$RepoUrl = 'https://gitee.com/ninatokyoo/deskband01.git'
 $User    = 'ninatokyoo'
-$WebUrl  = 'https://gitee.com/ninatokyoo/deskband'
+$WebUrl  = 'https://gitee.com/ninatokyoo/deskband01'
 $AskPass = Join-Path $PSScriptRoot 'tools\git-askpass.ps1'
 
 function Line { param($c = '-') Write-Host ($c * 62) }

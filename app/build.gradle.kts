@@ -793,6 +793,13 @@ android {
         //                     · 下载入口也给两个：Gitee 页优先、GitHub 页备用；
         //                     · 原因：GitHub 在国内时好时坏、附件常下不动，而检查更新是
         //                       静默请求 —— 失败时用户毫无感知。以 Gitee 为主国内才收得到提示）
+        //   2.3.13  -> 20313（仓库名对齐 `deskband01`（用户 2026-10-17："我的仓库叫 deskband01"）：
+        //                     · Gitee 侧实际仓库是 deskband01（导入 GitHub 时自动建的，
+        //                       没有覆盖原来那个空的 deskband）；
+        //                     · UpdateCheck 的检查顺序改成
+        //                       gitee/deskband01 -> gitee/deskband -> github，
+        //                       所以以后改名回 deskband 也不用重新发版；
+        //                     · push-gitee.ps1 的地址一并指向 deskband01）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ✅ 作者声明里的版本号与完成时间**自动跟着这行走**：
         //    版本号 = vName；完成时间 = 构建时刻（buildStamp，见文件顶部）。
@@ -801,7 +808,7 @@ android {
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
         //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
         //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
-        val vName = "2.3.12"
+        val vName = "2.3.13"
         versionName = vName
         // 回退到 2.3.1 那次为了让手机能覆盖安装（当时装着内部码 20309 的 2.3.9），
         // 这里曾临时写死 versionCode = 20310。现在恢复正常推导（2.3.11 -> 20311）。
