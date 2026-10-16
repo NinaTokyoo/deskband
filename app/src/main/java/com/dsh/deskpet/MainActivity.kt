@@ -170,6 +170,12 @@ class MainActivity : Activity() {
      * 用**下标**而不是内容：内容允许重复，下标才是唯一的。
      */
     private var pendingBubbleDelete: Int? = null
+
+    /**
+     * 标签的列宽要抄标题行按钮的宽度，而首次渲染发生在 onCreate 里、那时标题行还没量过。
+     * 这个标志保证"量到 0 就延后一帧重排"，且只重排一次（不会自己套自己）。
+     */
+    private var bubbleTagsAwaitLayout = false
     private lateinit var btnBubbleTextAdd: Button
     private lateinit var btnBubbleTextManage: Button
     private lateinit var panelBubbleTextAdd: View
@@ -1292,10 +1298,12 @@ class MainActivity : Activity() {
     }
 
     /**
-     * 管理列表：**一行一个**标签（用户要求），每个标签右侧还有一个
-     * 「已启用 / 启用」按钮（管理该条是否出现在气泡里）。
+     * 管理列表：**一行一个整条横条**（用户 2026-10-16 重做）——
+     * 横条 = 内容 + 右侧「删除 / 确认」+ 右侧「启用 / 已启用」。
      *
-     * 每次进管理、每次删除/启停、每次切明暗都要重建 —— 颜色都跟强调色走。
+     * ⚠️ 两个按钮的**列位置是抄标题行**的（删除对齐「新增」、启用对齐「管理/收起」），
+     *    而标题行要布局完才有宽度 —— 首次渲染发生在 onCreate 里、那时量到 0，
+     *    所以量到 0 时延后一帧重排一次（有标志位，不会循环）。
      */
     private fun renderBubbleTextTags() {
         rowsBubbleText.removeAllViews()
@@ -1304,72 +1312,19 @@ class MainActivity : Activity() {
 
         val gap = (resources.displayMetrics.density * 8f).toInt()
         for (i in items.indices) {
-            val row = makeBubbleTextRow(i, items[i], topMargin = if (i == 0) 0 else gap)
-            rowsBubbleText.addView(row)
+            rowsBubbleText.addView(makeBubbleTextTag(i, items[i], topMargin = if (i == 0) 0 else gap))
         }
         refreshBubbleTextButton()
-    }
 
-    /**
-     * 一行 = [标签] + [已启用 / 启用 按钮]。
-     *
-     * 用户 2026-10-16 的三条对齐要求，全部在这里落实：
-     *   · 标签的**右边界与「新增」按钮的右边界对齐** —— 靠"启用按钮宽度 = 「管理 / 收起」
-     *     按钮宽度" + "两者间距 = 标题行里两个按钮的间距"实现（见下面实测取值的注释）；
-     *   · 启用按钮的**左右位置与上方「收起」按钮一致** —— 同上，宽度与间距都抄标题行；
-     *   · 启用按钮**与标签等高** —— 布局完成后按标签实测高度设一次。
-     */
-    private fun makeBubbleTextRow(index: Int, item: BubbleTextStore.Item, topMargin: Int): View {
-        val dm = resources.displayMetrics
-        val row = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.HORIZONTAL
-            layoutParams = android.widget.LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { this.topMargin = topMargin }
-        }
-        val tag = makeBubbleTextTag(index, item.text)
-        row.addView(tag, android.widget.LinearLayout.LayoutParams(
-            0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
-        ))
-
-        val toggle = Button(this).apply {
-            // 宽度与「管理 / 收起」按钮一致；水平位置因此也与它一致（间距同样抄标题行）
-            layoutParams = android.widget.LinearLayout.LayoutParams(
-                btnBubbleTextManage.width.coerceAtLeast(dp(dm, 64f)),
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { marginStart = titleButtonGap() }
-            isAllCaps = false
-            text = getString(
-                if (item.enabled) R.string.bubble_text_enabled else R.string.bubble_text_disabled
-            )
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            setOnClickListener {
-                BubbleTextStore.setEnabled(this@MainActivity, index, !item.enabled)
-                renderBubbleTextTags()
+        if (btnBubbleTextAdd.width == 0 || btnBubbleTextManage.width == 0) {
+            if (!bubbleTagsAwaitLayout) {
+                bubbleTagsAwaitLayout = true
+                rowsBubbleText.post {
+                    bubbleTagsAwaitLayout = false
+                    if (bubbleTextMode == BUBBLE_MANAGE) renderBubbleTextTags()
+                }
             }
         }
-        row.addView(toggle)
-
-        // 与标签等高 + 描边/文字色（都要等布局完成后才知道真实高度）
-        row.post {
-            val h = tag.height
-            if (h > 0) {
-                toggle.layoutParams = (toggle.layoutParams as android.widget.LinearLayout.LayoutParams)
-                    .apply { height = h }
-                toggle.requestLayout()
-            }
-            styleBubbleToggle(toggle, item.enabled)
-        }
-        return row
-    }
-
-    /**
-     * 启用按钮的配色（与 App 里其它"选中态"同一套约定，见 refreshThemeButtons）：
-     *   镂空描边恒常不变，**选中**的那个用强调色文字，未选中用中性文字色。
-     */
-    private fun styleBubbleToggle(btn: Button, enabled: Boolean) {
-        btn.background = AccentTheme.ghostSelectorFor(this, accent, lightMode)
-        btn.setTextColor(if (enabled) accent else AccentTheme.skinBoxText(lightMode))
     }
 
     /** 标题行里两个按钮之间的间距（启用按钮要靠它对齐到与「管理 / 收起」同一列） */
@@ -1379,41 +1334,38 @@ class MainActivity : Activity() {
     }
 
     /**
-     * 一条气泡内容的标签。
+     * 一条气泡内容的**整条横条**：内容 + 「删除 / 确认」+「启用 / 已启用」。
      *
-     * 删除是**就地两步**（与自定义形象一致）：红错号「✕」点一下 -> 变成红描边的
-     * 「确认删除」-> 再点才真删；同一时刻只允许一条处于待确认。
+     * 列位置（用户要求）：
+     *   · 删除按钮宽度 = 标题行「新增」按钮宽度，间距 = 标题行两按钮间距
+     *     -> 它的右边界与「新增」右边界对齐（内容占剩余宽度，于是"删除"正好落在新增那列）；
+     *   · 启用按钮宽度 = 标题行「管理 / 收起 / 取消」按钮宽度
+     *     -> 与它同列同宽。
+     * 高度：两个按钮都 `match_parent`，于是与横条等高（用户要求）。
      *
-     * ⚠️ 错号的宽度**写死成「确认删除」的宽度**（[BUBBLE_DELETE_SLOT_DP]）：
-     *    两态共用同一格，切换时内容不会重排、也不会多截掉几个字（用户要求）。
+     * 删除是**就地两步**：点「删除」-> 本按钮变「确认」+ 顶部按钮变「取消」（见
+     * [refreshBubbleTextButton]）-> 点确认才删、点取消退回上一步。
      */
-    private fun makeBubbleTextTag(index: Int, content: String): View {
+    private fun makeBubbleTextTag(index: Int, item: BubbleTextStore.Item, topMargin: Int): View {
         val tag = layoutInflater.inflate(R.layout.item_bubble_text_tag, rowsBubbleText, false)
         tag.layoutParams = android.widget.LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        )
+        ).apply { this.topMargin = topMargin }
         tag.background = AccentTheme.accentBoxBackground(this, accent, lightMode)
 
         val dm = resources.displayMetrics
-        val scale = resources.configuration.fontScale
-        val slotW = dp(dm, BUBBLE_DELETE_SLOT_DP * scale)
-        val slotH = dp(dm, DELETE_SLOT_DP * scale)
-        val gap = dp(dm, 6f)
+        val gap = titleButtonGap()
+        val delW = btnBubbleTextAdd.width.coerceAtLeast(dp(dm, 56f))
+        val togW = btnBubbleTextManage.width.coerceAtLeast(dp(dm, 64f))
 
-        // ⚠️ 给文字**固定预留**整条右侧槽位（宽度两态一致）：
-        //    并排布局时文字的可用宽度会随「✕ / 确认删除」变化 -> 一点错号文字就重新折行、
-        //    标签变高、字也挪位（用户实测）。预留成常量后，两种形态下文字宽度完全相同，
-        //    而且文字永远不会画进槽位里（两行也不会被按钮压住）。
         tag.findViewById<TextView>(R.id.txtBubbleTagText).apply {
-            text = content
+            text = item.text
             setTextColor(AccentTheme.skinBoxText(lightMode))
-            setPadding(0, 0, slotW + gap, 0)
             maxLines = 3
             ellipsize = android.text.TextUtils.TruncateAt.END
             // 显示不下就用**省略号（三个点）**收尾（用户要求）。
-            // ⚠️ 不只靠 ellipsize：它画的是单个"…"字形、点数不是三个，
-            //    而且这里的宽度被"预留槽位"改过，渲染期行为不好预测 ——
-            //    所以按 TextView 的真实可用宽度自行截到三行，再补三个点。
+            // ⚠️ 不只靠 ellipsize：它画的是单个"…"字形、点数不是三个 ——
+            //    所以按真实可用宽度自行截到三行，再补三个点。
             post {
                 val avail = width - paddingStart - paddingEnd
                 if (avail <= 0) return@post
@@ -1425,32 +1377,16 @@ class MainActivity : Activity() {
 
         val pending = index == pendingBubbleDelete
         tag.findViewById<TextView>(R.id.txtBubbleTagDelete).apply {
-            // 宽高两态**都写死**：高度不同会让标签变矮，宽度不同会让上面的文字重排
-            layoutParams = android.widget.FrameLayout.LayoutParams(slotW, slotH).apply {
-                gravity = android.view.Gravity.END or android.view.Gravity.BOTTOM
-            }
-            includeFontPadding = false
-            // ⚠️ 两态的**对齐**不同（用户实测反馈）：
-            //    · 「✕」贴右 —— 它要落在"最后一个字之后"，浮在槽位中间会离右边缘半个槽宽；
-            //    · 「确认删除」**居中** —— 它占满整格，贴右会看着偏右（用户："文字没有居中"）。
-            gravity = if (pending) {
-                android.view.Gravity.CENTER
-            } else {
-                android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
-            }
+            layoutParams = android.widget.LinearLayout.LayoutParams(delW, ViewGroup.LayoutParams.MATCH_PARENT)
+                .apply { marginStart = gap }
             text = getString(
-                if (pending) R.string.custom_confirm_delete else R.string.custom_delete_mark
+                if (pending) R.string.bubble_text_confirm else R.string.bubble_text_delete
             )
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, if (pending) 13f else 17f)
-            setTextColor(TAG_DELETE_RED)      // 红色固定，不跟强调色（与自定义形象一致）
-            setPadding(dp(dm, 4f), 0, dp(dm, 4f), 0)
-            background = if (pending) {
-                AccentTheme.accentBoxBackground(
-                    this@MainActivity, TAG_DELETE_RED, lightMode, radiusDp = 8f
-                )
-            } else {
-                null
-            }
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTextColor(TAG_DELETE_RED)                       // 红字固定，不跟强调色
+            background = AccentTheme.accentBoxBackground(
+                this@MainActivity, TAG_DELETE_RED, lightMode, radiusDp = 8f
+            )
             setOnClickListener {
                 if (pending) {
                     BubbleTextStore.removeAt(this@MainActivity, index)
@@ -1458,13 +1394,43 @@ class MainActivity : Activity() {
                     renderBubbleTextTags()
                     Toast.makeText(
                         this@MainActivity,
-                        getString(R.string.bubble_text_delete_done, content),
+                        getString(R.string.bubble_text_delete_done, item.text),
                         Toast.LENGTH_SHORT
                     ).show()
                 } else {
+                    // 进入待确认：本按钮变「确认」，顶部按钮变「取消」（刷新在 render 里）
                     pendingBubbleDelete = index
                     renderBubbleTextTags()
                 }
+            }
+        }
+
+        tag.findViewById<TextView>(R.id.btnBubbleTagToggle).apply {
+            layoutParams = android.widget.LinearLayout.LayoutParams(togW, ViewGroup.LayoutParams.MATCH_PARENT)
+                .apply { marginStart = gap }
+            text = getString(
+                if (item.enabled) R.string.bubble_text_enabled else R.string.bubble_text_disabled
+            )
+            // ⚠️ 用户要求「已启用」三个字**排在一行**：列宽受"与收起对齐"约束不能加宽，
+            //    所以固定单行 + 允许系统自动缩字号去适配（最小 8sp），并压掉左右内边距。
+            isSingleLine = true
+            maxLines = 1
+            ellipsize = null
+            setPadding(dp(dm, 2f), 0, dp(dm, 2f), 0)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                setAutoSizeTextTypeUniformWithConfiguration(
+                    8, 13, 1, TypedValue.COMPLEX_UNIT_SP
+                )
+            } else {
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            }
+            background = AccentTheme.ghostSelectorFor(this@MainActivity, accent, lightMode)
+            setTextColor(
+                if (item.enabled) accent else AccentTheme.skinBoxText(lightMode)
+            )
+            setOnClickListener {
+                BubbleTextStore.setEnabled(this@MainActivity, index, !item.enabled)
+                renderBubbleTextTags()
             }
         }
         return tag

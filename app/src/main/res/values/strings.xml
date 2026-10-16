@@ -81,6 +81,9 @@
     <!-- 标签右侧那个按钮（用户 2026-10-16 新增）：管理该条是否会出现在气泡中 -->
     <string name="bubble_text_enabled">已启用</string>
     <string name="bubble_text_disabled">启用</string>
+    <!-- 标签右侧的删除按钮：就地两步（点「删除」本按钮变「确认」，顶部变「取消」） -->
+    <string name="bubble_text_delete">删除</string>
+    <string name="bubble_text_confirm">确认</string>
 
     <!-- ③ 外观 -->
     <string name="section_look">外观尺寸</string>

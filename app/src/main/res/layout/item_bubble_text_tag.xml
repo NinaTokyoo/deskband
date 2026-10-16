@@ -1,52 +1,57 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  「气泡内容」-> 管理：一条内容的标签（内容 + 删除控件）。
+  「气泡内容」-> 管理：一条内容 = **一整个横条**（用户 2026-10-16 重做）。
 
-  用户 2026-10-16 定的规则：
-  · 一行一个标签；内容**最多两行**，超出用省略号（3 个点）；
-  · 删除错号：只有一行时在整个标签的最后；两行时在**第二行最后**；
-  · 「标签显示的内容应留出足够空间防止确认删除按钮与标签内容冲突」。
+  横条右侧两个按钮，**列位置抄标题行**（在代码里按实测宽度设）：
+    · 删除 / 确认  —— 与上方「新增」按钮同列；
+    · 启用 / 已启用 —— 与上方「管理 / 收起 / 取消」按钮同列。
+  两个按钮 `match_parent` 高 —— 于是与横条等高（用户要求）。
 
-  ⚠️ 为什么用 FrameLayout + 给文字**预留整条右侧空间**，而不是像「自定义形象」那样
-     两个控件并排：
-     · 并排时删除控件只占右上（或右下）**一格**，两行文字会从它下面伸过去 —— 被遮挡；
-     · 并排时文字的可用宽度 = 标签宽 − 删除控件宽，而那个宽度会随「✕ / 确认删除」
-       两种形态变化 —— 一点错号文字就重新折行、标签跟着变高、字也跟着挪位。
-     现在的做法：文字占满整行、但**右侧内边距固定留出槽位宽度**（代码里按槽宽 + 间距设），
-     删除控件固定尺寸、贴在右下角。于是
-       · 两行也不会被遮挡（文字根本不会画进预留区）；
-       · 两种形态下文字可用宽度**完全一致**，切换时高度与字位纹丝不动；
-       · 只有一行时控件落在该行末尾，两行时落在第二行末尾（右下角）。
-  ⚠️ 槽位里的 ✕ 用 **end 对齐**（贴右），否则它会浮在槽位中间、离标签右边缘半个槽宽。
+  · 内容最多三行，超出用省略号（3 个点，代码里自行截断后再补）；
+  · 删除是就地两步：点「删除」本按钮变「确认」，同时**标题行右上角变成「取消」**；
+    点确认才真删，点取消退回上一步（待确认状态取消）；
+  · 「已启用」三个字必须**排在一行** —— 见 MainActivity 里对它的
+    `isSingleLine` + 自动缩放字号的设置（列宽受"与收起对齐"约束，只能让字去适配宽度）。
+
+  背景与文字色不在 XML 里写死：标签是动态视图，由 renderBubbleTextTags() 按当前
+  强调色 / 明暗模式现给。
 -->
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
     android:paddingStart="10dp"
     android:paddingEnd="8dp"
     android:paddingTop="8dp"
     android:paddingBottom="8dp">
 
-    <!-- 文字：占满整行（右侧内边距在代码里固定预留出槽位），**垂直居中** ——
-         一行时槽位比文字高，居中后"✕ 就在这一行末尾"；
-         多行时两者等高，控件自然落到**末行末尾**（用户要求：最多三行） -->
     <TextView
         android:id="@+id/txtBubbleTagText"
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_gravity="start|center_vertical"
+        android:layout_weight="1"
         android:maxLines="3"
         android:ellipsize="end"
         android:lineSpacingExtra="2dp"
         android:textSize="14sp" />
 
-    <!-- 删除控件：文字、字号、背景、**宽高**都在 MainActivity 里按状态给，
-         XML 里只定"贴右下"这一件事 -->
     <TextView
         android:id="@+id/txtBubbleTagDelete"
         android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="end|bottom"
-        android:gravity="end|center_vertical"
+        android:layout_height="match_parent"
+        android:layout_marginStart="6dp"
+        android:gravity="center"
+        android:includeFontPadding="false"
         android:maxLines="1" />
-</FrameLayout>
+
+    <TextView
+        android:id="@+id/btnBubbleTagToggle"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:layout_marginStart="6dp"
+        android:gravity="center"
+        android:includeFontPadding="false"
+        android:maxLines="1"
+        android:singleLine="true" />
+</LinearLayout>
