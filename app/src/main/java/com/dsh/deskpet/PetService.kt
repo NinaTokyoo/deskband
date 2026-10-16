@@ -892,13 +892,14 @@ class PetService : Service(), PetView.Host {
     private fun showBubble() {
         val pet = petView ?: return
         val a = pet.bubbleAnchor()
-        if (a.size < 12) return
+        if (a.size < 13) return
         val w = a[2].toFloat()                                   // 人物正立素材宽 W = 2a
         val side = a[3]
         val mirror = a[4] == 1
         val flipV = a[5] == 1
         val spriteRot = a[6].toFloat()                           // 人物旋转角 -> 决定摆位
         val bubbleRot = a[7].toFloat()                           // 气泡图案旋转角 -> 决定朝向
+        val screenSide = a[8]                                    // 非 0 = 下边/下角：按屏幕左右摆
 
         val size = BubbleView.windowSize(w, bubbleRot)
         val bw = size[0]
@@ -906,7 +907,7 @@ class PetService : Service(), PetView.Host {
         // ⚠️ 偏移用 **spriteRot**（气泡摆在人物的哪一侧是人物朝向决定的）；
         //    bubbleRot 只管气泡图案自己怎么转（右下角 -90°）。
         val off = BubbleView.screenOffset(w, side, mirror, flipV, spriteRot)
-        val artMirror = PetState.bubbleArtMirror(pet.state, mirror, side)
+        val artMirror = PetState.bubbleArtMirror(pet.state, mirror, side, screenSide)
         val nudge = PetState.bubbleNudge(pet.state)
         val b = bounds()
         var fx = Math.round(a[0] + off[0] - bw / 2f).toInt()
@@ -919,10 +920,10 @@ class PetService : Service(), PetView.Host {
         // ⚠️ 按椭圆判、不按外框判 —— 外框四角是透明的，拿外框判会把"只是角擦到"误判成相交。
         // 相交时按"最小位移"把该椭圆推到矩形外侧。
         if (PetState.bubbleKeepOutOfPetRect(pet.state)) {
-            val pl = a[8]
-            val pt = a[9]
-            val pr = pl + a[10]
-            val pb = pt + a[11]
+            val pl = a[9]
+            val pt = a[10]
+            val pr = pl + a[11]
+            val pb = pt + a[12]
             val ellipses = BubbleView.visibleEllipses(bw, bh, bubbleRot, artMirror, flipV)
             for (e in ellipses) {
                 val ecx = fx + e[0]

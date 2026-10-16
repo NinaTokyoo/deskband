@@ -371,6 +371,14 @@ android {
         //                     BubbleView.visibleEllipses（三块素材的内切椭圆/圆，
         //                     与 onDraw 同一条变换链）——外框四角是透明的，
         //                     拿外框判会把"只擦到角"误判成相交）
+        //   2.1.39 -> 20139（下边（两个半屏）与左下角也按"右下角现在的做法"来：
+        //                     ① 气泡图案同样用 C 形态（-90°）；
+        //                     ② 摆位按**屏幕左右**（用户这条规则是按屏幕视角说的：
+        //                        人在屏幕左 -> 气泡在屏幕右上角、朝屏幕内侧）——
+        //                        新增 PetState.bottomScreenSide（屏幕侧别）与
+        //                        bubbleArtMirror 的 screenSide 参数；
+        //                        素材被镜像时"素材侧别"与"屏幕侧别"相反，已换算。
+        //                     左右边框与上边/上角不受影响）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ✅ 作者声明里的版本号与完成时间**自动跟着这行走**：
         //    版本号 = vName；完成时间 = 构建时刻（buildStamp，见文件顶部）。
@@ -379,7 +387,7 @@ android {
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
         //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
         //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
-        val vName = "2.1.38"
+        val vName = "2.1.39"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()

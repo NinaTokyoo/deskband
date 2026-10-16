@@ -2609,13 +2609,18 @@ class PetView(context: Context) : View(context) {
         )
         val defaultTopY = curCenterY() + offDefault[1] - size[1] / 2f
 
-        val side = PetState.bubbleSide(
-            state, curCenterX(), curCenterY(), screenW, screenH, defaultTopY
-        )
+        // 下边/下角那几个状态是按**屏幕**左右描述的（人在左边 -> 气泡在屏幕右上角），
+        // 所以先算出"屏幕侧别"，再换算成素材坐标系的侧别（素材被镜像时两者相反）。
+        val screenSide = PetState.bottomScreenSide(state, curCenterX(), screenW)
+        val side = if (screenSide != 0) {
+            if (mirror) -screenSide else screenSide
+        } else {
+            PetState.bubbleSide(state, curCenterX(), curCenterY(), screenW, screenH, defaultTopY)
+        }
         return intArrayOf(
             curCenterX().roundToInt(), curCenterY().roundToInt(), up[0], side,
             if (mirror) 1 else 0, if (flipV) 1 else 0,
-            spriteRot.toInt(), bubbleRot.toInt(),
+            spriteRot.toInt(), bubbleRot.toInt(), screenSide,
             // 人物**素材矩形**在屏幕上的位置（供"气泡不得进入"这条原则用）
             curTrackLeft().roundToInt(), curTrackTop().roundToInt(), trackW, trackH
         )

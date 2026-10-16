@@ -240,20 +240,38 @@ object PetState {
      * ⚠️ 左右边框的状态**不受影响**（照旧跟人物旋转角一致）—— 用户要求"保持左右边框不动"。
      */
     fun bubbleRotation(state: Int, spriteRot: Float): Float = when (state) {
-        CORNER_BR -> -90f
+        CORNER_BR, CORNER_BL, BORDER_R_UPRIGHT, BORDER_L_UPRIGHT -> -90f
         else -> spriteRot
+    }
+
+    /**
+     * 下边（两个半屏）与两个**下角**：气泡摆在**屏幕**上的哪一侧。
+     *
+     * 用户 2026-10-16："吸附至底边时，以人物吸附边中点为准，若在底边中点及右侧，
+     * 则出现在左上角；否则（包括左下角）在右上角" —— 注意这条是按**屏幕视角**说的
+     * （人在屏幕左边 -> 气泡在屏幕右上角，朝屏幕内侧），而不是素材坐标系。
+     *
+     * @return 屏幕侧别：+1 = 屏幕右侧、-1 = 屏幕左侧、0 = 该状态不走这条规则
+     */
+    fun bottomScreenSide(state: Int, petCenterX: Float, screenW: Float): Int {
+        val applies = state == CORNER_BR || state == CORNER_BL ||
+            state == BORDER_R_UPRIGHT || state == BORDER_L_UPRIGHT
+        if (!applies) return 0
+        return if (petCenterX >= screenW / 2f) -1 else 1
     }
 
     /**
      * 气泡整组的**左右镜像**标志（在"人物素材变换"之上再叠加的那一层）。
      *
      * 默认规则：气泡摆在人物素材**左侧**时要把整组翻过来，尾巴才朝着人物
-     * （摆右侧则不用）。右下角例外 —— 用户确认的 C 形态是"转完不镜像"。
+     * （摆右侧则不用）。下边/下角那几个状态按**屏幕侧别**定（[bottomScreenSide]）：
+     * 摆屏幕右侧就镜像（= 右下角那个 C 形态的镜像）。
      */
-    fun bubbleArtMirror(state: Int, spriteMirror: Boolean, side: Int): Boolean = when (state) {
-        CORNER_BR -> false
-        else -> spriteMirror != (side == BUBBLE_SIDE_LEFT)
-    }
+    fun bubbleArtMirror(state: Int, spriteMirror: Boolean, side: Int, screenSide: Int): Boolean =
+        when {
+            screenSide != 0 -> screenSide > 0
+            else -> spriteMirror != (side == BUBBLE_SIDE_LEFT)
+        }
 
     /** 该状态的气泡要不要保证"有效区域不进入人物素材矩形"（用户对右下角提的原则） */
     fun bubbleKeepOutOfPetRect(state: Int): Boolean = isCorner(state)
