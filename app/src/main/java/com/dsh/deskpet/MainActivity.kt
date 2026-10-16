@@ -1289,6 +1289,10 @@ class MainActivity : Activity() {
             //    实测不生效（日志：want=254x157 actual=223x81），所以这里只改文字与颜色。
             text = getString(if (on) R.string.bubble_text_enabled else R.string.bubble_pending)
             setTextColor(if (on) accent else AccentTheme.skinBoxText(lightMode))
+            // ⚠️ 描边背景**必须在这里给**：这个开关是 TextView（不是 Button），
+            //    AccentTheme 统一刷色时不会管它 —— 上一版我删对齐代码时把这一行也删了，
+            //    结果开关只剩下文字、没了框（用户 2026-10-17 截图："你到底会不会改"）。
+            background = AccentTheme.ghostSelectorFor(this@MainActivity, accent, lightMode)
         }
     }
 

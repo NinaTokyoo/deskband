@@ -723,6 +723,9 @@ android {
         //                     ② 展开时按钮显示「**收起**」而不是「取消」
         //                        （registerExpandCard 新增 alwaysCollapse：这张卡点一下即生效，
         //                         没有"会丢东西"的中间态））
+        //   2.1.100 -> 201100（补回开关的**描边背景**（用户 2026-10-17 截图：开关只剩文字没有框）：
+        //                      上一版删对齐代码时把 `background = ghostSelectorFor(...)` 一起删了 ——
+        //                      这个开关是 TextView，AccentTheme 统一刷色管不到它，必须在这里给）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ✅ 作者声明里的版本号与完成时间**自动跟着这行走**：
         //    版本号 = vName；完成时间 = 构建时刻（buildStamp，见文件顶部）。
@@ -731,7 +734,7 @@ android {
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
         //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
         //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
-        val vName = "2.1.99"
+        val vName = "2.1.100"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()
