@@ -2597,10 +2597,12 @@ class PetView(context: Context) : View(context) {
         val flipV = PetState.flipVFor(state)
         // ⚠️ 两个旋转角必须分开：
         //   spriteRot —— **人物**的吸附旋转角，决定"气泡摆在人物的哪一侧"（偏移用这个）
-        //   bubbleRot —— **气泡图案**自己的旋转角（右下角另有规定，见 PetState.bubbleRotation）
+        //   bubbleRot —— **气泡图案**自己的旋转角（下边/下角按屏幕侧别取，见 PetState）
         // 2.1.36 把 bubbleRot 误用到了偏移上，于是右下角气泡被摆到人物**左下**去了。
         val spriteRot = PetState.rotationForSnap(state)
-        val bubbleRot = PetState.bubbleRotation(state, spriteRot)
+        // 下边/下角按**屏幕**左右定侧（人在屏幕左 -> 气泡在屏幕右上，朝屏幕内侧）
+        val screenSide = PetState.bottomScreenSide(state, curCenterX(), screenW)
+        val bubbleRot = PetState.bubbleRotation(state, spriteRot, screenSide)
 
         // 条件2：按默认（素材右侧）摆法时，气泡窗口的最上沿落在哪
         val size = BubbleView.windowSize(w, bubbleRot)
@@ -2609,9 +2611,8 @@ class PetView(context: Context) : View(context) {
         )
         val defaultTopY = curCenterY() + offDefault[1] - size[1] / 2f
 
-        // 下边/下角那几个状态是按**屏幕**左右描述的（人在左边 -> 气泡在屏幕右上角），
-        // 所以先算出"屏幕侧别"，再换算成素材坐标系的侧别（素材被镜像时两者相反）。
-        val screenSide = PetState.bottomScreenSide(state, curCenterX(), screenW)
+        // 下边/下角那几个状态是按**屏幕**左右描述的，所以把屏幕侧别换算成素材坐标系的
+        // 侧别（素材被镜像时两者相反）。
         val side = if (screenSide != 0) {
             if (mirror) -screenSide else screenSide
         } else {

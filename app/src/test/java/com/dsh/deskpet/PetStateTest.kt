@@ -1929,16 +1929,17 @@ class PetStateTest {
     @Test
     fun bubble_rotation_follows_pet_except_bottom_right_corner() {
         // 默认跟人物素材的吸附旋转角一致（躺倒时 ∓90°）
-        assertEquals(-90f, PetState.bubbleRotation(PetState.BORDER_R, -90f))
-        assertEquals(90f, PetState.bubbleRotation(PetState.BORDER_L, 90f))
-        // 下边两个半屏已在 2.1.39 改成 C 形态（见下面那段），所以这里不再期望 0
-        assertEquals(0f, PetState.bubbleRotation(PetState.EDGE_TOP_R, 0f))
+        assertEquals(-90f, PetState.bubbleRotation(PetState.BORDER_R, -90f, 0))
+        assertEquals(90f, PetState.bubbleRotation(PetState.BORDER_L, 90f, 0))
+        // 上边/上角不在这条规则里，照旧跟人物一致
+        assertEquals(0f, PetState.bubbleRotation(PetState.EDGE_TOP_R, 0f, 0))
         // 右下角另有规定（用户确认的 C）：顺时针 90° + 左右镜像 的净效果 = -90 且不镜像
-        assertEquals(-90f, PetState.bubbleRotation(PetState.CORNER_BR, 0f))
-        // 用户 2026-10-16 追加：下边（两个半屏）与左下角也按"右下角现在的做法"来
-        assertEquals(-90f, PetState.bubbleRotation(PetState.CORNER_BL, 0f))
-        assertEquals(-90f, PetState.bubbleRotation(PetState.BORDER_R_UPRIGHT, 0f))
-        assertEquals(-90f, PetState.bubbleRotation(PetState.BORDER_L_UPRIGHT, 0f))
+        assertEquals(-90f, PetState.bubbleRotation(PetState.CORNER_BR, 0f, -1))
+        // 用户 2026-10-16 追加：下边（两个半屏）与左下角按"右下角现在的做法"，
+        // 摆屏幕左侧 = -90（C 形态）、摆屏幕右侧 = +90 + 镜像（严格左右镜像）
+        assertEquals(-90f, PetState.bubbleRotation(PetState.BORDER_R_UPRIGHT, 0f, -1))
+        assertEquals(90f, PetState.bubbleRotation(PetState.BORDER_L_UPRIGHT, 0f, 1))
+        assertEquals(90f, PetState.bubbleRotation(PetState.CORNER_BL, 0f, 1))
         // 屏幕侧别：中点在屏幕中线及右侧 -> 屏幕左侧（气泡在人物左上角）；否则屏幕右侧
         assertEquals(-1, PetState.bottomScreenSide(PetState.CORNER_BR, SW - 100f, SW))
         assertEquals(1, PetState.bottomScreenSide(PetState.CORNER_BL, 100f, SW))

@@ -239,8 +239,22 @@ object PetState {
      *
      * ⚠️ 左右边框的状态**不受影响**（照旧跟人物旋转角一致）—— 用户要求"保持左右边框不动"。
      */
-    fun bubbleRotation(state: Int, spriteRot: Float): Float = when (state) {
-        CORNER_BR, CORNER_BL, BORDER_R_UPRIGHT, BORDER_L_UPRIGHT -> -90f
+    /**
+     * 气泡**整组**的旋转角。
+     *
+     * 默认跟人物素材走（吸附左右边框时人物躺倒 ∓90°，气泡也一起倒）。
+     * 下边/下角那几个状态按**屏幕侧别**取（[bottomScreenSide]）：
+     *   · 气泡在屏幕**左侧** -> -90°（= 右下角定下来的 C 形态）
+     *   · 气泡在屏幕**右侧** -> +90°（配合镜像标志 = C 形态的**严格左右镜像**）
+     *
+     * ⚠️ 为什么右侧要用 +90 而不是"再镜像一次"：App 里 `mirror` 是**先翻素材再旋转**
+     *    （R∘M），而"把右边那张图整体左右翻"是 M∘R —— 两者差 180°（尾巴小圈会从
+     *    气泡下方跑到上方）。要让左半边严格等于右半边的镜像，就得用 +90 + 镜像。
+     *    这正是用户 2026-10-16 截图里"左右不对称"的根源。
+     */
+    fun bubbleRotation(state: Int, spriteRot: Float, screenSide: Int): Float = when {
+        screenSide < 0 -> -90f
+        screenSide > 0 -> 90f
         else -> spriteRot
     }
 
@@ -265,7 +279,8 @@ object PetState {
      *
      * 默认规则：气泡摆在人物素材**左侧**时要把整组翻过来，尾巴才朝着人物
      * （摆右侧则不用）。下边/下角那几个状态按**屏幕侧别**定（[bottomScreenSide]）：
-     * 摆屏幕右侧就镜像（= 右下角那个 C 形态的镜像）。
+     * 摆屏幕右侧就镜像 —— 配合 [bubbleRotation] 给的 +90°，正好等于右侧那套的
+     * **严格左右镜像**（若仍用 -90°，镜像会变成"整体再转 180°"，尾巴小圈跑到上方）。
      */
     fun bubbleArtMirror(state: Int, spriteMirror: Boolean, side: Int, screenSide: Int): Boolean =
         when {

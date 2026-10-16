@@ -388,6 +388,11 @@ android {
         //                     气泡在人物左上角、往右挪 = 朝人物；2.1.40 按屏幕侧别取符号，
         //                     于是左半屏/左下角朝**远离**人物的方向挪了 0.3 个气泡宽
         //                     （实机截图里气泡明显离人物更远）。新增 PetState.bubbleNudgeSign）
+        //   2.1.42 -> 20142（修"左右镜像"的次序：用户要的"左半边/左下角 = 右半边/右下角的
+        //                     严格左右镜像"是 M∘R；而 App 的 mirror 标志是 R∘M，两者差 180°
+        //                     （尾巴小圈会从气泡下方跑到上方）。改为：气泡在屏幕**右**侧时
+        //                     用 **+90° + 镜像**，在屏幕**左**侧用 -90°（C 形态）。
+        //                     PetState.bubbleRotation 增加 screenSide 参数）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ✅ 作者声明里的版本号与完成时间**自动跟着这行走**：
         //    版本号 = vName；完成时间 = 构建时刻（buildStamp，见文件顶部）。
@@ -396,7 +401,7 @@ android {
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
         //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
         //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
-        val vName = "2.1.41"
+        val vName = "2.1.42"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()
