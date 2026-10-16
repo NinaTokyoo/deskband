@@ -24,6 +24,24 @@ object BubbleTextStore {
     private const val KEY = "bubble_texts"
 
     /**
+     * 上一次输入是否**因为 20 字上限被吃掉了一部分**。
+     *
+     * 输入过滤器只能返回"收得下的前缀"，用户看到的是"字打不进去"——
+     * 之前完全没有任何提示（用户实测：以为标签把内容截断了）。
+     * 由界面在读完后复位（[consumeTruncated]）。
+     */
+    @Volatile
+    var truncated: Boolean = false
+        private set
+
+    /** 读走"上次被截断"这个信号（读后自动复位） */
+    fun consumeTruncated(): Boolean {
+        val v = truncated
+        truncated = false
+        return v
+    }
+
+    /**
      * 一条气泡内容。
      *
      * [enabled] = 该条**是否会出现在气泡里**（用户 2026-10-16：标签右侧有「已启用 / 启用」
@@ -223,7 +241,10 @@ object BubbleTextStore {
         while (i < src.length) {
             val cp = Character.codePointAt(src, i)
             if (!isPunctuation(cp)) {
-                if (n >= MAX_CHARS) return@InputFilter src.subSequence(0, i).toString()
+                if (n >= MAX_CHARS) {
+                    truncated = true          // 给界面一个"被吃掉了"的信号（见 MainActivity）
+                    return@InputFilter src.subSequence(0, i).toString()
+                }
                 n++
             }
             i += Character.charCount(cp)

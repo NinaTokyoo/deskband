@@ -1384,9 +1384,14 @@ class MainActivity : Activity() {
             )
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             setTextColor(TAG_DELETE_RED)                       // 红字固定，不跟强调色
-            background = AccentTheme.accentBoxBackground(
-                this@MainActivity, TAG_DELETE_RED, lightMode, radiusDp = 8f
-            )
+            // 背景延后到布局完成再给：圆角要按**实测高度**算，否则单行标签的按钮
+            // （矮）会因固定 10dp 圆角看起来变成胶囊（用户实测反馈）
+            post {
+                background = AccentTheme.accentBoxBackground(
+                    this@MainActivity, TAG_DELETE_RED, lightMode,
+                    radiusDp = AccentTheme.radiusForHeight(height, resources.displayMetrics, 8f)
+                )
+            }
             setOnClickListener {
                 if (pending) {
                     BubbleTextStore.removeAt(this@MainActivity, index)
@@ -1428,6 +1433,13 @@ class MainActivity : Activity() {
             setTextColor(
                 if (item.enabled) accent else AccentTheme.skinBoxText(lightMode)
             )
+            // 同删除按钮：圆角按实测高度算（单行标签的矮按钮不能是胶囊）
+            post {
+                background = AccentTheme.ghostSelectorFor(
+                    this@MainActivity, accent, lightMode,
+                    radiusDp = AccentTheme.radiusForHeight(height, resources.displayMetrics, 10f)
+                )
+            }
             setOnClickListener {
                 BubbleTextStore.setEnabled(this@MainActivity, index, !item.enabled)
                 renderBubbleTextTags()
@@ -1495,7 +1507,15 @@ class MainActivity : Activity() {
         editBubbleText.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-            override fun afterTextChanged(s: android.text.Editable?) = refreshBubbleTextCount()
+            override fun afterTextChanged(s: android.text.Editable?) {
+                refreshBubbleTextCount()
+                // 输入被 20 字上限吃掉时明确提示一次（否则用户会以为"标签把内容截断了"）
+                if (BubbleTextStore.consumeTruncated()) {
+                    Toast.makeText(
+                        this@MainActivity, R.string.bubble_text_reach_limit, Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
         })
         editBubbleText.setOnEditorActionListener { _, _, _ -> clearInputFocus(); true }
         renderBubbleTextTags()

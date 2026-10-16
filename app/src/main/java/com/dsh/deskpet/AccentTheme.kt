@@ -252,15 +252,25 @@ object AccentTheme {
         setStroke(dp(dm, 1.5f).toInt().coerceAtLeast(1), color)
     }
 
-    /** 镂空按钮：边框使用强调色，文字中性（由调用处设置） */
+    /**
+     * 镂空按钮：边框使用强调色，文字中性（由调用处设置）。
+     *
+     * [radiusDp] 可调 —— 「气泡内容」的标签按钮是 `match_parent` 高的，
+     * 字号/行数一变高度就差很多：固定 10dp 圆角在**矮**按钮上（单行标签）
+     * 半径接近高度一半，看起来成了胶囊；在**高**按钮上（三行标签）又只是普通圆角。
+     * 调用处按实测高度传 `min(10dp, 高/3)`，两种高度下就都是"圆角矩形"了。
+     */
     private fun ghostSelector(
-        dm: android.util.DisplayMetrics, accent: Int, light: Boolean
+        dm: android.util.DisplayMetrics, accent: Int, light: Boolean, radiusDp: Float = 10f
     ): StateListDrawable = StateListDrawable().apply {
         val pressed = if (light) 0x1A000000 else 0x24FFFFFF
         val dim = Color.argb(90, Color.red(accent), Color.green(accent), Color.blue(accent))
-        addState(intArrayOf(android.R.attr.state_pressed), rounded(dm, pressed, accent, 10f))
-        addState(intArrayOf(-android.R.attr.state_enabled), rounded(dm, Color.TRANSPARENT, dim, 10f))
-        addState(intArrayOf(), rounded(dm, Color.TRANSPARENT, accent, 10f))
+        addState(intArrayOf(android.R.attr.state_pressed), rounded(dm, pressed, accent, radiusDp))
+        addState(
+            intArrayOf(-android.R.attr.state_enabled),
+            rounded(dm, Color.TRANSPARENT, dim, radiusDp)
+        )
+        addState(intArrayOf(), rounded(dm, Color.TRANSPARENT, accent, radiusDp))
     }
 
     /**
@@ -270,8 +280,9 @@ object AccentTheme {
      * 按钮用的 —— 比如外观模式那三个按钮：未选中的要保持镂空、选中的要换成
      * 实心强调色，都得在 [apply] 之后再覆盖一次。
      */
-    fun ghostSelectorFor(ctx: Context, accent: Int, light: Boolean): StateListDrawable =
-        ghostSelector(ctx.resources.displayMetrics, accent, light)
+    fun ghostSelectorFor(
+        ctx: Context, accent: Int, light: Boolean, radiusDp: Float = 10f
+    ): StateListDrawable = ghostSelector(ctx.resources.displayMetrics, accent, light, radiusDp)
 
     /**
      * 「当前形象」选择框的背景。
@@ -330,5 +341,18 @@ object AccentTheme {
         ctx: Context, accent: Int, light: Boolean, radiusDp: Float = 10f
     ): GradientDrawable =
         rounded(ctx.resources.displayMetrics, Palette(light).card, accent, radiusDp)
+
+    /**
+     * 按控件**实测高度**算一个不会"变胶囊"的圆角半径（dp）。
+     *
+     * 圆角是固定 dp、高度却随内容变（单行标签的按钮 vs 三行标签的按钮能差三倍），
+     * 于是同一个 10dp 在矮按钮上半径≈半高、看着是胶囊，在高按钮上才是圆角矩形。
+     * 统一取 `min(上限, 高/3)`：两种高度看起来都是圆角矩形。
+     */
+    fun radiusForHeight(heightPx: Int, dm: android.util.DisplayMetrics, maxDp: Float = 10f): Float {
+        if (heightPx <= 0 || dm.density <= 0f) return maxDp
+        val hDp = heightPx / dm.density
+        return minOf(maxDp, hDp / 3f)
+    }
 
 }
