@@ -1342,6 +1342,19 @@ class MainActivity : Activity() {
             text = content
             setTextColor(AccentTheme.skinBoxText(lightMode))
             setPadding(0, 0, slotW + gap, 0)
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            // 显示不下就用**省略号（三个点）**收尾（用户要求）。
+            // ⚠️ 不只靠 ellipsize：它画的是单个"…"字形、点数不是三个，
+            //    而且这里的宽度被"预留槽位"改过，渲染期行为不好预测 ——
+            //    所以按 TextView 的真实可用宽度自行截到两行，再补三个点。
+            post {
+                val avail = width - paddingStart - paddingEnd
+                if (avail <= 0) return@post
+                val full = text?.toString() ?: return@post
+                val fit = fitTwoLines(full, paint, avail, lineSpacingExtra)
+                if (fit != full) text = fit + "..."
+            }
         }
 
         val pending = index == pendingBubbleDelete
@@ -1351,7 +1364,14 @@ class MainActivity : Activity() {
                 gravity = android.view.Gravity.END or android.view.Gravity.BOTTOM
             }
             includeFontPadding = false
-            gravity = android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
+            // ⚠️ 两态的**对齐**不同（用户实测反馈）：
+            //    · 「✕」贴右 —— 它要落在"最后一个字之后"，浮在槽位中间会离右边缘半个槽宽；
+            //    · 「确认删除」**居中** —— 它占满整格，贴右会看着偏右（用户："文字没有居中"）。
+            gravity = if (pending) {
+                android.view.Gravity.CENTER
+            } else {
+                android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
+            }
             text = getString(
                 if (pending) R.string.custom_confirm_delete else R.string.custom_delete_mark
             )
@@ -1399,6 +1419,26 @@ class MainActivity : Activity() {
         Toast.makeText(this, R.string.bubble_text_saved, Toast.LENGTH_SHORT).show()
         // 存完回到一横条（与自定义形象的「保存」一致）
         setBubbleTextMode(BUBBLE_NONE)
+    }
+
+    /**
+     * 把 [text] 截到"在 [width] 宽、[maxLines] 行以内放得下"的最长前缀。
+     *
+     * 用系统的 [android.text.StaticLayout] 试排一次（与 TextView 自己同一套折行规则），
+     * 行数没超就原样返回；超了取前 maxLines 行能放下的部分。
+     */
+    private fun fitTwoLines(
+        text: String, paint: android.text.TextPaint, width: Int, extraSpacing: Float
+    ): String {
+        if (width <= 0) return text
+        val layout = android.text.StaticLayout.Builder
+            .obtain(text, 0, text.length, paint, width)
+            .setLineSpacing(extraSpacing, 1f)
+            .build()
+        if (layout.lineCount <= 2) return text
+        // ⚠️ 少留一个字：后面还要补"..."，正好一个汉字的宽度
+        val end = (layout.getLineEnd(1) - 1).coerceIn(1, text.length)
+        return text.substring(0, end).trimEnd()
     }
 
     private fun setupBubbleTextControls() {
