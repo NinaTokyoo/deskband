@@ -912,8 +912,10 @@ class PetService : Service(), PetView.Host {
         val b = bounds()
         var fx = Math.round(a[0] + off[0] - bw / 2f).toInt()
         var fy = Math.round(a[1] + off[1] - bh / 2f).toInt()
-        // 个别状态再挪一点（右下角：右移 0.3 个气泡宽、上移 0.2 个气泡高）
-        fx += Math.round(nudge[0] * bw)
+        // 个别状态再挪一点（右下角/底边：右移 0.3 个气泡宽、上移 0.2 个气泡高）。
+        // 摆屏幕**左**侧的状态（左下角、底边左半）取负 —— 就是右边那套的左右镜像。
+        val nudgeSign = if (screenSide < 0) -1 else 1
+        fx += nudgeSign * Math.round(nudge[0] * bw)
         fy -= Math.round(nudge[1] * bh)
 
         // 原则（用户对右下角提的）：气泡**有效区域**（可见的椭圆/小圈）不得进入人物素材矩形。

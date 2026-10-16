@@ -273,19 +273,24 @@ object PetState {
             else -> spriteMirror != (side == BUBBLE_SIDE_LEFT)
         }
 
-    /** 该状态的气泡要不要保证"有效区域不进入人物素材矩形"（用户对右下角提的原则） */
-    fun bubbleKeepOutOfPetRect(state: Int): Boolean = isCorner(state)
+    /** 该状态的气泡要不要保证"有效区域不进入人物素材矩形" */
+    fun bubbleKeepOutOfPetRect(state: Int): Boolean =
+        isCorner(state) || state == BORDER_R_UPRIGHT || state == BORDER_L_UPRIGHT
 
     /**
      * 个别状态在"标准摆位"之上再挪一点（单位 = 气泡窗口自身的宽 / 高）。
      *
-     * 右下角（用户 2026-10-16）：右移 0.3 个气泡宽、上移 0.2 个气泡高
-     * （先按 0.3 高上移，再下移 0.1 高 —— 所以净的上移量是 0.2）。
+     * 右下角先定下来（用户 2026-10-16）：右移 0.3 个气泡宽、上移 0.2 个气泡高
+     * （先按 0.3 高上移，再下移 0.1 高 —— 净的上移量 0.2）。
      *
-     * @return `[向右比例, 向上比例]`
+     * 随后用户要求"底边右半边更新到跟右下角相同规则；左半边和左下角直接左右镜像"
+     * —— 所以这四个状态共用同一组数值；镜像侧由调用方按屏幕侧别取反（见
+     * [bottomScreenSide]：摆屏幕左侧时 x 分量取负，就是右边那套的左右镜像）。
+     *
+     * @return `[向右比例（屏幕侧别为左时取负）, 向上比例]`
      */
     fun bubbleNudge(state: Int): FloatArray = when (state) {
-        CORNER_BR -> floatArrayOf(0.3f, 0.2f)
+        CORNER_BR, CORNER_BL, BORDER_R_UPRIGHT, BORDER_L_UPRIGHT -> floatArrayOf(0.3f, 0.2f)
         else -> floatArrayOf(0f, 0f)
     }
 
