@@ -1288,6 +1288,24 @@ class MainActivity : Activity() {
             setTextColor(if (on) accent else AccentTheme.skinBoxText(lightMode))
             background = AccentTheme.ghostSelectorFor(this@MainActivity, accent, lightMode)
         }
+        // ⚠️ 光抄宽度不够：这个开关在**展开面板**里，而「管理」在标题行里，两者所属容器的
+        //    右侧留白不同 —— 右边界会差一截（用户 2026-10-17："启用按钮要跟上面的管理按钮
+        //    左右对齐"）。这里按**实测右边界之差**补一个右边距，跑几次自然收敛到对齐。
+        btnBubbleOnTap.post {
+            if (!::btnManageBubbleSettings.isInitialized) return@post
+            val a = IntArray(2)
+            val b = IntArray(2)
+            btnManageBubbleSettings.getLocationInWindow(a)
+            btnBubbleOnTap.getLocationInWindow(b)
+            if (btnBubbleOnTap.width == 0 || btnManageBubbleSettings.width == 0) return@post
+            val delta = (b[0] + btnBubbleOnTap.width) - (a[0] + btnManageBubbleSettings.width)
+            val lp = btnBubbleOnTap.layoutParams as android.widget.LinearLayout.LayoutParams
+            val want = (lp.marginEnd + delta).coerceAtLeast(0)
+            if (want != lp.marginEnd) {
+                lp.marginEnd = want
+                btnBubbleOnTap.layoutParams = lp
+            }
+        }
     }
 
     // ---------------------------------------------------------------- 气泡内容卡
