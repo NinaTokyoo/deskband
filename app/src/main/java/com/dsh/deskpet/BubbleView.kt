@@ -91,10 +91,14 @@ class BubbleView(context: Context) : View(context) {
      */
     fun vanishNow() {
         if (startAt == 0L) return
-        val target = SystemClock.uptimeMillis() - (APPEAR_MS + HOLD_MS).toLong()
-        val shift = target - startAt
-        if (shift > 0) startAt = target
-        android.util.Log.i("BubbleGeom", "vanishNow shift=${shift}ms (<=0 表示已经在消失段)")
+        // ⚠️ 这一步是让 startAt **往前拨**（而不是往后）：令"此刻"正好对应到消失段的起点
+        //    （t = APPEAR + HOLD），于是三块从满尺寸开始、由大到小在 VANISH_MS 内缩没。
+        //
+        //    ⚠️⚠️ 2.1.49 / 2.1.50 把这里写成了"只在 target > startAt 时才拨"，方向反了：
+        //    气泡还在出现段或停留段时 target **小于** startAt（实机日志：shift = -865ms），
+        //    于是什么都没发生 —— 表现就是"拖动时没有消失动画"。
+        startAt = SystemClock.uptimeMillis() - (APPEAR_MS + HOLD_MS).toLong()
+        android.util.Log.i("BubbleGeom", "vanishNow -> t=APPEAR+HOLD")
         invalidate()
     }
 

@@ -439,6 +439,10 @@ android {
         //                     会继续吃掉落在它范围内的触摸 —— 用户实测"拖动收不到"就是它。
         //                     现在 onDragStart 里把收窗口重排到"消失动画结束 + 余量"
         //                     （新增 BubbleView.VANISH_MS 常量））
+        //   2.1.51 -> 20151（修 vanishNow 的方向错误：让"此刻"对应消失段起点必须把 startAt
+        //                     **往前拨**，2.1.49/50 写成了"只在往后拨时生效"，于是拖动时
+        //                     时间轴根本没动 —— 实机日志 `vanishNow shift=-865ms` 就是证据，
+        //                     表现是"拖动没有消失动画"）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ✅ 作者声明里的版本号与完成时间**自动跟着这行走**：
         //    版本号 = vName；完成时间 = 构建时刻（buildStamp，见文件顶部）。
@@ -447,7 +451,7 @@ android {
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
         //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
         //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
-        val vName = "2.1.50"
+        val vName = "2.1.51"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()
