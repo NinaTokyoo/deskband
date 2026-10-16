@@ -889,11 +889,16 @@ class PetService : Service(), PetView.Host {
      * 正在出现 / 停留中的气泡都适用；没有气泡时什么都不做。
      */
     override fun onDragStart() {
-        android.util.Log.i(
-            "BubbleGeom",
-            "onDragStart bubble=${bubbleView != null} params=${bubbleParams != null}"
-        )
-        bubbleView?.vanishNow()
+        val v = bubbleView ?: return
+        android.util.Log.i("BubbleGeom", "onDragStart -> vanish")
+        v.vanishNow()
+        // ⚠️ 立刻把"收窗口"的时间重排到动画结束之后。
+        //    原来那次收窗口还挂在"气泡出现 + 1.88s"，气泡虽然看不见了，但那个
+        //    **可触摸**的悬浮窗会一直留着吃触摸 —— 用户实测拖动完全收不到就是这个原因。
+        bubbleHide?.let { mainHandler.removeCallbacks(it) }
+        val hide = Runnable { hideBubble() }
+        bubbleHide = hide
+        mainHandler.postDelayed(hide, BubbleView.VANISH_MS + BUBBLE_TAIL_MS)
     }
 
     /**

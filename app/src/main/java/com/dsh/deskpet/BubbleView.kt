@@ -196,6 +196,16 @@ class BubbleView(context: Context) : View(context) {
         /** 整段总时长 = 出现 + 停留 + 消失 */
         val TOTAL_MS: Long = (APPEAR_MS + HOLD_MS + STEP_MS * PART_COUNT).toLong()
 
+        /**
+         * **消失段**的时长（从"开始消失"到"三块全没"）。
+         *
+         * 出现段与消失段都是三块各占 [STEP_MS]，所以两者相等 = 用户指定的 0.15s。
+         * [vanishNow] 之后服务用它来安排收窗口 —— 必须收得及时：这个悬浮窗
+         * **可触摸**（不设 FLAG_NOT_TOUCHABLE，否则系统会把透明度压到 0.8），
+         * 留着不放会继续吃掉手指落在它范围内的触摸。
+         */
+        val VANISH_MS: Long = (STEP_MS * PART_COUNT).toLong()
+
         /** 小于它就当作已经消失（Float 时间轴在边界上会留下 1e-8 级残值） */
         private const val POP_MIN = 0.01f
 
