@@ -946,12 +946,19 @@ class PetService : Service(), PetView.Host {
                     val et = (fy + e[1] - e[3]).toInt()
                     val er = (fx + e[0] + e[2]).toInt()
                     val eb = (fy + e[1] + e[3]).toInt()
-                    val cands = arrayOf(
-                        Math.abs(el - (pl - (er - el))) to intArrayOf(pl - (er - el), fy),
-                        Math.abs(er - pr) to intArrayOf(pr, fy),
-                        Math.abs(et - (pt - (eb - et))) to intArrayOf(fx, pt - (eb - et)),
-                        Math.abs(eb - pb) to intArrayOf(fx, pb)
-                    )
+                    // ⚠️ 不许"把微调顶回去"：微调是**朝人物**挪 0.3 个气泡宽，若允许往反方向推，
+                    //    就会整整推回 0.3 宽（用户实测：右侧那几格横向等于没微调）。
+                    //    所以只有当微调方向为 0（该状态没有微调）时才保留左右两个候选。
+                    val hasNudge = nudge[0] != 0f
+                    val cands = ArrayList<Pair<Int, IntArray>>(4)
+                    if (!hasNudge || nudgeSign <= 0) {
+                        cands.add(Math.abs(el - (pl - (er - el))) to intArrayOf(pl - (er - el), fy))
+                    }
+                    if (!hasNudge || nudgeSign >= 0) {
+                        cands.add(Math.abs(er - pr) to intArrayOf(pr, fy))
+                    }
+                    cands.add(Math.abs(et - (pt - (eb - et))) to intArrayOf(fx, pt - (eb - et)))
+                    cands.add(Math.abs(eb - pb) to intArrayOf(fx, pb))
                     val best = cands.minByOrNull { it.first }!!
                     fx = best.second[0]
                     fy = best.second[1]
