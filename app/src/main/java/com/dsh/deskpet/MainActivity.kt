@@ -1290,10 +1290,46 @@ class MainActivity : Activity() {
             text = getString(if (on) R.string.bubble_text_enabled else R.string.bubble_pending)
             setTextColor(if (on) accent else AccentTheme.skinBoxText(lightMode))
             // ⚠️ 描边背景**必须在这里给**：这个开关是 TextView（不是 Button），
-            //    AccentTheme 统一刷色时不会管它 —— 上一版我删对齐代码时把这一行也删了，
-            //    结果开关只剩下文字、没了框（用户 2026-10-17 截图："你到底会不会改"）。
+            //    AccentTheme 统一刷色时不会管它 —— 曾经删代码时把它一起删掉，
+            //    结果开关只剩下文字、没了框（用户 2026-10-17 截图）。
             background = AccentTheme.ghostSelectorFor(this@MainActivity, accent, lightMode)
         }
+        syncBubbleToggleSize()
+    }
+
+    /**
+     * 让「单击时出现」的开关**去就**上方「管理 / 收起」按钮：宽高抄它的实测值。
+     *
+     * ⚠️ 方向不能反：早先给标题按钮加了 minWidth 想"两边一起定宽"，等于把「收起」
+     *    撑宽了 —— 用户 2026-10-17："谁让你动收起按钮了"。标题按钮保持 CardAction 原样，
+     *    开关按实测值对齐它。
+     *
+     * ⚠️ 必须挂在**布局变化**上并自检一次：面板默认 GONE，onCreate 那次量到的是 0。
+     */
+    private fun syncBubbleToggleSize() {
+        if (!::btnBubbleOnTap.isInitialized || !::btnManageBubbleSettings.isInitialized) return
+        btnBubbleOnTap.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            applyToggleSize()
+        }
+        applyToggleSize()
+    }
+
+    private fun applyToggleSize() {
+        val w = btnManageBubbleSettings.width
+        val h = btnManageBubbleSettings.height
+        if (w <= 0 || h <= 0) return
+        val lp = btnBubbleOnTap.layoutParams as? android.widget.LinearLayout.LayoutParams ?: return
+        if (lp.width == w && lp.height == h && lp.marginEnd == 0) return
+        lp.width = w
+        lp.height = h
+        lp.marginEnd = 0        // 贴住行尾：右边界与标题按钮同线，左边界随之相同
+        btnBubbleOnTap.minWidth = 0
+        btnBubbleOnTap.minHeight = 0
+        btnBubbleOnTap.layoutParams = lp
+        android.util.Log.i(
+            "BubbleGeom",
+            "toggle size -> ${w}x$h (title=${btnManageBubbleSettings.width}x${btnManageBubbleSettings.height})"
+        )
     }
 
     // ---------------------------------------------------------------- 气泡内容卡

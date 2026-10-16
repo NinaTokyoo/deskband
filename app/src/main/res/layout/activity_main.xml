@@ -1123,13 +1123,12 @@
                     android:layout_weight="1"
                     android:text="@string/section_bubble_settings" />
 
-                <!-- ⚠️ minWidth 与下面那个开关**必须一致**：这是"两个按钮同宽"的唯一来源。
-                     运行时代码设 layoutParams 在这个 TextView 上实测无效
-                     （日志：want=254x157 actual=223x81），所以宽度交给 XML 的最小宽度保证。 -->
+                <!-- ⚠️ 这个按钮**保持 CardAction 的原始尺寸**、不加任何 minWidth：
+                     用户 2026-10-17："谁让你动收起按钮了" —— 对齐要靠**开关去就它**，
+                     不能反过来把它撑宽。 -->
                 <Button
                     android:id="@+id/btnManageBubbleSettings"
                     style="@style/CardAction"
-                    android:minWidth="72dp"
                     android:text="@string/card_manage" />
             </LinearLayout>
 
@@ -1154,14 +1153,12 @@
                         android:textSize="14sp"
                         android:text="@string/bubble_on_tap" />
 
-                    <!-- 启用 / 已启用：就是「取消」那个框平移到下面一行，文字居中。
-                         用与标题按钮**同一个 style** + **同一个 minWidth(72dp)**：
-                         高度、内边距、字号、左右边界全部与它一致，不需要任何运行时算尺寸。
-                         文字与颜色（已启用=强调色 / 待启用=中性色）由 MainActivity 给。 -->
+                    <!-- 启用 / 已启用：就是「管理 / 收起」那个框平移到下面一行、文字居中。
+                         用与标题按钮**同一个 style**（高度/内边距/字号一致），
+                         宽度由代码按标题按钮的实测值下发 —— 开关去就标题按钮，反之不行。 -->
                     <TextView
                         android:id="@+id/btnBubbleOnTap"
                         style="@style/CardAction"
-                        android:minWidth="72dp"
                         android:gravity="center"
                         android:maxLines="1"
                         android:singleLine="true" />
