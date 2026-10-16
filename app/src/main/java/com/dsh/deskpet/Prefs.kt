@@ -385,14 +385,19 @@ class Prefs(context: Context) {
         set(v) { sp.edit().putInt(KEY_THEME_MODE, v).apply() }
 
     /**
-     * 气泡内容**随机**取用（用户 2026-10-16 最终定：每次冒泡随机一条，不需要按顺序）。
+     * 气泡内容的原始存档串（转义后用 `\n` 分隔，每行开头带启用标志）。
      *
-     * 早先实现过"顺序轮播"，为此存过一个游标 [bubbleTextCursor]；
-     * 改成随机后游标不再需要，字段一并删除（旧存档里残留的键不影响任何逻辑）。
+     * ⚠️ **按形象分开存**（用户 2026-10-16："气泡内容也是每个人物有备份，
+     * 跟通知栏内容一样"）：键是 `bubble_texts:<形象目录>`，
+     * 走与通知文案同一套 [skinValue] / [putSkinValue]（含旧全局值的一次性迁移 ——
+     * 升级那一刻正选着的形象继承旧数据，其余形象从空开始）。
+     *
+     * ⚠️ 业务代码请走 [BubbleTextStore]（items / add / removeAt / setEnabled），
+     *    这里只做最小的读写，格式与限制都在那边统一。
      */
     var bubbleTextsRaw: String
-        get() = sp.getString(KEY_BUBBLE_TEXTS, "") ?: ""
-        set(v) { sp.edit().putString(KEY_BUBBLE_TEXTS, v).apply() }
+        get() = skinValue(KEY_BUBBLE_TEXTS)
+        set(v) { putSkinValue(KEY_BUBBLE_TEXTS, v) }
 
     companion object {
         private const val NAME = "deskpet"

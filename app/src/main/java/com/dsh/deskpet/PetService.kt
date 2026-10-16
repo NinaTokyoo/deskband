@@ -68,7 +68,7 @@ class PetService : Service(), PetView.Host {
      * 但不存在连着两条相同的情况"）。只活在内存里：服务重启后没有"上一条"，
      * 此时第一次抽取不做排除（也符合"连着两条"的语义）。
      */
-    private var lastBubbleText: String? = null
+    private var lastBubbleText: BubbleTextStore.Item? = null
 
     /**
      * 深色模式下气泡**内部填充**是否换成灰底（用户 2026-10-16 指定，取自他给的图）。
@@ -80,13 +80,13 @@ class PetService : Service(), PetView.Host {
         get() = !AccentTheme.isLight(this, prefs.themeMode)
 
     /**
-     * 随机取一条要显示的气泡文案（用户 2026-10-16：每次随机，**不需要按顺序**）。
+     * 随机取一条要显示的气泡内容（用户 2026-10-16：每次随机，**不需要按顺序**）。
      *
-     * ⚠️ 随机但**不连着两条相同**（用户要求）：从已启用的条目里把上一条排除掉再抽；
-     *    只剩一条时无解，那就还是它。返回 null = 没有已启用的内容（气泡不显示文字）。
+     * ⚠️ 随机但**不连着两条相同**（用户要求）：把上一条排除掉再抽；
+     *    只剩一条时无解，那就还是它。返回 null = 没有已启用的内容（气泡不显示内容）。
      */
-    private fun pickBubbleText(): String? {
-        val all = BubbleTextStore.enabledTexts(this)
+    private fun pickBubbleText(): BubbleTextStore.Item? {
+        val all = BubbleTextStore.enabledItems(this)
         if (all.isEmpty()) {
             lastBubbleText = null
             return null
@@ -96,6 +96,25 @@ class PetService : Service(), PetView.Host {
         val pick = if (pool.isEmpty()) all.random() else pool.random()
         lastBubbleText = pick
         return pick
+    }
+
+    /** 把一条内容装到气泡上：图片条目解码位图、文本条目直接给文字 */
+    private fun applyBubbleItem(view: BubbleView, pet: PetView, item: BubbleTextStore.Item?) {
+        if (item == null) {
+            view.text = ""
+            view.image = null
+            return
+        }
+        val bmp = if (item.isImage) {
+            BubbleTextStore.imageFile(this, item.image)?.let { f ->
+                android.graphics.BitmapFactory.decodeFile(f.absolutePath)
+            }
+        } else {
+            null
+        }
+        view.image = bmp
+        view.text = if (bmp == null) item.text else ""
+        view.textColor = bubbleTextColor(pet)
     }
 
     /**
@@ -1077,22 +1096,16 @@ class PetService : Service(), PetView.Host {
         val bubblePad = Math.round(bw * BUBBLE_PAD_RATIO)
         view.padPx = bubblePad
         // 气泡内容（用户 2026-10-16）：每次冒泡**随机**取一条（"不需要按顺序"），
-        // 且**不连着两条相同**（[pickBubbleText] 里排除上一条）。
-        // 只从**已启用**的条目里取；文字色用人物发色的派生色。
-        val first = pickBubbleText()
-        if (first != null) {
-            view.text = first
-            view.textColor = bubbleTextColor(pet)
-        }
+        // 且**不连着两条相同**（[pickBubbleText] 里排除上一条）。文本/图片都在候选里。
+        applyBubbleItem(view, pet, pickBubbleText())
         // 点气泡：压缩回弹；**缩到最小、开始变大那一刻**才随机换下一条（用户 2026-10-16）
         view.onPressed = { view.press() }
         view.onPressRebound = {
             val next = pickBubbleText()
             if (next != null) {
-                view.text = next
-                view.textColor = bubbleTextColor(pet)
-                view.restartHold()          // 新文案完整显示一个停留时长
-                // ⚠️ 收窗口的时间也要跟着重排，否则新文案会被原来那次收窗口提前掐掉
+                applyBubbleItem(view, pet, next)
+                view.restartHold()          // 新内容完整显示一个停留时长
+                // ⚠️ 收窗口的时间也要跟着重排，否则新内容会被原来那次收窗口提前掐掉
                 bubbleHide?.let { mainHandler.removeCallbacks(it) }
                 val hide = Runnable { hideBubble() }
                 bubbleHide = hide

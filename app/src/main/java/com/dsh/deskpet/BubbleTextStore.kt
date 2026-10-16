@@ -21,6 +21,14 @@ object BubbleTextStore {
     /** 每条的字数上限（用户要求：20 汉字，或与其数量相同的其它字符） */
     const val MAX_CHARS = 20
 
+    /**
+     * 图片条目**转存时的长边上限**（像素）。
+     *
+     * 气泡里最大也就几百像素，标签里的缩略图只有一行字那么高；
+     * 手机上随手一张 4000px 的图原样存下来，解码慢、内存也吃不消。
+     */
+    const val IMAGE_MAX_PX = 512
+
     private const val KEY = "bubble_texts"
 
     /**
@@ -45,19 +53,38 @@ object BubbleTextStore {
      * 一条气泡内容。
      *
      * [enabled] = 该条**是否会出现在气泡里**（用户 2026-10-16：标签右侧有「已启用 / 启用」
-     * 按钮管理这件事）。被停用的条目仍留在列表里、仍可编辑删除，只是轮播时跳过。
+     * 按钮管理这件事）。被停用的条目仍留在列表里、仍可编辑删除，只是随机时不参与。
+     *
+     * [image] = 图片文件名（非空即"图片条目"，此时 [text] 为空）；空串 = 文本条目。
+     * 图片**不塞进 prefs**，而是复制/转码到 [imageDir] 下按文件名引用 ——
+     * prefs 里只存这个名字，列表顺序与启用状态才存在 prefs 里。
      */
-    data class Item(val text: String, val enabled: Boolean)
+    data class Item(
+        val text: String,
+        val enabled: Boolean,
+        val image: String = ""
+    ) {
+        val isImage: Boolean get() = image.isNotEmpty()
+    }
 
     /**
      * 每行开头的"启用标志"前缀：`1\u0001` / `0\u0001`。
      *
      * 用一个控制字符收尾是为了**老存档兼容**：早先存的是纯文本（没有标志），
-     * 那种行不匹配前缀 -> 按"启用"处理。若只用单个 '0'/'1' 当标志，
+     * 那种行不匹配前缀 -> 按"启用 + 文本"处理。若只用单个 '0'/'1' 当标志，
      * 一条以数字 1 开头的内容（例如"1号方案"）会被误吞掉首字符。
      */
     private const val FLAG_ON = "1\u0001"
     private const val FLAG_OFF = "0\u0001"
+
+    /**
+     * 紧随启用标志之后的"类型标志"：`T\u0001` = 文本、`I\u0001` = 图片。
+     *
+     * 加上它之后，一行是 `<启用><类型><载荷>`；2.1.76 及更早只有 `<启用><文本>`，
+     * 解出来时"类型标志"不匹配就按文本处理 —— 老数据因此照常可用。
+     */
+    private const val TYPE_TEXT = "T\u0001"
+    private const val TYPE_IMAGE = "I\u0001"
 
     // ------------------------------------------------------------ 纯函数（可单测）
 
@@ -126,25 +153,36 @@ object BubbleTextStore {
      */
     fun encode(items: List<String>): String = items.joinToString("\n") { escape(it) }
 
-    /** 带启用标志的编码（界面落盘用这个） */
+    /** 带启用/类型标志的编码（界面落盘用这个） */
     fun encodeItems(items: List<Item>): String = items.joinToString("\n") {
-        (if (it.enabled) FLAG_ON else FLAG_OFF) + escape(it.text)
+        val flag = if (it.enabled) FLAG_ON else FLAG_OFF
+        if (it.isImage) flag + TYPE_IMAGE + escape(it.image)
+        else flag + TYPE_TEXT + escape(it.text)
     }
 
     private fun escape(s: String): String =
         s.replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r")
 
     /**
-     * 解析 [encodeItems] 写出的串（带启用标志）；空串 = 空列表。
+     * 解析 [encodeItems] 写出的串（带启用 + 类型标志）；空串 = 空列表。
      *
-     * 老存档（没有标志前缀）按"启用"处理 —— 见 [FLAG_ON] 的说明。
+     * 兼容两种老存档：没有标志的纯文本行、以及 2.1.76 那种"只有启用标志"的行 ——
+     * 都按"启用 + 文本"读，且首字符不会被吞。
      */
     fun decodeItems(raw: String?): List<Item> =
         decode(raw).filter { it.isNotEmpty() }.map { line ->
+            var rest = line
+            var enabled = true
             when {
-                line.startsWith(FLAG_OFF) -> Item(line.substring(FLAG_OFF.length), enabled = false)
-                line.startsWith(FLAG_ON) -> Item(line.substring(FLAG_ON.length), enabled = true)
-                else -> Item(line, enabled = true)          // 老存档：一律视为启用
+                rest.startsWith(FLAG_OFF) -> { enabled = false; rest = rest.substring(FLAG_OFF.length) }
+                rest.startsWith(FLAG_ON) -> { enabled = true; rest = rest.substring(FLAG_ON.length) }
+            }
+            when {
+                rest.startsWith(TYPE_IMAGE) ->
+                    Item(text = "", enabled = enabled, image = rest.substring(TYPE_IMAGE.length))
+                rest.startsWith(TYPE_TEXT) ->
+                    Item(text = rest.substring(TYPE_TEXT.length), enabled = enabled)
+                else -> Item(text = rest, enabled = enabled)      // 老存档：纯文本
             }
         }
 
@@ -180,9 +218,88 @@ object BubbleTextStore {
     fun items(ctx: Context): List<Item> =
         decodeItems(Prefs(ctx).bubbleTextsRaw).take(MAX_ITEMS)
 
-    /** 只要**已启用**的条目文字 —— 气泡轮播用这个 */
+    /** 只要**已启用**的条目 —— 气泡随机取用这个（文本与图片都在里面） */
+    fun enabledItems(ctx: Context): List<Item> = items(ctx).filter { it.enabled }
+
+    /** 只要**已启用**的条目文字（图片条目为空串，气泡那边按 [Item.isImage] 分支） */
     fun enabledTexts(ctx: Context): List<String> =
         items(ctx).filter { it.enabled }.map { it.text }
+
+    // ------------------------------------------------------------ 图片条目
+
+    /** 图片条目的存放目录（应用私有目录，不需要任何存储权限） */
+    fun imageDir(ctx: Context): java.io.File =
+        java.io.File(ctx.filesDir, "bubble_images").apply { mkdirs() }
+
+    /** 图片条目的绝对路径（文件不在则返回 null） */
+    fun imageFile(ctx: Context, name: String): java.io.File? {
+        if (name.isEmpty()) return null
+        val f = java.io.File(imageDir(ctx), name)
+        return if (f.isFile) f else null
+    }
+
+    /**
+     * 把用户选中的图片**转存**成气泡用的 PNG，返回文件名。
+     *
+     * · 支持常见格式与 GIF —— 统一由 `BitmapFactory` 解码（动图取**第一帧**），
+     *   再转成 PNG 落盘，之后气泡与标签都只读这一份；
+     * · 顺带**限制长边**（[IMAGE_MAX_PX]）：手机上随手一张 4000px 的图，
+     *   原样存下来解码会很慢、内存也吃不消，而气泡里最大也就几百像素；
+     * · 解码失败返回 null（界面提示"这张图片读不出来"）。
+     */
+    fun importImage(ctx: Context, uri: android.net.Uri): String? {
+        val name = "img_${System.currentTimeMillis()}.png"
+        val bmp = try {
+            ctx.contentResolver.openInputStream(uri)?.use { input ->
+                val raw = android.graphics.BitmapFactory.decodeStream(input) ?: return null
+                val long = maxOf(raw.width, raw.height)
+                if (long <= IMAGE_MAX_PX) raw else {
+                    val k = IMAGE_MAX_PX.toFloat() / long
+                    android.graphics.Bitmap.createScaledBitmap(
+                        raw,
+                        (raw.width * k).toInt().coerceAtLeast(1),
+                        (raw.height * k).toInt().coerceAtLeast(1),
+                        true
+                    ).also { raw.recycle() }
+                }
+            }
+        } catch (e: Exception) {
+            null
+        } ?: return null
+        return try {
+            java.io.FileOutputStream(java.io.File(imageDir(ctx), name)).use {
+                bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+            }
+            bmp.recycle()
+            name
+        } catch (e: Exception) {
+            bmp.recycle()
+            null
+        }
+    }
+
+    /** 追加一条**图片**（已达上限或转存失败时返回 null，由界面提示） */
+    fun addImage(ctx: Context, uri: android.net.Uri): List<Item>? {
+        val cur = items(ctx)
+        if (cur.size >= MAX_ITEMS) return null
+        val name = importImage(ctx, uri) ?: return null
+        val next = cur + Item(text = "", enabled = true, image = name)
+        saveItems(ctx, next)
+        return next
+    }
+
+    /** 删掉第 [index] 条（越界原样返回）；图片条目连同文件一起删 */
+    fun removeAtItem(ctx: Context, index: Int): List<Item> {
+        val cur = items(ctx)
+        if (index !in cur.indices) return cur
+        val victim = cur[index]
+        val next = cur.toMutableList().also { it.removeAt(index) }
+        saveItems(ctx, next)
+        if (victim.isImage) {
+            runCatching { java.io.File(imageDir(ctx), victim.image).delete() }
+        }
+        return next
+    }
 
     /** 文本列表（兼容旧调用：全部条目的文字） */
     fun list(ctx: Context): List<String> = items(ctx).map { it.text }

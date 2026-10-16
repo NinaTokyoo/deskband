@@ -1386,7 +1386,9 @@ class MainActivity : Activity() {
      * [refreshBubbleTextButton]）-> 点确认才删、点取消退回上一步。
      */
     private fun makeBubbleTextTag(index: Int, item: BubbleTextStore.Item, topMargin: Int): View {
+        // 根布局是 LinearLayout（图片条目要往最前面插缩略图，所以取具体类型）
         val tag = layoutInflater.inflate(R.layout.item_bubble_text_tag, rowsBubbleText, false)
+            as android.widget.LinearLayout
         tag.layoutParams = android.widget.LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply { this.topMargin = topMargin }
@@ -1414,8 +1416,26 @@ class MainActivity : Activity() {
             }
         }
 
-        // ⚠️ 只用来定**初始**文案。点击时不能再依赖它 —— 那是创建瞬间的快照，
-        //    原地更新（不重建）之后它就过期了，见下面两处"现读"的注释。
+        // 图片条目：把缩略图放在标签**最前面（第一个字的位置）**，大小与一行文字相同。
+        // 用 inSampleSize 直接解到接近缩略图尺寸，20 条一起建也不会慢。
+        if (item.isImage) {
+            val side = editBubbleText.textSize.toInt().coerceAtLeast(dp(dm, 16f))
+            val iv = android.widget.ImageView(this).apply {
+                layoutParams = android.widget.LinearLayout.LayoutParams(side, side)
+                    .apply { marginEnd = gap / 2 }
+                scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            }
+            BubbleTextStore.imageFile(this, item.image)?.let { f ->
+                val opts = android.graphics.BitmapFactory.Options().apply {
+                    inSampleSize = sampleSizeFor(f, side)
+                }
+                android.graphics.BitmapFactory.decodeFile(f.absolutePath, opts)?.let {
+                    iv.setImageBitmap(it)
+                }
+            }
+            tag.addView(iv, 0)
+        }
+
         val pending = index == pendingBubbleDelete
         tag.findViewById<TextView>(R.id.txtBubbleTagDelete).apply {
             layoutParams = android.widget.LinearLayout.LayoutParams(delW, ViewGroup.LayoutParams.MATCH_PARENT)
@@ -1442,7 +1462,7 @@ class MainActivity : Activity() {
                 //    -> 再点「确认」时它以为还是第一次，只是又把状态设成待确认，标签永远删不掉
                 //    （用户实测："点击确认之后并没有删除标签"）。
                 if (pendingBubbleDelete == index) {
-                    BubbleTextStore.removeAt(this@MainActivity, index)
+                    BubbleTextStore.removeAtItem(this@MainActivity, index)
                     pendingBubbleDelete = null
                     renderBubbleTextTags()          // 列表少了一条、下标会前移 -> 只能重建
                     Toast.makeText(
@@ -1521,6 +1541,22 @@ class MainActivity : Activity() {
     }
 
     /**
+     * 缩略图解码用的 inSampleSize：把长边降到接近 [target] 像素。
+     * 图片条目最多 20 条，不采样的话进一次管理要解 20 张大图。
+     */
+    private fun sampleSizeFor(f: java.io.File, target: Int): Int {
+        val opts = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeFile(f.absolutePath, opts)
+        var s = 1
+        var long = maxOf(opts.outWidth, opts.outHeight)
+        while (long / 2 >= target.coerceAtLeast(1) * 2) {
+            s *= 2
+            long /= 2
+        }
+        return s
+    }
+
+    /**
      * 把 [text] 截到"在 [width] 宽、[maxLines] 行以内放得下"的最长前缀。
      *
      * 用系统的 [android.text.StaticLayout] 试排一次（与 TextView 自己同一套折行规则），
@@ -1540,10 +1576,57 @@ class MainActivity : Activity() {
         return text.substring(0, end).trimEnd()
     }
 
+    /**
+     * 「新增」先给两个选项（用户 2026-10-16）：**文本** 或 **图片**。
+     *
+     * · 文本 -> 展开原来的输入表单（[BUBBLE_ADD]）；
+     * · 图片 -> 直接开系统文件选择器（`ACTION_OPEN_DOCUMENT`，类型选所有图片）——
+     *   常见格式与 GIF 都在里面（GIF 取第一帧转存成 PNG，见 [BubbleTextStore.importImage]）。
+     *
+     * ⚠️ 注释里**不要**出现 "image/" 后面紧跟星号那种写法：Kotlin 的块注释可以嵌套，
+     *    那个斜杠星号会再开一层注释，后面的结束符只关掉内层 —— 整个文件从此"注释未闭合"。
+     */
+    private fun chooseBubbleKind() {
+        if (BubbleTextStore.items(this).size >= BubbleTextStore.MAX_ITEMS) {
+            Toast.makeText(this, R.string.bubble_text_full, Toast.LENGTH_SHORT).show()
+            return
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.bubble_text_pick_kind)
+            .setItems(
+                arrayOf(
+                    getString(R.string.bubble_text_kind_text),
+                    getString(R.string.bubble_text_kind_image)
+                )
+            ) { _, which ->
+                if (which == 0) {
+                    setBubbleTextMode(BUBBLE_ADD)
+                } else {
+                    pickBubbleImage()
+                }
+            }
+            .show()
+    }
+
+    /** 选图片：与自定义形象用同一套（系统文件选择器，无需任何存储权限） */
+    private fun pickBubbleImage() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "image/*"
+        }
+        try {
+            startActivityForResult(intent, REQ_PICK_BUBBLE_IMAGE)
+        } catch (e: Exception) {
+            Toast.makeText(this, R.string.custom_no_picker, Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private fun setupBubbleTextControls() {
         btnBubbleTextAdd.setOnClickListener {
             // 不受锁定限制（用户要求）：增删照常可用
-            if (bubbleTextMode == BUBBLE_ADD) saveBubbleText() else setBubbleTextMode(BUBBLE_ADD)
+            // ⚠️ 新增时**先给两个选项**（用户 2026-10-16）：文本 / 图片。
+            //    在新增态里这个按钮是「保存」，所以只有非新增态才弹选择。
+            if (bubbleTextMode == BUBBLE_ADD) saveBubbleText() else chooseBubbleKind()
         }
         btnBubbleTextManage.setOnClickListener {
             when {
@@ -1643,6 +1726,16 @@ class MainActivity : Activity() {
             REQ_PICK_CORNER -> {
                 pickedCorner = uri
                 showPickedImage(imgCustomCorner, txtPlusCustomCorner, uri)
+            }
+            REQ_PICK_BUBBLE_IMAGE -> {
+                // 气泡的图片条目：转存成 PNG（限长边）后加入列表，默认启用
+                val ok = BubbleTextStore.addImage(this, uri)
+                if (ok == null) {
+                    Toast.makeText(this, R.string.bubble_text_bad_image, Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, R.string.bubble_text_image_added, Toast.LENGTH_SHORT).show()
+                    renderBubbleTextTags()
+                }
             }
         }
     }
@@ -2458,9 +2551,10 @@ class MainActivity : Activity() {
          */
         const val BUBBLE_DELETE_SLOT_DP = 68f
 
-        /** 选图请求码：主素材 / 角落素材各一个 */
+        /** 选图请求码：主素材 / 角落素材 / 气泡图片各一个 */
         const val REQ_PICK_UPRIGHT = 9001
         const val REQ_PICK_CORNER = 9002
+        const val REQ_PICK_BUBBLE_IMAGE = 9003
 
         /**
          * 管理标签里"删除控件"的**固定高度**（dp）。

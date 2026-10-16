@@ -86,6 +86,12 @@
     <!-- 标签右侧的删除按钮：就地两步（点「删除」本按钮变「确认」，顶部变「取消」） -->
     <string name="bubble_text_delete">删除</string>
     <string name="bubble_text_confirm">确认</string>
+    <!-- 新增气泡内容时先选类型（用户 2026-10-16：先给两个选项） -->
+    <string name="bubble_text_pick_kind">新增气泡内容</string>
+    <string name="bubble_text_kind_text">文本</string>
+    <string name="bubble_text_kind_image">图片</string>
+    <string name="bubble_text_image_added">已添加图片</string>
+    <string name="bubble_text_bad_image">这张图片读不出来，换一张试试</string>
 
     <!-- ③ 外观 -->
     <string name="section_look">外观尺寸</string>

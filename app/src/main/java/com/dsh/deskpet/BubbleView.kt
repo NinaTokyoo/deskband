@@ -110,6 +110,14 @@ class BubbleView(context: Context) : View(context) {
     var textColor: Int = 0xFF000000.toInt()
 
     /**
+     * **图片条目**的位图（用户 2026-10-16 新增；null = 显示 [text]）。
+     *
+     * 图片以"合适大小居中"放进大椭圆（见 [drawImage]），与文字走同一套出现/消失时机，
+     * 也一起参与点气泡的缩放。
+     */
+    var image: Bitmap? = null
+
+    /**
      * 窗口四周的**透明余量**（像素，由服务下发）。
      *
      * ⚠️ 为什么需要它：点气泡的"压缩回弹"在回弹段会略微**超过原尺寸**（过冲约 3.5%），
@@ -286,13 +294,46 @@ class BubbleView(context: Context) : View(context) {
         // 文字必须永远是正的（用户 2026-10-16 定的排版原则见 [drawText]）。
         //
         // ⚠️ 出现/消失与**大气泡**严格对齐（用户 2026-10-16）：
-        //    · 大气泡完全出现那一刻（= 出现段结束 APPEAR_MS）才显示文字；
-        //    · 大气泡开始缩小的那一瞬间（= 停留段结束 APPEAR_MS + HOLD_MS）文字立刻消失。
+        //    · 大气泡完全出现那一刻（= 出现段结束 APPEAR_MS）才显示内容；
+        //    · 大气泡开始缩小的那一瞬间（= 停留段结束 APPEAR_MS + HOLD_MS）内容立刻消失。
         //    三块的消失顺序是大->中->小，所以"大气泡开始缩"正好是消失段的起点。
-        //    拖动/再点触发的 [vanishNow] 把时间轴拨到同一个点，于是文字也同时消失 —— 天然一致。
-        if (text.isNotEmpty() && t >= APPEAR_MS && t < APPEAR_MS + HOLD_MS) drawText(canvas)
+        //    拖动/再点触发的 [vanishNow] 把时间轴拨到同一个点，于是内容也同时消失 —— 天然一致。
+        val inHold = t >= APPEAR_MS && t < APPEAR_MS + HOLD_MS
+        if (inHold && image != null) {
+            drawImage(canvas, image!!, now)
+        } else if (inHold && text.isNotEmpty()) {
+            drawText(canvas)
+        }
 
         if (!finished(now)) postInvalidateOnAnimation()
+    }
+
+    /**
+     * 把**图片条目**画进大椭圆：等比缩放到"合适大小"后居中（用户 2026-10-16）。
+     *
+     * "合适大小" = 可用区（椭圆内切矩形，再留 12% 空隙）的 **66%** ——
+     * 既明显又不贴边；长宽比保持不变（不拉伸）。
+     * 与文字一样跟着大气泡做压缩回弹缩放。
+     */
+    private fun drawImage(canvas: Canvas, bmp: Bitmap, now: Long) {
+        val box = bigEllipseScreenBox() ?: return
+        val cx = box[0]
+        val cy = box[1]
+        val rx = box[2]
+        val ry = box[3]
+        if (rx <= 2f || ry <= 2f || bmp.width <= 0 || bmp.height <= 0) return
+        // 椭圆内切矩形（边长 = 半轴 × √2），再乘 0.66 作为"合适大小"
+        val maxW = rx * 1.4142f * 2f * IMAGE_FIT
+        val maxH = ry * 1.4142f * 2f * IMAGE_FIT
+        val k = minOf(maxW / bmp.width, maxH / bmp.height)
+        val w = bmp.width * k
+        val h = bmp.height * k
+        val press = pressScale(PART_COUNT - 1, now)
+        canvas.save()
+        canvas.scale(press, press, cx, cy)
+        dst.set(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f)
+        canvas.drawBitmap(bmp, null, dst, paint)
+        canvas.restore()
     }
 
     /**
@@ -594,6 +635,12 @@ class BubbleView(context: Context) : View(context) {
         private const val BASELINE_RATIO = 0.80f
         /** 一个汉字约占字号的这个比例（用于算"3 个字的字号"封顶） */
         private const val CHAR_W_RATIO = 1.0f
+
+        /**
+         * 图片条目占"椭圆内切矩形"的比例 —— 用户要求"以合适大小居中放到气泡里面"。
+         * 0.66 是"明显但不贴边"的取值（图片与文字一样，四周都要留出空隙）。
+         */
+        private const val IMAGE_FIT = 0.66f
 
         // ---- 点气泡时的"压缩回弹" ----
         /** 整段动画时长 */

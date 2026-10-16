@@ -93,6 +93,24 @@ class BubbleTextStoreTest {
     }
 
     @Test
+    fun image_items_round_trip_and_stay_apart_from_text() {
+        // 用户 2026-10-16：气泡内容支持"图片"条目（以文件名引用，不塞进 prefs）
+        val items = listOf(
+            BubbleTextStore.Item("这是文本", enabled = true),
+            BubbleTextStore.Item("", enabled = true, image = "img_1.png"),
+            BubbleTextStore.Item("", enabled = false, image = "img_2.png")
+        )
+        val back = BubbleTextStore.decodeItems(BubbleTextStore.encodeItems(items))
+        assertEquals(items, back)
+        // 图片条目的 text 为空、isImage 为真；文本条目反之
+        org.junit.Assert.assertTrue(back[1].isImage)
+        org.junit.Assert.assertFalse(back[0].isImage)
+        assertEquals("img_2.png", back[2].image)
+        // 类型标志不会被误当成内容：图片条目解出来 text 必须是空串
+        assertEquals("", back[1].text)
+    }
+
+    @Test
     fun encode_decode_round_trip() {
         val items = listOf("第一句", "带\\反斜杠", "带\n换行", "emoji 🐟", "")
         assertEquals(items, BubbleTextStore.decode(BubbleTextStore.encode(items)))
