@@ -26,13 +26,14 @@
     android:paddingTop="8dp"
     android:paddingBottom="8dp">
 
-    <!-- 内容：最多**两行**（用户 2026-10-16 从三行改回两行），超出由代码截断并补 "..." -->
-    <TextView
+    <!-- 内容：最多**两行**（用户 2026-10-16 从三行改回两行），超出由**本类自己**在
+         布局阶段截断并补 "..."（BubbleTagTextView）—— 不能用系统 ellipsize：
+         它画的是单个"…"字形、点数不是三个，而且第一帧会是"…"、第二帧才被截短，看着像闪烁 -->
+    <com.dsh.deskpet.BubbleTagTextView
         android:id="@+id/txtBubbleTagText"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:maxLines="2"
         android:ellipsize="end"
         android:lineSpacingExtra="2dp"
         android:textSize="14sp" />

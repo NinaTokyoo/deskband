@@ -1410,21 +1410,12 @@ class MainActivity : Activity() {
         val delW = btnBubbleTextAdd.width.coerceAtLeast(dp(dm, 56f))
         val togW = btnBubbleTextManage.width.coerceAtLeast(dp(dm, 64f))
 
-        tag.findViewById<TextView>(R.id.txtBubbleTagText).apply {
-            text = item.text
+        tag.findViewById<BubbleTagTextView>(R.id.txtBubbleTagText).apply {
+            // ⚠️ 用 setFullText：截断与"补三个点"由这个 View 自己在**布局阶段**做，
+            //    不是先塞全文再 `post{}` 改 —— 后者会让省略号闪一下、文字瞬移
+            //    （用户 2026-10-17 实测反馈）。
+            setFullText(item.text)
             setTextColor(AccentTheme.skinBoxText(lightMode))
-            maxLines = 2
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            // 显示不下就用**省略号（三个点）**收尾（用户要求）。
-            // ⚠️ 不只靠 ellipsize：它画的是单个"…"字形、点数不是三个 ——
-            //    所以按真实可用宽度自行截到两行，再补三个点。
-            post {
-                val avail = width - paddingStart - paddingEnd
-                if (avail <= 0) return@post
-                val full = text?.toString() ?: return@post
-                val fit = fitLines(full, paint, avail, lineSpacingExtra, 2)
-                if (fit != full) text = fit + "..."
-            }
         }
 
         // 图片条目：把缩略图放在标签**最前面（第一个字的位置）**。
@@ -1631,7 +1622,10 @@ class MainActivity : Activity() {
             when {
                 bubbleTextMode == BUBBLE_MANAGE && pendingBubbleDelete != null -> {
                     pendingBubbleDelete = null
-                    renderBubbleTextTags()
+                    // ⚠️ 只原地刷按钮文字，**不重建列表**：重建会让每个标签重新布局，
+                    //    省略号那一帧的变化看起来就是"其他标签闪一下、文字瞬移"
+                    //    （用户 2026-10-17 实测反馈）。
+                    refreshBubbleTagButtons()
                 }
                 else -> setBubbleTextMode(
                     if (bubbleTextMode == BUBBLE_NONE) BUBBLE_MANAGE else BUBBLE_NONE
