@@ -874,27 +874,43 @@ class PetService : Service(), PetView.Host {
     }
 
     /**
-     * 人物"压缩完、开始弹起"的那一刻（PetView 只在**吸附右边框 + 下半屏**时回调）。
+     * 人物"压缩完、开始弹起"的那一刻。
      *
      * 气泡就在这一刻开始出现，与弹起同步 —— 用户要求："当人物压缩完开始弹起时，
      * 气泡按照上述相对位置和大小同步开始出现"。
+     *
+     * ⚠️ 用户 2026-10-16 追加：**气泡还在时**（出现动画中、停留的 1.8s 内、乃至正在消失）
+     * 再点一下人物，不再冒新的，而是让当前这个**立刻播放消失动画**。
+     * 于是"点一下出气泡、再点一下收气泡"成为一个干净的开关，
+     * 也不会出现"旧气泡被瞬间抹掉、新气泡从头开始播"的跳变。
      */
-    override fun onJumpStart() = showBubble()
+    override fun onJumpStart() {
+        if (bubbleView != null) {
+            android.util.Log.i("BubbleGeom", "onJumpStart -> 气泡还在，改为消失")
+            vanishBubbleNow()
+        } else {
+            showBubble()
+        }
+    }
 
     /**
      * 开始拖动人物 —— 用户 2026-10-16 新增规则："拖动人物时，气泡立刻播放消失动画并消失"。
-     *
-     * 只让气泡**进入消失段**（由大到小缩没，0.15s），不直接收窗口：
-     * 收窗口还是走原来那条"时间轴走完"的路，动画因此不会被打断。
-     * 正在出现 / 停留中的气泡都适用；没有气泡时什么都不做。
      */
     override fun onDragStart() {
-        val v = bubbleView ?: return
         android.util.Log.i("BubbleGeom", "onDragStart -> vanish")
+        vanishBubbleNow()
+    }
+
+    /**
+     * 让当前气泡**立刻播放消失动画**（由大到小缩没 0.15s），并把收窗口重排到动画结束之后。
+     *
+     * ⚠️ 收窗口必须重排：原来那次收窗口挂在"气泡出现 + 1.88s"，气泡虽然看不见了，
+     *    但那个**可触摸**的悬浮窗会继续留着吃触摸（用户实测"拖动收不到"就是它）。
+     *    正在出现 / 停留 / 正在消失的气泡都可以调用；没有气泡时什么都不做。
+     */
+    private fun vanishBubbleNow() {
+        val v = bubbleView ?: return
         v.vanishNow()
-        // ⚠️ 立刻把"收窗口"的时间重排到动画结束之后。
-        //    原来那次收窗口还挂在"气泡出现 + 1.88s"，气泡虽然看不见了，但那个
-        //    **可触摸**的悬浮窗会一直留着吃触摸 —— 用户实测拖动完全收不到就是这个原因。
         bubbleHide?.let { mainHandler.removeCallbacks(it) }
         val hide = Runnable { hideBubble() }
         bubbleHide = hide
