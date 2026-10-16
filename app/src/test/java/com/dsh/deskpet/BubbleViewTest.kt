@@ -172,4 +172,29 @@ class BubbleViewTest {
         assertTrue(BubbleView.PART_BOX[big][0] > BubbleView.PART_BOX[mid][0])
         assertTrue(BubbleView.PART_BOX[mid][0] > BubbleView.PART_BOX[small][0])
     }
+
+    @Test
+    fun dark_part_boxes_keep_the_same_invariants() {
+        // 深色模式那套素材（用户 2026-10-16 提供）是另一张画：大气泡横在上方、
+        // 两个小圈拖在左下。两条不变量必须与浅色那套一致 ——
+        // ① 三块都在组外框内；② **小圈在左**（尾巴朝向人物那一侧的约定，镜像逻辑依赖它）。
+        val boxes = BubbleView.partBoxes(dark = true)
+        assertEquals(BubbleView.PART_COUNT, boxes.size)
+        for (box in boxes) {
+            assertTrue("左/上不能为负", box[0] >= -0.01f && box[1] >= -0.01f)
+            // 容差放到 1%：深色素材抠图时每边留了 3px 抗锯齿余量，
+            // 小圈那块因此会略微越出组外框（约 0.15%），视觉上无影响。
+            assertTrue("右不能越界", box[0] + box[2] <= 1.01f)
+            assertTrue("下不能越界", box[1] + box[3] <= 1.01f)
+        }
+        assertTrue("小圈应在最左（尾巴在左）", boxes[small][0] < boxes[mid][0])
+        // 深色这张画的大气泡**横在上方**（整宽、只占上 73%），两个小圈拖在它下面 ——
+        // 与浅色那套"大气泡在右、小圈在左侧中部"是不同的构图，但组外框都归一化到 (0,0)-(1,1)。
+        assertEquals(0f, boxes[big][0], 0.01f)
+        assertTrue(boxes[big][3] < 0.85f)
+        assertTrue("中圈应在大气泡下方", boxes[mid][1] > boxes[big][1] + boxes[big][3] - 0.01f)
+        assertTrue("小圈应在中圈下方", boxes[small][1] > boxes[mid][1])
+        // 浅色套不受影响
+        assertTrue(BubbleView.partBoxes(dark = false)[big][3] > 0.99f)
+    }
 }

@@ -64,6 +64,15 @@ class PetService : Service(), PetView.Host {
     private var bubbleHide: Runnable? = null
 
     /**
+     * 气泡是否用**深色模式**那套素材（用户 2026-10-16 提供的新图）。
+     *
+     * 跟随 App 的「外观模式」（跟随系统 / 强制浅色 / 强制深色），每次冒泡现读 ——
+     * 改完设置下一次点击就生效，不用重启。它同时影响可见区域（供防重叠判定）。
+     */
+    private val bubbleDark: Boolean
+        get() = !AccentTheme.isLight(this, prefs.themeMode)
+
+    /**
      * 屏幕是否点亮。
      *
      * ⚠️ 初值必须**真读一次** `PowerManager.isInteractive`，不能写死 true：
@@ -969,7 +978,7 @@ class PetService : Service(), PetView.Host {
             val pt = a[10]
             val pr = pl + a[11]
             val pb = pt + a[12]
-            val ellipses = BubbleView.visibleEllipses(bw, bh, bubbleRot, artMirror, false)
+            val ellipses = BubbleView.visibleEllipses(bw, bh, bubbleRot, artMirror, false, bubbleDark)
             for (e in ellipses) {
                 val ecx = fx + e[0]
                 val ecy = fy + e[1]
@@ -1018,6 +1027,8 @@ class PetService : Service(), PetView.Host {
 
         hideBubble()
         val view = BubbleView(this)
+        // 深色模式那套素材：按 App 的「外观模式」现读，改完设置下一次点击就生效
+        view.dark = bubbleDark
         // 与人物素材同一套变换；"摆素材左侧"时整组要在素材系里翻过来（尾巴才朝着人物）
         // —— 右下角例外（用户确认的 C 形态），由 PetState.bubbleArtMirror 统一决定
         view.rotationDeg = bubbleRot
