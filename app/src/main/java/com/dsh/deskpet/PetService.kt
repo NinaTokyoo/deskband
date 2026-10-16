@@ -904,22 +904,32 @@ class PetService : Service(), PetView.Host {
         val size = BubbleView.windowSize(w, bubbleRot)
         val bw = size[0]
         val bh = size[1]
-        // ⚠️ 偏移用 **spriteRot**（气泡摆在人物的哪一侧是人物朝向决定的）；
-        //    bubbleRot 只管气泡图案自己怎么转（右下角 -90°）。
-        val off = BubbleView.screenOffset(w, side, mirror, flipV, spriteRot)
+        // ⚠️ 偏移一律按**下边那套**算（flipV 传 false）：上边组不再自己推"中心 ± 偏移"，
+        //    而是算完位置后把整个窗口对人物矩形做竖直镜像（见下面的 mirrorToTop）。
+        //    这样"上边 = 下边的上下镜像"就是构造出来的，不依赖任何中间量。
+        val off = BubbleView.screenOffset(w, side, mirror, false, spriteRot)
         val artMirror = PetState.bubbleArtMirror(pet.state, mirror, side, screenSide)
         val nudge = PetState.bubbleNudge(pet.state)
         val b = bounds()
         var fx = Math.round(a[0] + off[0] - bw / 2f).toInt()
         var fy = Math.round(a[1] + off[1] - bh / 2f).toInt()
-        // 个别状态再挪一点（下边/下角：移动 0.3 个气泡宽、上移 0.2 个气泡高）。
+        // 个别状态再挪一点（下边/下角：朝人物 0.3 个气泡宽、向上 0.2 个气泡高）。
         // ⚠️ 横向是"**朝人物**一侧"为正：右下角那套气泡在人物左上角、往右挪 = 朝人物；
         //    气泡摆在屏幕右侧时（左半屏/左下角）朝人物就是往左，符号取反。
-        // ⚠️ 竖直方向：上边组（flipV）是下边组的上下镜像，所以"上移"要变成"下移"。
         val nudgeSign = PetState.bubbleNudgeSign(screenSide)
-        val vSign = if (flipV) -1 else 1
         fx += nudgeSign * Math.round(nudge[0] * bw)
-        fy -= vSign * Math.round(nudge[1] * bh)
+        fy -= Math.round(nudge[1] * bh)          // 下边那套：向上
+
+        // 上边组（flipV）：把**整个窗口**对人物矩形做竖直镜像 ——
+        // 相对矩形顶边的距离，翻成相对矩形底边的同距离。图案由 BubbleView.flipV 翻转。
+        if (flipV) {
+            val pr = petParams
+            fy = if (pr != null) {
+                pr.y + pr.height - (fy - pr.y) - bh
+            } else {
+                2 * a[1] - (fy + bh)             // 兜底：对人物中心翻
+            }
+        }
 
         // 原则（用户对右下角提的）：气泡**有效区域**（可见的椭圆/小圈）不得进入人物素材矩形。
         // ⚠️ 按椭圆判、不按外框判 —— 外框四角是透明的，拿外框判会把"只是角擦到"误判成相交。
