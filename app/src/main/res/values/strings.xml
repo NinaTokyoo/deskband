@@ -68,7 +68,7 @@
          内容以**标签**形式管理：一行一个、每个最多两行、多余省略号；
          删除同样是就地两步（✕ -> 确认删除），与自定义形象一致。 -->
     <string name="section_bubble_text">气泡内容</string>
-    <string name="bubble_text_input">气泡里要显示的内容</string>
+    <string name="bubble_text_input">请输入文本</string>
     <string name="bubble_text_empty">尚无气泡内容，点击新增按钮以添加</string>
     <!-- 字数提示：%1$d = 已输入字数，%2$d = 上限 -->
     <string name="bubble_text_count">%1$d / %2$d 字</string>
