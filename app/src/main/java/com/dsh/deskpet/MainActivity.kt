@@ -1478,11 +1478,8 @@ class MainActivity : Activity() {
                     BubbleTextStore.removeAtItem(this@MainActivity, index)
                     pendingBubbleDelete = null
                     renderBubbleTextTags()          // 列表少了一条、下标会前移 -> 只能重建
-                    Toast.makeText(
-                        this@MainActivity,
-                        getString(R.string.bubble_text_delete_done, item.text),
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    // ⚠️ 这里**不弹**"已删除 xxx"的提示（用户 2026-10-16：
+                    //    "删除的时候，不要出现…已删除…"）—— 标签当场消失本身就是反馈。
                 } else {
                     // 进入待确认：本按钮变「确认」、顶部变「取消」——
                     // 只原地刷按钮文字，不重建列表（重建会让所有按钮闪一下）
@@ -1896,14 +1893,16 @@ class MainActivity : Activity() {
                 ViewGroup.LayoutParams.WRAP_CONTENT, dp(dm, slotDp)
             )
             // 关掉字体自带的上下 padding，字形才会真正落在框的中间
-            // （否则 ✕ 的墨迹会偏下：实测到上边框 59px、到下边框 51px）
+            // （否则墨迹会偏下：实测到上边框 59px、到下边框 51px）
             includeFontPadding = false
             gravity = android.view.Gravity.CENTER
+            // 用户 2026-10-16：错号改成文字按钮 —— ✕ -> 「删除」、确认删除 -> 「确定」
             text = getString(
-                if (pending) R.string.custom_confirm_delete else R.string.custom_delete_mark
+                if (pending) R.string.custom_confirm_action else R.string.custom_delete_action
             )
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, if (pending) 13f else 17f)
-            // 错号是**固定的红**，不跟强调色（强调色本身可能就是红的，就分不出"删除"了）
+            // 两态都是两个字，字号统一（原来是 ✕ 17sp / 确认删除 13sp，现在都用 13sp）
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            // 删除是**固定的红**，不跟强调色（强调色本身可能就是红的，就分不出"删除"了）
             setTextColor(TAG_DELETE_RED)
             // 上下内边距给 0（靠 gravity 居中），描边背景正好铺满这个固定高度的框 ——
             // 于是"确认删除"按钮到标签描边的上 / 下 / 右三边距离 = 标签自己的内边距，
@@ -1952,8 +1951,7 @@ class MainActivity : Activity() {
         } else {
             renderCustomTags()
         }
-        Toast.makeText(this, getString(R.string.custom_delete_done, name), Toast.LENGTH_SHORT)
-            .show()
+        // ⚠️ 不弹"已删除 xxx"提示（用户 2026-10-16）：标签当场消失本身就是反馈
     }
 
     // ---------------------------------------------------------------- 回弹调节
