@@ -1150,11 +1150,16 @@
                         android:textSize="14sp"
                         android:text="@string/bubble_on_tap" />
 
-                    <!-- 启用 / 已启用：文字、颜色、宽高都由 MainActivity 按状态给 -->
+                    <!-- 启用 / 已启用：文字、颜色、宽高都由 MainActivity 按状态给。
+                         ⚠️ minWidth/minHeight 必须显式清零：TextView 的测量取
+                         `max(指定宽度, 建议最小宽度)` —— 主题里若带了最小宽度，
+                         光设 layout_width 是压不下去的（对齐问题排查时踩过）。 -->
                     <TextView
                         android:id="@+id/btnBubbleOnTap"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
                         android:gravity="center"
                         android:includeFontPadding="false"
                         android:maxLines="1"

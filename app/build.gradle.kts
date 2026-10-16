@@ -701,6 +701,14 @@ android {
         //                     宽出来的一截靠补边距救不回来。现在宽度与高度都跟随实测，
         //                     每改一次就 post 再核一次；同时把两者实测值打进 BubbleGeom 日志，
         //                     万一还不对可以直接读数据定位（不再靠推理））
+        //   2.1.97 -> 20197（气泡设置开关对齐：几何量**只留一处**决定（用户 2026-10-17 第三次反馈）：
+        //                     根因是两处互相覆盖 —— refreshBubbleSettings 每次都按兜底值重设
+        //                     宽度(64dp)/高度(DELETE_SLOT_DP)，同步函数刚改成标题按钮实测值
+        //                     又被它写回去，于是永远差 29px（截图量出：取消 left=1084、
+        //                     已启用 left=1055、右边界都是 1338）。现在宽度/高度只由
+        //                     syncBubbleToggleWidth 决定，并把 minWidth/minHeight 显式清零
+        //                     （TextView 测量取 max(指定宽度, 建议最小宽度)）。
+        //                     日志改为"改了或仍不达标"时打印，便于一步定位）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ✅ 作者声明里的版本号与完成时间**自动跟着这行走**：
         //    版本号 = vName；完成时间 = 构建时刻（buildStamp，见文件顶部）。
@@ -709,7 +717,7 @@ android {
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
         //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
         //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
-        val vName = "2.1.96"
+        val vName = "2.1.97"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()

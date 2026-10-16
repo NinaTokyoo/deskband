@@ -1275,10 +1275,12 @@ class MainActivity : Activity() {
         val on = prefs.bubbleOnTap
         val dm = resources.displayMetrics
         btnBubbleOnTap.apply {
-            layoutParams = android.widget.LinearLayout.LayoutParams(
-                btnManageBubbleSettings.width.takeIf { it > 0 } ?: dp(dm, 64f),
-                dp(dm, DELETE_SLOT_DP * resources.configuration.fontScale)
-            )
+            // ⚠️ 几何量（宽/高）**只由 [syncBubbleToggleWidth] 一处决定**：这里早先也写了一份
+            //    （宽度兜底 64dp、高度 DELETE_SLOT_DP），两边互相覆盖 —— 同步刚把宽度改成
+            //    标题按钮的实测值，这里又按兜底值写回去，于是"永远差 29px"
+            //    （用户 2026-10-17 连续三次反馈没对齐）。
+            minWidth = 0
+            minHeight = 0
             text = getString(if (on) R.string.bubble_text_enabled else R.string.bubble_pending)
             isSingleLine = true
             maxLines = 1
@@ -1347,14 +1349,19 @@ class MainActivity : Activity() {
             changed = true
         }
         if (changed) {
+            btnBubbleOnTap.minWidth = 0
+            btnBubbleOnTap.minHeight = 0
             btnBubbleOnTap.layoutParams = lp
+        }
+        // 只在"改了"或"量出来仍不等于目标"时打日志：正常一次就能收敛，日志只留证据
+        if (changed || btnBubbleOnTap.width != target) {
             android.util.Log.i(
                 "BubbleGeom",
                 "toggle sync: manage=(${a[0]},${target}x${btnManageBubbleSettings.height})" +
                     " toggle=(${b[0]},${btnBubbleOnTap.width}x${btnBubbleOnTap.height})" +
-                    " marginEnd=${lp.marginEnd}"
+                    " want=${lp.width}x${lp.height} marginEnd=${lp.marginEnd} changed=$changed"
             )
-            btnBubbleOnTap.post { syncBubbleToggleWidth() }
+            if (changed) btnBubbleOnTap.post { syncBubbleToggleWidth() }
         }
     }
 
