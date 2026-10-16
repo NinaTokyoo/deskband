@@ -41,12 +41,14 @@ class BubbleView(context: Context) : View(context) {
     )
 
     /**
-     * 是否用**深色模式**那套素材（用户 2026-10-16 提供的新图）。
+     * 深色模式：把素材里的**白底换成灰底**（用户 2026-10-16 指定的颜色，
+     * 取自他给的那张深色气泡图的底色 #A9A9A9）。
      *
      * 由服务在建窗**之前**按 App 的「外观模式」下发（跟随系统 / 强制浅色 / 强制深色）。
-     * 它同时决定三块素材、部件框 [PART_BOX_DARK] 与解码目录，所以必须在首帧前设好。
+     * ⚠️ 只换**填充色**：描边、透明通道、三块的几何（[PART_BOX]）全都不动 ——
+     *    所以已冻结的位置/尺寸规则完全不受影响。
      */
-    var dark = false
+    var grayFill = false
         set(value) {
             if (field == value) return
             field = value
@@ -112,7 +114,7 @@ class BubbleView(context: Context) : View(context) {
         if (width <= 0 || height <= 0) return
         val gw = if (rotated) height.toFloat() else width.toFloat()
         val gh = if (rotated) width.toFloat() else height.toFloat()
-        val boxes = partBoxes(dark)
+        val boxes = PART_BOX
         for (i in parts.indices) {
             val src = parts[i] ?: continue
             val tw = (boxes[i][2] * gw).toInt().coerceAtLeast(1)
@@ -174,7 +176,7 @@ class BubbleView(context: Context) : View(context) {
             // 优先用**预缩放**好的那份：绘制尺寸基本 1:1，省掉每帧的大图双线性缩小
             val bmp = scaled[i] ?: parts[i] ?: continue
             val pop = popOf(i, t) ?: continue
-            val box = partBoxes(dark)[i]
+            val box = PART_BOX[i]
             val l = box[0] * gw
             val tp = box[1] * gh
             dst.set(l, tp, l + box[2] * gw, tp + box[3] * gh)
@@ -196,23 +198,71 @@ class BubbleView(context: Context) : View(context) {
      *    （大气泡 654×896 / 145KB，解码是 10ms 量级），出现动画的头几帧就会顿一下。
      */
     private fun decode(ctx: Context, name: String): Bitmap? {
-        val dir = if (dark) DIR_DARK else DIR
-        val key = "$dir/$name"
+        val key = if (grayFill) "gray/$name" else name
         SRC_CACHE[key]?.let { if (!it.isRecycled) return it }
-        val bmp = try {
-            ctx.assets.open("$dir/$name.png").use { BitmapFactory.decodeStream(it) }
+        val raw = try {
+            ctx.assets.open("$DIR/$name.png").use { BitmapFactory.decodeStream(it) }
         } catch (e: Exception) {
             null
         } ?: return null
+        val bmp = if (grayFill) grayWhiteFill(raw) else raw
         SRC_CACHE[key] = bmp
         return bmp
+    }
+
+    /**
+     * 把素材里的**白底**整体换成灰底（描边与抗锯齿边缘按"有多白"线性映射，
+     * 于是白↔深蓝的过渡自然变成灰↔深蓝，不会留下白边）。
+     *
+     * 逐通道做同一份减法：`out = src - (255 - GRAY) * t`，
+     * `t` = 该像素"有多白"（0 = 纯描边、1 = 纯白底）。
+     * 对一个 50% 混合的抗锯齿像素，这正好等价于"把白色那半换成灰色"。
+     */
+    private fun grayWhiteFill(src: Bitmap): Bitmap {
+        val w = src.width
+        val h = src.height
+        val px = IntArray(w * h)
+        src.getPixels(px, 0, w, 0, 0, w, h)
+        val span = (255 - NAVY_FLOOR).toFloat()
+        val dropMax = 255 - GRAY_FILL
+        for (i in px.indices) {
+            val c = px[i]
+            val a = c ushr 24
+            if (a == 0) continue
+            val r = (c shr 16) and 0xFF
+            val g = (c shr 8) and 0xFF
+            val b = c and 0xFF
+            val mn = if (r < g) (if (r < b) r else b) else (if (g < b) g else b)
+            val t = ((mn - NAVY_FLOOR) / span).coerceIn(0f, 1f)
+            if (t <= 0f) continue
+            val drop = (dropMax * t).toInt()
+            px[i] = (a shl 24) or
+                ((r - drop).coerceAtLeast(0) shl 16) or
+                ((g - drop).coerceAtLeast(0) shl 8) or
+                (b - drop).coerceAtLeast(0)
+        }
+        val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        out.setPixels(px, 0, w, 0, 0, w, h)
+        return out
     }
 
     companion object {
         private const val DIR = "bubble"
 
-        /** 深色模式那套素材的目录（用户 2026-10-16 提供） */
-        private const val DIR_DARK = "bubble_dark"
+        /**
+         * 深色模式下气泡**内部填充**用的灰（用户 2026-10-16 指定）。
+         *
+         * 取自他给的那张深色气泡图的底色 —— 实测 RGB(168.8,168.8,168.8) ≈ #A9A9A9。
+         */
+        private const val GRAY_FILL = 0xA9
+
+        /**
+         * 判定"这是描边而不是白底"的通道下限。
+         *
+         * 素材描边是深蓝（最亮通道 ≈ 15），白底是 255；取 60 作分界，
+         * 介于两者之间的抗锯齿像素按比例过渡（见 [grayWhiteFill]）。
+         */
+        private const val NAVY_FLOOR = 60
 
         /**
          * 三块素材的**解码缓存**（进程内共享，键 = 素材名）。
@@ -231,35 +281,14 @@ class BubbleView(context: Context) : View(context) {
          *
          * ⚠️ 由 `tools/extract_bubble_parts.py` 生成，改动请回去重跑脚本。
          *    框各自紧贴该部件的墨水，四角是透明的（见 [visibleEllipses] 的说明）。
+         *
+         * ⚠️ 深色模式只换填充色、**不换几何** —— 所以两套模式共用这一份部件框。
          */
-        val PART_BOX_LIGHT = arrayOf(
+        val PART_BOX = arrayOf(
             floatArrayOf(0.00000f, 0.44527f, 0.09411f, 0.10299f),   // b0_small 小圈
             floatArrayOf(0.10748f, 0.30697f, 0.11689f, 0.13035f),   // b1_mid   中圈
             floatArrayOf(0.27291f, 0.00000f, 0.72709f, 1.00000f)    // b2_big   大气泡
         )
-
-        /**
-         * **深色模式**那套素材的部件框（用户 2026-10-16 提供的新图）。
-         *
-         * 与浅色那套是两张不同的画：深色这张大气泡横在上方、两个小圈拖在**左下**，
-         * 组外框同样归一化到 (0,0)-(1,1)，所以位置/尺寸规则（[GROUP_W_RATIO] 等）两套通用。
-         * 小圈在左是因为提取时**左右镜像**过 —— 浅色那套的尾巴也在左，
-         * 镜像后两套的内部朝向一致，`mirror` 那套"尾巴转向人物"的逻辑才不用分叉。
-         *
-         * ⚠️ 由 `deskband-bubble-feature/extract_bubble_dark.py` 生成。
-         */
-        val PART_BOX_DARK = arrayOf(
-            floatArrayOf(0.45345f, 0.91500f, 0.09910f, 0.08650f),   // b0_small 小圈
-            floatArrayOf(0.56507f, 0.78300f, 0.12663f, 0.11300f),   // b1_mid   中圈
-            floatArrayOf(0.00000f, 0.00000f, 1.00000f, 0.73100f)    // b2_big   大气泡
-        )
-
-        /** 按主题取部件框（[dark] = 深色模式） */
-        fun partBoxes(dark: Boolean): Array<FloatArray> =
-            if (dark) PART_BOX_DARK else PART_BOX_LIGHT
-
-        /** 兼容旧调用：默认浅色那套（App 里请用 [partBoxes] 按主题取） */
-        val PART_BOX: Array<FloatArray> get() = PART_BOX_LIGHT
 
         /** 整组外接框纵横比（宽 / 高），与素材裁切框一致（1.2 倍后同理） */
         const val GROUP_ASPECT = 1.00495f
@@ -352,16 +381,14 @@ class BubbleView(context: Context) : View(context) {
          * 拿外框判会把"只是透明角擦到"误判成相交（用户 2026-10-16 明确要求）。
          */
         fun visibleEllipses(
-            winW: Int, winH: Int, rotDeg: Float, mirror: Boolean, flipV: Boolean,
-            dark: Boolean = false
+            winW: Int, winH: Int, rotDeg: Float, mirror: Boolean, flipV: Boolean
         ): Array<FloatArray> {
             val q = ((rotDeg % 360f) + 360f) % 360f
             val swapped = q == 90f || q == 270f
             val gw = if (swapped) winH.toFloat() else winW.toFloat()
             val gh = if (swapped) winW.toFloat() else winH.toFloat()
-            val boxes = partBoxes(dark)
-            val out = ArrayList<FloatArray>(boxes.size)
-            for (box in boxes) {
+            val out = ArrayList<FloatArray>(PART_BOX.size)
+            for (box in PART_BOX) {
                 val l = box[0] * gw
                 val t = box[1] * gh
                 val r = l + box[2] * gw
