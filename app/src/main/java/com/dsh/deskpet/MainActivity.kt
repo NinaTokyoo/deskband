@@ -1397,13 +1397,15 @@ class MainActivity : Activity() {
      * [refreshBubbleTextButton]）-> 点确认才删、点取消退回上一步。
      */
     private fun makeBubbleTextTag(index: Int, item: BubbleTextStore.Item, topMargin: Int): View {
-        // 根布局是 LinearLayout（图片条目要往最前面插缩略图，所以取具体类型）
+        // 根布局是 LinearLayout（内容框 + 两个按钮并排）
         val tag = layoutInflater.inflate(R.layout.item_bubble_text_tag, rowsBubbleText, false)
             as android.widget.LinearLayout
         tag.layoutParams = android.widget.LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply { this.topMargin = topMargin }
-        tag.background = AccentTheme.accentBoxBackground(this, accent, lightMode)
+        // ⚠️ 描边只给**左边的内容框**（用户 2026-10-17：内容单独框起来，按钮放到框外）
+        tag.findViewById<android.widget.LinearLayout>(R.id.boxBubbleTagContent).background =
+            AccentTheme.accentBoxBackground(this, accent, lightMode)
 
         val dm = resources.displayMetrics
         val gap = titleButtonGap()
@@ -1437,7 +1439,7 @@ class MainActivity : Activity() {
                     iv.setImageBitmap(it)
                 }
             }
-            tag.addView(iv, 0)
+            tag.findViewById<android.widget.LinearLayout>(R.id.boxBubbleTagContent).addView(iv, 0)
         }
 
         val pending = index == pendingBubbleDelete
