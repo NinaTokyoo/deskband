@@ -924,19 +924,16 @@ class PetService : Service(), PetView.Host {
         // ⚠️ 按椭圆判、不按外框判 —— 外框四角是透明的，拿外框判会把"只是角擦到"误判成相交。
         // 相交时按"最小位移"把该椭圆推到矩形外侧。
         //
-        // ⚠️⚠️ 上边组（flipV）这里必须**在"下边那套"坐标系里判**：把人物矩形一起竖翻过去，
-        //      推完再把结果整体翻回来（见下面的 mirrorToTop）。否则会出现"角对了、边不对"——
-        //      上边的可见椭圆与人物矩形相交时，"最小位移"会把它**往下推**一大截，
-        //      而角落素材更窄、根本不触发，于是看起来像两套规则。
+        // ⚠️⚠️ 上边组（flipV）的一切都按**下边那套**算，最后才整体竖翻（见下面的 flipV 分支）：
+        //      所以这里的可见区域也必须用**未翻转**的图案（flipV 传 false）。
+        //      用户 2026-10-16 明确："推翻之前所有关于上边和左右上角的气泡位置关系，
+        //      直接上下镜像对称下边和左右下角" —— 上边组不再有任何专用规则。
         if (PetState.bubbleKeepOutOfPetRect(pet.state)) {
             val pl = a[9]
-            val pw = a[11]
-            val ph = a[12]
-            val ptReal = a[10]
-            val pt = if (flipV) 2 * a[1] - (ptReal + ph) else ptReal
-            val pr = pl + pw
-            val pb = pt + ph
-            val ellipses = BubbleView.visibleEllipses(bw, bh, bubbleRot, artMirror, flipV)
+            val pt = a[10]
+            val pr = pl + a[11]
+            val pb = pt + a[12]
+            val ellipses = BubbleView.visibleEllipses(bw, bh, bubbleRot, artMirror, false)
             for (e in ellipses) {
                 val ecx = fx + e[0]
                 val ecy = fy + e[1]
@@ -962,14 +959,15 @@ class PetService : Service(), PetView.Host {
             }
         }
 
-        // 上边组（flipV）：最后把**整个窗口**对人物矩形做竖直镜像 ——
-        // 相对矩形顶边的距离，翻成相对矩形底边的同距离。图案由 BubbleView.flipV 翻转。
+        // 上边组：以上全部按"下边那套"算完，最后把**整个窗口**对人物矩形竖直镜像
+        // （相对矩形顶边的距离 -> 相对底边的同距离）。图案由 BubbleView.flipV 翻转，
+        // 旋转角在 PetState.bubbleRotation 里取相反值 —— 三者合起来才是严格的上下镜像。
         if (flipV) {
             val pr = petParams
             fy = if (pr != null) {
                 pr.y + pr.height - (fy - pr.y) - bh
             } else {
-                2 * a[1] - (fy + bh)             // 兜底：对人物中心翻
+                2 * a[1] - (fy + bh)
             }
         }
         val x = fx.coerceIn(0, (b.width() - bw).coerceAtLeast(0))
