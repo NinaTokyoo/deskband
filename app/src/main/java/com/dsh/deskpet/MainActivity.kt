@@ -1276,7 +1276,7 @@ class MainActivity : Activity() {
         val dm = resources.displayMetrics
         btnBubbleOnTap.apply {
             layoutParams = android.widget.LinearLayout.LayoutParams(
-                btnManageBubbleSettings.width.coerceAtLeast(dp(dm, 64f)),
+                btnManageBubbleSettings.width.takeIf { it > 0 } ?: dp(dm, 64f),
                 dp(dm, DELETE_SLOT_DP * resources.configuration.fontScale)
             )
             text = getString(if (on) R.string.bubble_text_enabled else R.string.bubble_pending)
@@ -1480,8 +1480,11 @@ class MainActivity : Activity() {
 
         val dm = resources.displayMetrics
         val gap = titleButtonGap()
-        val delW = btnBubbleTextAdd.width.coerceAtLeast(dp(dm, 56f))
-        val togW = btnBubbleTextManage.width.coerceAtLeast(dp(dm, 64f))
+        // ⚠️ **不要**加最小宽度下限：标题行那两个按钮实测只有 50dp 上下，
+        //    一旦被 coerceAtLeast 撑宽，左右两边就都对不齐了（用户 2026-10-17 反馈）。
+        //    宽度只在"还没量过"（=0）时用兜底值。
+        val delW = btnBubbleTextAdd.width.takeIf { it > 0 } ?: dp(dm, 56f)
+        val togW = btnBubbleTextManage.width.takeIf { it > 0 } ?: dp(dm, 64f)
 
         tag.findViewById<BubbleTagTextView>(R.id.txtBubbleTagText).apply {
             // ⚠️ 用 setFullText：截断与"补三个点"由这个 View 自己在**布局阶段**做，
