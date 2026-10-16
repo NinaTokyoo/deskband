@@ -892,7 +892,7 @@ class PetService : Service(), PetView.Host {
     private fun showBubble() {
         val pet = petView ?: return
         val a = pet.bubbleAnchor()
-        if (a.size < 7) return
+        if (a.size < 11) return
         val w = a[2].toFloat()                                   // 人物正立素材宽 W = 2a
         val side = a[3]
         val mirror = a[4] == 1
@@ -904,16 +904,37 @@ class PetService : Service(), PetView.Host {
         val bh = size[1]
         val off = BubbleView.screenOffset(w, side, mirror, flipV, rot)
         val b = bounds()
-        val x = Math.round(a[0] + off[0] - bw / 2f).toInt()
-            .coerceIn(0, (b.width() - bw).coerceAtLeast(0))
-        val y = Math.round(a[1] + off[1] - bh / 2f).toInt()
-            .coerceIn(0, (b.height() - bh).coerceAtLeast(0))
+        var fx = Math.round(a[0] + off[0] - bw / 2f).toInt()
+        var fy = Math.round(a[1] + off[1] - bh / 2f).toInt()
+
+        // 原则（用户对右下角提的）：气泡**不能进入人物素材矩形**。
+        // 相交时按"最小位移"推到矩形外侧（左右上下四个方向里位移最小的那个）。
+        if (PetState.bubbleKeepOutOfPetRect(pet.state)) {
+            val pl = a[7]
+            val pt = a[8]
+            val pr = pl + a[9]
+            val pb = pt + a[10]
+            if (fx < pr && fx + bw > pl && fy < pb && fy + bh > pt) {
+                val cands = arrayOf(
+                    Math.abs(fx - (pl - bw)) to intArrayOf(pl - bw, fy),
+                    Math.abs(fx - pr) to intArrayOf(pr, fy),
+                    Math.abs(fy - (pt - bh)) to intArrayOf(fx, pt - bh),
+                    Math.abs(fy - pb) to intArrayOf(fx, pb)
+                )
+                val best = cands.minByOrNull { it.first }!!
+                fx = best.second[0]
+                fy = best.second[1]
+            }
+        }
+        val x = fx.coerceIn(0, (b.width() - bw).coerceAtLeast(0))
+        val y = fy.coerceIn(0, (b.height() - bh).coerceAtLeast(0))
 
         hideBubble()
         val view = BubbleView(this)
         // 与人物素材同一套变换；"摆素材左侧"时整组要在素材系里翻过来（尾巴才朝着人物）
+        // —— 右下角例外（用户确认的 C 形态），由 PetState.bubbleArtMirror 统一决定
         view.rotationDeg = rot
-        view.mirror = mirror != (side == PetState.BUBBLE_SIDE_LEFT)
+        view.mirror = PetState.bubbleArtMirror(pet.state, mirror, side)
         view.flipV = flipV
         val p = WindowManager.LayoutParams(
             bw, bh,

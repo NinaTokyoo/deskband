@@ -2595,7 +2595,8 @@ class PetView(context: Context) : View(context) {
         val w = up[0].toFloat()
         val mirror = PetState.needsMirror(state)
         val flipV = PetState.flipVFor(state)
-        val rot = PetState.rotationForSnap(state)
+        // 气泡整组的旋转角：默认跟人物一致，右下角另有规定（见 PetState.bubbleRotation）
+        val rot = PetState.bubbleRotation(state, PetState.rotationForSnap(state))
 
         // 条件2：按默认（素材右侧）摆法时，气泡窗口的最上沿落在哪
         val size = BubbleView.windowSize(w, rot)
@@ -2607,7 +2608,9 @@ class PetView(context: Context) : View(context) {
         )
         return intArrayOf(
             curCenterX().roundToInt(), curCenterY().roundToInt(), up[0], side,
-            if (mirror) 1 else 0, if (flipV) 1 else 0, rot.toInt()
+            if (mirror) 1 else 0, if (flipV) 1 else 0, rot.toInt(),
+            // 人物**素材矩形**在屏幕上的位置（供"气泡不得进入"这条原则用）
+            curTrackLeft().roundToInt(), curTrackTop().roundToInt(), trackW, trackH
         )
     }
 

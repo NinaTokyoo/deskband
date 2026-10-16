@@ -228,6 +228,37 @@ object PetState {
     private const val TOP_LINE_DIV = 15f
 
     /**
+     * 气泡**整组**的旋转角。
+     *
+     * 默认跟人物素材走（吸附左右边框时人物躺倒 ∓90°，气泡也一起倒），
+     * 但个别状态另有规定 —— 目前只有**右下角**。
+     *
+     * 右下角（用户 2026-10-16 确认 = 效果图里的 C）：把现在实机看到的气泡
+     * **顺时针转 90°、再左右镜像**。两步合起来的净变换 = 逆时针 90° 且不镜像，
+     * 所以这里返回 -90，配合 [bubbleArtMirror] 返回 false。
+     *
+     * ⚠️ 左右边框的状态**不受影响**（照旧跟人物旋转角一致）—— 用户要求"保持左右边框不动"。
+     */
+    fun bubbleRotation(state: Int, spriteRot: Float): Float = when (state) {
+        CORNER_BR -> -90f
+        else -> spriteRot
+    }
+
+    /**
+     * 气泡整组的**左右镜像**标志（在"人物素材变换"之上再叠加的那一层）。
+     *
+     * 默认规则：气泡摆在人物素材**左侧**时要把整组翻过来，尾巴才朝着人物
+     * （摆右侧则不用）。右下角例外 —— 用户确认的 C 形态是"转完不镜像"。
+     */
+    fun bubbleArtMirror(state: Int, spriteMirror: Boolean, side: Int): Boolean = when (state) {
+        CORNER_BR -> false
+        else -> spriteMirror != (side == BUBBLE_SIDE_LEFT)
+    }
+
+    /** 该状态的气泡要不要保证"不进入人物素材矩形"（用户对右下角提的原则） */
+    fun bubbleKeepOutOfPetRect(state: Int): Boolean = isCorner(state)
+
+    /**
      * 气泡摆在哪一侧 —— 纯函数，便于单测。
      *
      * ⚠️ 返回值是**人物素材自己坐标系**里的侧别（+1 = 素材右侧＝人物右上；

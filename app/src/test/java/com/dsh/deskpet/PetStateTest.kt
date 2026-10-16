@@ -1927,6 +1927,40 @@ class PetStateTest {
     }
 
     @Test
+    fun bubble_rotation_follows_pet_except_bottom_right_corner() {
+        // 默认跟人物素材的吸附旋转角一致（躺倒时 ∓90°）
+        assertEquals(-90f, PetState.bubbleRotation(PetState.BORDER_R, -90f))
+        assertEquals(90f, PetState.bubbleRotation(PetState.BORDER_L, 90f))
+        assertEquals(0f, PetState.bubbleRotation(PetState.BORDER_R_UPRIGHT, 0f))
+        assertEquals(0f, PetState.bubbleRotation(PetState.EDGE_TOP_R, 0f))
+        // 右下角另有规定（用户确认的 C）：顺时针 90° + 左右镜像 的净效果 = -90 且不镜像
+        assertEquals(-90f, PetState.bubbleRotation(PetState.CORNER_BR, 0f))
+        assertFalse(
+            "右下角不镜像",
+            PetState.bubbleArtMirror(PetState.CORNER_BR, false, PetState.BUBBLE_SIDE_LEFT)
+        )
+        // 其他状态保持原规则：摆素材左侧要镜像，摆右侧不镜像
+        assertTrue(
+            PetState.bubbleArtMirror(PetState.BORDER_R, false, PetState.BUBBLE_SIDE_LEFT)
+        )
+        assertFalse(
+            PetState.bubbleArtMirror(PetState.BORDER_R, false, PetState.BUBBLE_SIDE_RIGHT)
+        )
+        // 人物素材自己镜像时（贴左边框等），气泡跟着镜像
+        assertFalse(
+            PetState.bubbleArtMirror(PetState.BORDER_L, true, PetState.BUBBLE_SIDE_LEFT)
+        )
+        assertTrue(
+            PetState.bubbleArtMirror(PetState.BORDER_L, true, PetState.BUBBLE_SIDE_RIGHT)
+        )
+        // "气泡不得进入人物素材矩形"这条原则只对角落状态生效（左右边框保持原样）
+        assertTrue(PetState.bubbleKeepOutOfPetRect(PetState.CORNER_BR))
+        assertTrue(PetState.bubbleKeepOutOfPetRect(PetState.CORNER_TR))
+        assertFalse(PetState.bubbleKeepOutOfPetRect(PetState.BORDER_R))
+        assertFalse(PetState.bubbleKeepOutOfPetRect(PetState.BORDER_L))
+    }
+
+    @Test
     fun bubble_on_bottom_and_top_edges_uses_screen_middle() {
         // 规则3：吸附边中点在屏幕中线及右侧 -> 左上；否则右上（含正好压线）
         assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.BORDER_R_UPRIGHT, SW / 2f, SH - 100f))
