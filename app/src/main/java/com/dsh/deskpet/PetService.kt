@@ -1045,15 +1045,27 @@ class PetService : Service(), PetView.Host {
         val view = BubbleView(this)
         // 深色模式：只把气泡内部的**白底换成灰底**，几何/描边不动
         view.grayFill = bubbleGrayFill
-        // 气泡内容（用户 2026-10-16）：**顺序轮播** —— 每点一下显示下一条，到底回到第一条。
-        // 只轮播**已启用**的条目（标签右侧那个「已启用 / 启用」按钮管这件事）；
+        // 气泡内容（用户 2026-10-16）：每次冒泡**随机**取一条（后来明确"不需要按顺序"）。
+        // 只从**已启用**的条目里取（标签右侧那个「已启用 / 启用」按钮管这件事）；
         // 文字色用**人物发色的派生色**（accentFrom(light)），与预览图一致。
         val texts = BubbleTextStore.enabledTexts(this)
         if (texts.isNotEmpty()) {
-            val i = ((prefs.bubbleTextCursor % texts.size) + texts.size) % texts.size
-            view.text = texts[i]
+            view.text = texts.random()
             view.textColor = bubbleTextColor(pet)
-            prefs.bubbleTextCursor = (i + 1) % texts.size
+        }
+        // 点气泡：压缩回弹 + 随机换一条文案（用户 2026-10-16）
+        view.onPressed = {
+            val cur = BubbleTextStore.enabledTexts(this)
+            if (cur.isNotEmpty()) {
+                view.text = cur.random()
+                view.press()
+                view.restartHold()          // 新文案完整显示一个停留时长
+                // ⚠️ 收窗口的时间也要跟着重排，否则新文案会被原来那次收窗口提前掐掉
+                bubbleHide?.let { mainHandler.removeCallbacks(it) }
+                val hide = Runnable { hideBubble() }
+                bubbleHide = hide
+                mainHandler.postDelayed(hide, BubbleView.TOTAL_MS + BUBBLE_TAIL_MS)
+            }
         }
         // 与人物素材同一套变换；"摆素材左侧"时整组要在素材系里翻过来（尾巴才朝着人物）
         // —— 右下角例外（用户确认的 C 形态），由 PetState.bubbleArtMirror 统一决定

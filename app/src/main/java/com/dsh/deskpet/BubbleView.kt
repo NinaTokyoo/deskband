@@ -7,6 +7,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import android.os.SystemClock
+import android.view.MotionEvent
 import android.view.View
 
 /**
@@ -108,6 +109,42 @@ class BubbleView(context: Context) : View(context) {
     /** 文字颜色（= 人物发色经 accentFrom(light) 派生，由服务下发） */
     var textColor: Int = 0xFF000000.toInt()
 
+    /**
+     * 点击气泡时的回调（用户 2026-10-16：点大气泡要有"缩小回弹"效果，并随机换一条文案）。
+     *
+     * ⚠️ 只在"大气泡稳定存在"（停留段）里才回调 —— 出现/消失过程中点它不做事。
+     */
+    var onPressed: (() -> Unit)? = null
+
+    /** 按压缩放动画的起点（0 = 没有动画） */
+    private var pressAt = 0L
+
+    /**
+     * 触发一次"压缩回弹"（用户要求：大气泡明显、中圈弱一些、小圈最弱）。
+     *
+     * 包络是 `1 - amp*sin(2πt)*(1-t)`：先压到最低、过冲一点点、再收回 1 —— 也就是
+     * "缩小 -> 回弹"而不是单纯缩一下。
+     */
+    fun press() {
+        pressAt = SystemClock.uptimeMillis()
+        invalidate()
+    }
+
+    /** 时间轴是否正处在**停留段**（大气泡稳定存在，文字可见） */
+    fun isHolding(now: Long = SystemClock.uptimeMillis()): Boolean =
+        startAt != 0L && now - startAt >= APPEAR_MS && now - startAt < APPEAR_MS + HOLD_MS
+
+    /**
+     * 把时间轴**拨回停留段起点**（点气泡换文案后调）。
+     *
+     * 这样新文案能完整显示一个停留时长，而不是"沿用上一条的剩余时间"导致一闪而过；
+     * 图案仍停在满尺寸（不重新播出现动画）。
+     */
+    fun restartHold() {
+        startAt = SystemClock.uptimeMillis() - APPEAR_MS.toLong()
+        invalidate()
+    }
+
     /** 粗黑体（与预览用的同一类：系统中粗黑体，不带衬线） */
     private val textPaint = android.text.TextPaint().apply {
         typeface = android.graphics.Typeface.create(
@@ -200,8 +237,10 @@ class BubbleView(context: Context) : View(context) {
             val tp = box[1] * gh
             dst.set(l, tp, l + box[2] * gw, tp + box[3] * gh)
             canvas.save()
-            // 从小到大：绕**自己的中心**缩放，位置不动
-            canvas.scale(pop, pop, dst.centerX(), dst.centerY())
+            // 从小到大：绕**自己的中心**缩放，位置不动；
+            // 再叠一层"点气泡"的压缩回弹（幅度按块递减，见 [pressScale]）
+            val sc = pop * pressScale(i, now)
+            canvas.scale(sc, sc, dst.centerX(), dst.centerY())
             canvas.drawBitmap(bmp, null, dst, paint)
             canvas.restore()
         }
@@ -367,6 +406,44 @@ class BubbleView(context: Context) : View(context) {
     }
 
     /**
+     * 点气泡时的"压缩回弹"缩放（1 = 原样）。
+     *
+     * 幅度**按块递减**（用户要求）：大气泡最明显、中圈弱一些、小圈最弱 ——
+     * 视觉上像手指按在大气泡上把它压了一下。
+     */
+    private fun pressScale(index: Int, now: Long): Float {
+        if (pressAt == 0L) return 1f
+        val t = (now - pressAt) / PRESS_MS.toFloat()
+        if (t >= 1f) {
+            pressAt = 0L
+            return 1f
+        }
+        val env = kotlin.math.sin(2.0 * Math.PI * t).toFloat() * (1f - t)
+        return 1f - PRESS_AMP[index] * env
+    }
+
+    /**
+     * 点气泡：只在自己的**可见区域**（三块的内切椭圆）里才响应 ——
+     * 窗口是整块矩形、四角是透明的，按在空白处不该换文案（用户："点击大气泡"）。
+     */
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        // 窗口必须可触摸（否则 WMS 会把整窗 alpha 压到 0.8），所以按下/移动都要吃掉，
+        // 只在松手时判断"点没点到气泡上"
+        if (event.actionMasked != MotionEvent.ACTION_UP) return true
+        if (!isHolding()) return true
+        val es = visibleEllipses(width, height, rotationDeg, mirror, flipV)
+        for (e in es) {
+            val dx = (event.x - e[0]) / e[2].coerceAtLeast(1f)
+            val dy = (event.y - e[1]) / e[3].coerceAtLeast(1f)
+            if (dx * dx + dy * dy <= 1f) {
+                onPressed?.invoke()
+                return true
+            }
+        }
+        return true
+    }
+
+    /**
      * 取三块素材之一（走 [SRC_CACHE]）。
      *
      * ⚠️ 气泡每次点击都会新建一个 BubbleView；若每次都重新解码 assets 里的 PNG
@@ -468,6 +545,18 @@ class BubbleView(context: Context) : View(context) {
         private const val BASELINE_RATIO = 0.80f
         /** 一个汉字约占字号的这个比例（用于算"3 个字的字号"封顶） */
         private const val CHAR_W_RATIO = 1.0f
+
+        // ---- 点气泡时的"压缩回弹" ----
+        /** 整段动画时长 */
+        private const val PRESS_MS = 220f
+
+        /**
+         * 各块的压缩幅度（下标同 [PART_IDS]：0 = 小圈、1 = 中圈、2 = 大气泡）。
+         *
+         * 用户要求"大气泡有较明显缩小回弹，中等大的效果弱一点，最小的更弱"，
+         * 所以幅度就是按这个次序递增的。
+         */
+        private val PRESS_AMP = floatArrayOf(0.04f, 0.09f, 0.18f)
 
         /**
          * 每个部件在**整组外接框**里的相对矩形 `[左, 上, 宽, 高]`（0..1）。
