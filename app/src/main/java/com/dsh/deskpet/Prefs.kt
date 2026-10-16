@@ -399,6 +399,16 @@ class Prefs(context: Context) {
         get() = skinValue(KEY_BUBBLE_TEXTS)
         set(v) { putSkinValue(KEY_BUBBLE_TEXTS, v) }
 
+    /**
+     * 「气泡设置 -> 单击时出现」（用户 2026-10-17，默认开）。
+     *
+     * 关掉后：点人物**不再冒气泡**（长按等其它交互不受影响）。
+     * 不按形象分开存 —— 这是使用习惯，不是每个角色的内容。
+     */
+    var bubbleOnTap: Boolean
+        get() = sp.getBoolean(KEY_BUBBLE_ON_TAP, true)
+        set(v) { sp.edit().putBoolean(KEY_BUBBLE_ON_TAP, v).apply() }
+
     companion object {
         private const val NAME = "deskpet"
         private const val KEY_RUNNING = "running"
@@ -418,6 +428,7 @@ class Prefs(context: Context) {
         private const val KEY_ACCENT = "accent_color"
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_BUBBLE_TEXTS = "bubble_texts"
+        private const val KEY_BUBBLE_ON_TAP = "bubble_on_tap"
         private const val KEY_BOUNCE_ON = "bounce_on"
         private const val KEY_RESET_KEEP = "reset_keep"
         private const val KEY_LOCKED = "locked"

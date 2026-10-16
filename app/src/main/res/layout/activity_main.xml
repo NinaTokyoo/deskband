@@ -1106,6 +1106,63 @@
             </com.dsh.deskpet.CardPanel>
         </LinearLayout>
 
+        <!-- ⑦.4 气泡设置：默认一横条（标题 + 管理），点「管理」向下延伸出各开关。
+             用户 2026-10-17：位置在「气泡内容」**之前**；目前只有一项「单击时出现」，
+             右侧是「启用 / 已启用」按钮（列位与上方「管理」对齐，代码里按实测宽度下发）。 -->
+        <LinearLayout
+            style="@style/Card"
+            android:tag="card"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="12dp">
+
+            <LinearLayout style="@style/CardTitleRow">
+
+                <TextView
+                    style="@style/CardTitle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:text="@string/section_bubble_settings" />
+
+                <Button
+                    android:id="@+id/btnManageBubbleSettings"
+                    style="@style/CardAction"
+                    android:text="@string/card_manage" />
+            </LinearLayout>
+
+            <com.dsh.deskpet.CardPanel
+                android:id="@+id/panelBubbleSettings"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:textSize="14sp"
+                        android:text="@string/bubble_on_tap" />
+
+                    <!-- 启用 / 已启用：文字、颜色、宽高都由 MainActivity 按状态给 -->
+                    <TextView
+                        android:id="@+id/btnBubbleOnTap"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:singleLine="true" />
+                </LinearLayout>
+            </com.dsh.deskpet.CardPanel>
+        </LinearLayout>
+
         <!-- ⑦.5 气泡内容：一横条（标题 + 新增 / 管理），放在「通知栏内容」之后（用户要求）。
              点「新增」向下展开成输入表单、点「管理」向下展开成标签列表。
 

@@ -968,6 +968,8 @@ class PetService : Service(), PetView.Host {
      * 也不会出现"旧气泡被瞬间抹掉、新气泡从头开始播"的跳变。
      */
     override fun onJumpStart() {
+        // 「气泡设置 -> 单击时出现」关掉时：点人物**不冒气泡**（用户 2026-10-17）
+        if (!prefs.bubbleOnTap) return
         if (bubbleView != null) {
             android.util.Log.i("BubbleGeom", "onJumpStart -> 气泡还在，改为消失")
             vanishBubbleNow()

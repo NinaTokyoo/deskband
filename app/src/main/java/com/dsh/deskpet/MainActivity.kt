@@ -186,6 +186,11 @@ class MainActivity : Activity() {
     private lateinit var panelBubbleTextKind: View
     private lateinit var btnBubbleKindText: Button
     private lateinit var btnBubbleKindImage: Button
+
+    // ---- 气泡设置卡（用户 2026-10-17，位置在「气泡内容」之前） ----
+    private lateinit var btnManageBubbleSettings: Button
+    private lateinit var panelBubbleSettings: View
+    private lateinit var btnBubbleOnTap: TextView
     private lateinit var rowsBubbleText: android.widget.LinearLayout
     private lateinit var txtBubbleTextEmpty: TextView
     private lateinit var editBubbleText: EditText
@@ -349,6 +354,9 @@ class MainActivity : Activity() {
         panelBubbleTextKind = findViewById(R.id.panelBubbleTextKind)
         btnBubbleKindText = findViewById(R.id.btnBubbleKindText)
         btnBubbleKindImage = findViewById(R.id.btnBubbleKindImage)
+        btnManageBubbleSettings = findViewById(R.id.btnManageBubbleSettings)
+        panelBubbleSettings = findViewById(R.id.panelBubbleSettings)
+        btnBubbleOnTap = findViewById(R.id.btnBubbleOnTap)
         rowsBubbleText = findViewById(R.id.rowsBubbleText)
         txtBubbleTextEmpty = findViewById(R.id.txtBubbleTextEmpty)
         editBubbleText = findViewById(R.id.editBubbleText)
@@ -438,6 +446,7 @@ class MainActivity : Activity() {
         setupBreathControls()
         setupNotifyControls()
         setupCustomSkinControls()
+        setupBubbleSettingsControls()
         setupBubbleTextControls()
         // ⚠️ loadSkins() 必须在 applyTheme() **之前**。
         //
@@ -1235,6 +1244,50 @@ class MainActivity : Activity() {
         //    renderCustomTags() 自己上色，上一次刷主题时就都刷好了；
         //    而 applyTheme() 会顺带 refreshNotifyFields()，把通知栏两个输入框里
         //    **正在编辑**的内容覆盖成存档值 —— 手风琴收起别的卡时会被误伤。
+    }
+
+    // ---------------------------------------------------------------- 气泡设置卡
+
+    /**
+     * 「气泡设置」卡：一横条 + 点「管理」向下延伸出各开关（用户 2026-10-17）。
+     *
+     * 与其它参数卡同一套"可展开卡片"机制（[registerExpandCard]）：手风琴、锁定时不能展开、
+     * 切明暗跟着重绘都自动具备。开关**点一下立即生效**（没有"会丢东西"的中间态，
+     * 所以这张卡不需要「保存 / 取消」那一对）。
+     */
+    private fun setupBubbleSettingsControls() {
+        registerExpandCard(panelBubbleSettings, btnManageBubbleSettings)
+        btnBubbleOnTap.setOnClickListener {
+            prefs.bubbleOnTap = !prefs.bubbleOnTap
+            refreshBubbleSettings()
+        }
+        refreshBubbleSettings()
+    }
+
+    /**
+     * 刷新「单击时出现」那个开关的文案、颜色与列宽。
+     *
+     * ⚠️ 宽度抄标题行「管理」按钮：用户要求"右侧按钮…对齐" ——
+     *    宽度与右边界都跟它一致，看着才是一列。
+     */
+    private fun refreshBubbleSettings() {
+        if (!::btnBubbleOnTap.isInitialized) return
+        val on = prefs.bubbleOnTap
+        val dm = resources.displayMetrics
+        btnBubbleOnTap.apply {
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                btnManageBubbleSettings.width.coerceAtLeast(dp(dm, 64f)),
+                dp(dm, DELETE_SLOT_DP * resources.configuration.fontScale)
+            )
+            text = getString(if (on) R.string.bubble_text_enabled else R.string.bubble_pending)
+            isSingleLine = true
+            maxLines = 1
+            ellipsize = null
+            setPadding(dp(dm, 2f), 0, dp(dm, 2f), 0)
+            // 与"已启用"那套一致：未启用用中性文字色，启用用强调色
+            setTextColor(if (on) accent else AccentTheme.skinBoxText(lightMode))
+            background = AccentTheme.ghostSelectorFor(this@MainActivity, accent, lightMode)
+        }
     }
 
     // ---------------------------------------------------------------- 气泡内容卡
@@ -2722,6 +2775,9 @@ class MainActivity : Activity() {
 
         // 「气泡内容」管理列表里的标签同理（内容色跟强调色、错号固定红）
         if (::rowsBubbleText.isInitialized) renderBubbleTextTags()
+
+        // 「气泡设置」里的开关（描边跟强调色、启用态用强调色文字）
+        refreshBubbleSettings()
 
         // 按钮上的文字里有形象名，名字要用强调色，所以每次都重建一次
         refreshSummonLabel()
