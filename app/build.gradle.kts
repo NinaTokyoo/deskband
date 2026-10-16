@@ -449,6 +449,12 @@ android {
         //                     "旧气泡被瞬间抹掉、新气泡从头播"的跳变。
         //                     实现：onJumpStart 里看 bubbleView 是否存在分流；
         //                     把"进入消失段 + 重排收窗口"抽成 vanishBubbleNow()，与拖动共用）
+        //   2.1.53 -> 20153（气泡动画提帧：① **预缩放** —— 素材原图远大于绘制尺寸
+        //                     （大气泡 654x896，实画约 420x580），原来每帧都让 drawBitmap
+        //                     现场做双线性缩小，120Hz 屏上掉帧明显；改成 onSizeChanged 里
+        //                     缩一次，绘制基本 1:1。② **解码缓存** —— 每次点击都新建
+        //                     BubbleView 并重新解码三张 PNG（大气泡 145KB，10ms 量级），
+        //                     出现动画头几帧会顿；改为进程内共享缓存（常驻约 2.4MB））
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ✅ 作者声明里的版本号与完成时间**自动跟着这行走**：
         //    版本号 = vName；完成时间 = 构建时刻（buildStamp，见文件顶部）。
@@ -457,7 +463,7 @@ android {
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
         //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
         //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
-        val vName = "2.1.52"
+        val vName = "2.1.53"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()

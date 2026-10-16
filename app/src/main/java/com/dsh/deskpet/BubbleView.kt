@@ -43,6 +43,15 @@ class BubbleView(context: Context) : View(context) {
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
     private val dst = RectF()
 
+    /**
+     * 预缩放后的三块素材（按当前窗口尺寸算好，绘制时基本 1:1 用）。
+     *
+     * ⚠️ 为什么必须预缩放：素材原图比实际绘制尺寸大好几倍（大气泡那张最明显），
+     * 若每帧都让 `drawBitmap` 现场做双线性缩小，出现/消失动画在 120Hz 屏上会明显掉帧
+     * —— 用户反馈"动画帧率有点低"就是这个原因。缩放在 [onSizeChanged] 里只做一次。
+     */
+    private val scaled = arrayOfNulls<Bitmap>(PART_COUNT)
+
     private var startAt = 0L
 
     /**
@@ -69,6 +78,31 @@ class BubbleView(context: Context) : View(context) {
 
     /** 是否已经转过 90°（窗口宽高与组自身宽高互换） */
     private val rotated: Boolean get() = (rotationDeg % 180f) != 0f
+
+    /**
+     * 窗口尺寸确定时把三块素材预缩放到"将要绘制的尺寸"。
+     *
+     * 只在窗口尺寸变化时跑一次（气泡窗口建成后尺寸不变），后续每帧都省掉双线性缩小。
+     */
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        rebuildScaled()
+    }
+
+    private fun rebuildScaled() {
+        if (width <= 0 || height <= 0) return
+        val gw = if (rotated) height.toFloat() else width.toFloat()
+        val gh = if (rotated) width.toFloat() else height.toFloat()
+        for (i in parts.indices) {
+            val src = parts[i] ?: continue
+            val tw = (PART_BOX[i][2] * gw).toInt().coerceAtLeast(1)
+            val th = (PART_BOX[i][3] * gh).toInt().coerceAtLeast(1)
+            val old = scaled[i]
+            if (old != null && old !== src && !old.isRecycled) old.recycle()
+            scaled[i] = if (src.width == tw && src.height == th) src
+            else Bitmap.createScaledBitmap(src, tw, th, true)
+        }
+    }
 
     /** 开始一次冒泡（重置时间轴） */
     fun start() {
@@ -117,7 +151,8 @@ class BubbleView(context: Context) : View(context) {
         canvas.translate(-gw / 2f, -gh / 2f)
 
         for (i in parts.indices) {
-            val bmp = parts[i] ?: continue          // 素材缺失就跳过这一块
+            // 优先用**预缩放**好的那份：绘制尺寸基本 1:1，省掉每帧的大图双线性缩小
+            val bmp = scaled[i] ?: parts[i] ?: continue
             val pop = popOf(i, t) ?: continue
             val box = PART_BOX[i]
             val l = box[0] * gw
@@ -134,14 +169,34 @@ class BubbleView(context: Context) : View(context) {
         if (!finished(now)) postInvalidateOnAnimation()
     }
 
-    private fun decode(ctx: Context, name: String): Bitmap? = try {
-        ctx.assets.open("$DIR/$name.png").use { BitmapFactory.decodeStream(it) }
-    } catch (e: Exception) {
-        null
+    /**
+     * 取三块素材之一（走 [SRC_CACHE]）。
+     *
+     * ⚠️ 气泡每次点击都会新建一个 BubbleView；若每次都重新解码 assets 里的 PNG
+     *    （大气泡 654×896 / 145KB，解码是 10ms 量级），出现动画的头几帧就会顿一下。
+     */
+    private fun decode(ctx: Context, name: String): Bitmap? {
+        SRC_CACHE[name]?.let { if (!it.isRecycled) return it }
+        val bmp = try {
+            ctx.assets.open("$DIR/$name.png").use { BitmapFactory.decodeStream(it) }
+        } catch (e: Exception) {
+            null
+        } ?: return null
+        SRC_CACHE[name] = bmp
+        return bmp
     }
 
     companion object {
         private const val DIR = "bubble"
+
+        /**
+         * 三块素材的**解码缓存**（进程内共享，键 = 素材名）。
+         *
+         * ⚠️ 这些位图**永不 recycle**：它们在多个 BubbleView 之间共享，
+         *    谁都不该回收（[BubbleView.rebuildScaled] 只回收自己那份缩放副本）。
+         *    常驻约 2.4MB —— 换来的是"每次点击气泡都不必重新解码 PNG"（用户反馈动画帧率低）。
+         */
+        private val SRC_CACHE = HashMap<String, Bitmap>(4)
 
         /** 部件数：小圈 / 中圈 / 大气泡 */
         const val PART_COUNT = 3
