@@ -17,6 +17,13 @@
 
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- 检查更新（用户 2026-10-17 要求：应用内能知道有新版本）。
+         只向 GitHub 的公开接口发一个 GET 读最新版本号，**不发送任何个人信息**；
+         除这一处之外，应用仍然完全本地运行（无账号、无统计、无上传）。
+         ⚠️ 加这条权限后，strings.xml 的 notice_text 第 7 条与 README 的说法
+            都要跟着说明"仅在检查更新时联网"，别让声明与行为不一致。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"

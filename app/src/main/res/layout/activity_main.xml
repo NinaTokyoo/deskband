@@ -1437,6 +1437,56 @@
             </LinearLayout>
         </LinearLayout>
 
+        <!-- ⑨ 关于：当前版本 + 检查更新（用户 2026-10-17 要求"应用内检查更新"）。
+             放在**说明之前**：说明是最底部那块浅色法律文本，关于卡在它上面更顺眼。
+
+             ⚠️ 这张卡**不可展开、也没有「管理」**：两行字 + 一个按钮就是全部内容，
+                展开区没有意义（与其它卡片的 registerExpandCard 机制无关）。
+             ⚠️ 文案里 "当前版本 2.3.1" 由代码用 BuildConfig.VERSION_NAME 现填，
+                不要在这里写死版本号（发版只改 build.gradle 的 vName 一处）。 -->
+        <LinearLayout
+            style="@style/Card"
+            android:tag="card"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="12dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    style="@style/CardTitle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:text="@string/section_about" />
+
+                <Button
+                    android:id="@+id/btnCheckUpdate"
+                    style="@style/CardAction"
+                    android:text="@string/check_update" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/txtAboutCurrent"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:textSize="13sp"
+                android:textColor="@color/text_secondary" />
+
+            <!-- 最新版本那一行：查完之后才有内容；发现新版本时变成可点的下载入口 -->
+            <TextView
+                android:id="@+id/txtAboutLatest"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textSize="13sp"
+                android:textColor="@color/text_secondary"
+                android:visibility="gone" />
+        </LinearLayout>
+
         <!--
           底部说明 / 免责声明（用户要求：App 最下面、用**浅色字**）。
           · 放在最外层内容 LinearLayout 的**最后一个子View** -> 就是整个页面的最下面，

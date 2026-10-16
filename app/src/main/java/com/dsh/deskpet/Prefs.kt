@@ -409,6 +409,17 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(KEY_BUBBLE_ON_TAP, true)
         set(v) { sp.edit().putBoolean(KEY_BUBBLE_ON_TAP, v).apply() }
 
+    /**
+     * 上次**自动**检查更新是哪一刻（毫秒时间戳；0 = 从没查过）。
+     *
+     * 用户 2026-10-17 要求应用内能知道有新版本 —— 自动检查做成"启动时最多一天一次"，
+     * 免得每次切回前台都发一个请求（也免得 GitHub 接口限流）。
+     * 手动点「检查更新」不看这个时间戳。
+     */
+    var lastUpdateCheckAt: Long
+        get() = sp.getLong(KEY_LAST_UPDATE_CHECK, 0L)
+        set(v) { sp.edit().putLong(KEY_LAST_UPDATE_CHECK, v).apply() }
+
     companion object {
         private const val NAME = "deskpet"
         private const val KEY_RUNNING = "running"
@@ -429,6 +440,7 @@ class Prefs(context: Context) {
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_BUBBLE_TEXTS = "bubble_texts"
         private const val KEY_BUBBLE_ON_TAP = "bubble_on_tap"
+        private const val KEY_LAST_UPDATE_CHECK = "last_update_check_at"
         private const val KEY_BOUNCE_ON = "bounce_on"
         private const val KEY_RESET_KEEP = "reset_keep"
         private const val KEY_LOCKED = "locked"

@@ -191,6 +191,14 @@ class MainActivity : Activity() {
     private lateinit var btnManageBubbleSettings: Button
     private lateinit var panelBubbleSettings: View
     private lateinit var btnBubbleOnTap: TextView
+
+    // ---- 关于 / 检查更新 ----
+    private lateinit var btnCheckUpdate: Button
+    private lateinit var txtAboutCurrent: TextView
+    private lateinit var txtAboutLatest: TextView
+
+    /** 正在查更新（防重入：连点「检查更新」不会再发一个请求） */
+    private var updateChecking = false
     private lateinit var rowsBubbleText: android.widget.LinearLayout
     private lateinit var txtBubbleTextEmpty: TextView
     private lateinit var editBubbleText: EditText
@@ -357,6 +365,9 @@ class MainActivity : Activity() {
         btnManageBubbleSettings = findViewById(R.id.btnManageBubbleSettings)
         panelBubbleSettings = findViewById(R.id.panelBubbleSettings)
         btnBubbleOnTap = findViewById(R.id.btnBubbleOnTap)
+        btnCheckUpdate = findViewById(R.id.btnCheckUpdate)
+        txtAboutCurrent = findViewById(R.id.txtAboutCurrent)
+        txtAboutLatest = findViewById(R.id.txtAboutLatest)
         rowsBubbleText = findViewById(R.id.rowsBubbleText)
         txtBubbleTextEmpty = findViewById(R.id.txtBubbleTextEmpty)
         editBubbleText = findViewById(R.id.editBubbleText)
@@ -448,6 +459,7 @@ class MainActivity : Activity() {
         setupCustomSkinControls()
         setupBubbleSettingsControls()
         setupBubbleTextControls()
+        setupAboutCard()
         // ⚠️ loadSkins() 必须在 applyTheme() **之前**。
         //
         // applyTheme() 会顺带刷"呼出 <角色名>"按钮与通知栏那两个输入框，而角色名
@@ -1344,6 +1356,96 @@ class MainActivity : Activity() {
         btnBubbleOnTap.minWidth = 0
         btnBubbleOnTap.minHeight = 0
         btnBubbleOnTap.layoutParams = lp
+    }
+
+    // ---------------------------------------------------------------- 关于 / 检查更新
+
+    /**
+     * 「关于」卡（用户 2026-10-17：应用内要能知道有新版本）。
+     *
+     * 数据来源是 **GitHub Releases** —— 所以"发一个 Release"就等于"推送给用户"，
+     * 不需要服务器、不需要推送通道。查到的版本比本机新就在卡片里显示一行可点的
+     * 「发现新版本 x.y.z —— 点此下载」，点开系统浏览器到 Release 页（不申请任何安装权限）。
+     *
+     * ⚠️ 本应用只在**这里**联网：一个 GET、不带任何个人信息（见 AndroidManifest 的 INTERNET 注释）。
+     */
+    private fun setupAboutCard() {
+        txtAboutCurrent.text = getString(R.string.about_current, BuildConfig.VERSION_NAME)
+        btnCheckUpdate.setOnClickListener { checkUpdate(manual = true) }
+        // 启动时自动查一次，但**一天最多一次**（避免每次回前台都请求、也避开接口限流）
+        val last = prefs.lastUpdateCheckAt
+        if (android.os.SystemClock.elapsedRealtime() > 0 &&
+            System.currentTimeMillis() - last > AUTO_CHECK_INTERVAL_MS
+        ) {
+            checkUpdate(manual = false)
+        }
+    }
+
+    /**
+     * 查最新版本。**联网在后台线程**，结果回到主线程刷界面。
+     *
+     * 失败一律静默（手动点的那次给个提示）：没网、被墙、仓库改名、接口限流……
+     * 都不该影响桌宠本身的使用。
+     */
+    private fun checkUpdate(manual: Boolean) {
+        if (updateChecking) return
+        updateChecking = true
+        if (manual) {
+            txtAboutLatest.visibility = View.VISIBLE
+            txtAboutLatest.text = getString(R.string.about_checking)
+            txtAboutLatest.setOnClickListener(null)
+        }
+        Thread {
+            val tag = try {
+                val conn = (java.net.URL(UpdateCheck.API_URL).openConnection()
+                        as java.net.HttpURLConnection).apply {
+                    connectTimeout = 6000
+                    readTimeout = 6000
+                    requestMethod = "GET"
+                    // GitHub 要求带 User-Agent，否则直接 403
+                    setRequestProperty("User-Agent", "DeskBand-Android")
+                    setRequestProperty("Accept", "application/vnd.github+json")
+                }
+                val body = try {
+                    conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+                } finally {
+                    conn.disconnect()
+                }
+                UpdateCheck.tagFromJson(body)
+            } catch (e: Exception) {
+                null
+            }
+            runOnUiThread { onUpdateChecked(tag, manual) }
+        }.start()
+    }
+
+    private fun onUpdateChecked(tag: String?, manual: Boolean) {
+        updateChecking = false
+        prefs.lastUpdateCheckAt = System.currentTimeMillis()
+        val latest = UpdateCheck.parseVersion(tag)?.joinToString(".") ?: run {
+            if (manual) {
+                txtAboutLatest.visibility = View.VISIBLE
+                txtAboutLatest.text = getString(R.string.about_failed)
+            }
+            return
+        }
+        txtAboutLatest.visibility = View.VISIBLE
+        if (UpdateCheck.isNewer(BuildConfig.VERSION_NAME, tag)) {
+            // 有新版本：这一行变成下载入口（开浏览器，无需任何权限）
+            txtAboutLatest.text = getString(R.string.about_new, latest)
+            txtAboutLatest.setTextColor(accent)
+            txtAboutLatest.setOnClickListener {
+                runCatching {
+                    startActivity(
+                        Intent(Intent.ACTION_VIEW, android.net.Uri.parse(UpdateCheck.RELEASES_URL))
+                    )
+                }
+            }
+        } else {
+            txtAboutLatest.text = getString(R.string.about_latest, latest)
+            txtAboutLatest.setTextColor(AccentTheme.skinBoxText(lightMode))
+            txtAboutLatest.setOnClickListener(null)
+        }
     }
 
     // ---------------------------------------------------------------- 气泡内容卡
@@ -2674,6 +2776,14 @@ class MainActivity : Activity() {
          * 于是压到 4dp —— 框本身（宽高/描边）与字号都不动。
          */
         const val TOGGLE_PAD_DP = 4f
+
+        /**
+         * **自动**检查更新的最小间隔（毫秒）——一天一次。
+         *
+         * 手动点「检查更新」不受它限制；加它是为了别每次回到前台都发请求
+         * （既省电，也避开 GitHub 接口 60 次/小时的匿名限流）。
+         */
+        const val AUTO_CHECK_INTERVAL_MS = 24L * 60 * 60 * 1000
 
         /**
          * 气泡内容标签里"删除控件"那格的**固定宽度**（dp）。
