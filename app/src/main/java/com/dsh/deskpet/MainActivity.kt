@@ -1410,6 +1410,8 @@ class MainActivity : Activity() {
             }
         }
 
+        // ⚠️ 只用来定**初始**文案。点击时不能再依赖它 —— 那是创建瞬间的快照，
+        //    原地更新（不重建）之后它就过期了，见下面两处"现读"的注释。
         val pending = index == pendingBubbleDelete
         tag.findViewById<TextView>(R.id.txtBubbleTagDelete).apply {
             layoutParams = android.widget.LinearLayout.LayoutParams(delW, ViewGroup.LayoutParams.MATCH_PARENT)
@@ -1431,10 +1433,14 @@ class MainActivity : Activity() {
                 )
             }
             setOnClickListener {
-                if (pending) {
+                // ⚠️ **现读**当前是否处于待确认，不能用创建时捕获的 `pending`：
+                //    点「删除」只原地更新按钮文字、不重建视图，捕获值永远停在"第一次点击之前"
+                //    -> 再点「确认」时它以为还是第一次，只是又把状态设成待确认，标签永远删不掉
+                //    （用户实测："点击确认之后并没有删除标签"）。
+                if (pendingBubbleDelete == index) {
                     BubbleTextStore.removeAt(this@MainActivity, index)
                     pendingBubbleDelete = null
-                    renderBubbleTextTags()          // 列表少了一条 -> 只能重建
+                    renderBubbleTextTags()          // 列表少了一条、下标会前移 -> 只能重建
                     Toast.makeText(
                         this@MainActivity,
                         getString(R.string.bubble_text_delete_done, item.text),
@@ -1480,7 +1486,12 @@ class MainActivity : Activity() {
                 )
             }
             setOnClickListener {
-                BubbleTextStore.setEnabled(this@MainActivity, index, !item.enabled)
+                // ⚠️ 同上：**现读**当前启用状态。用创建时捕获的 `item.enabled` 的话，
+                //    第一次切换后捕获值就过期了，再点算出的目标值还是同一个 ->
+                //    "切换一次之后就切不动了"（用户实测）。
+                val cur = BubbleTextStore.items(this@MainActivity).getOrNull(index)
+                    ?: return@setOnClickListener
+                BubbleTextStore.setEnabled(this@MainActivity, index, !cur.enabled)
                 // 只原地刷按钮（不重建列表：重建会让所有按钮闪一下）
                 refreshBubbleTagButtons()
             }
