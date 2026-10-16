@@ -667,6 +667,9 @@ android {
         //                        （不做全局白→透明：QDS 有大量白色衣物会被掏空）；
         //                     ③ 内置形象默认顺序改为 QDS、后藤一里、伊地知虹夏、山田凉、喜多郁代
         //                        （靠 PetSprite.BUILTIN_ORDER 显式声明，没列到的按目录名接后））
+        //   2.1.90 -> 20190（气泡描边在发色派生色基础上**加深一档**（用户 2026-10-17）：
+        //                     只压明度（BUBBLE_STROKE_DARKEN = 0.72），色相饱和度不变；
+        //                     气泡内文字仍用未加深的派生色，两者同源、深浅有别）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ✅ 作者声明里的版本号与完成时间**自动跟着这行走**：
         //    版本号 = vName；完成时间 = 构建时刻（buildStamp，见文件顶部）。
@@ -675,7 +678,7 @@ android {
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
         //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
         //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
-        val vName = "2.1.89"
+        val vName = "2.1.90"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()

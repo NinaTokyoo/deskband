@@ -134,6 +134,19 @@ class PetService : Service(), PetView.Host {
     }
 
     /**
+     * 把颜色**加深**一档（色相/饱和度不变，只压明度）。
+     *
+     * 用于气泡描边：用户要求"在发色基础上加深"，于是描边比气泡内文字、界面强调色
+     * 都更沉一点，白底/灰底上都更立得住。
+     */
+    private fun darken(color: Int, factor: Float): Int {
+        val hsv = FloatArray(3)
+        android.graphics.Color.colorToHSV(color, hsv)
+        hsv[2] = (hsv[2] * factor).coerceIn(0f, 1f)
+        return android.graphics.Color.HSVToColor(hsv)
+    }
+
+    /**
      * 屏幕是否点亮。
      *
      * ⚠️ 初值必须**真读一次** `PowerManager.isInteractive`，不能写死 true：
@@ -1090,9 +1103,9 @@ class PetService : Service(), PetView.Host {
         val view = BubbleView(this)
         // 深色模式：只把气泡内部的**白底换成灰底**，几何/描边不动
         view.grayFill = bubbleGrayFill
-        // 描边也用人物发色派生色（用户 2026-10-17："三个气泡的边框也改成人物发色"）——
-        // 与气泡内文字、界面强调色同一个色
-        view.strokeColor = bubbleTextColor(pet)
+        // 描边用人物发色派生色**再加深一档**（用户 2026-10-17："气泡边框颜色在发色基础上加深"）——
+        // 气泡内文字仍用未加深的派生色，两者同源、深浅有别。
+        view.strokeColor = darken(bubbleTextColor(pet), BUBBLE_STROKE_DARKEN)
         // ⚠️ 窗口四周留一圈**透明余量**给"压缩回弹"的过冲用：回弹段会略微超过原尺寸
         //    （约 +3.5%），窗口若不贴余量，放大那几帧的四周会被切掉（用户实测）。
         //    余量对称，所以画面仍居中，位置/大小规则不受影响。
@@ -1236,6 +1249,14 @@ class PetService : Service(), PetView.Host {
          * 7% 足够覆盖过冲、还留一点余地；余量对称，画面仍居中，位置/大小规则不受影响。
          */
         private const val BUBBLE_PAD_RATIO = 0.07f
+
+        /**
+         * 气泡**描边**相对发色派生色的加深系数（用户 2026-10-17："气泡边框颜色在发色基础上加深"）。
+         *
+         * 只压明度、不动色相饱和度：0.72 大约是把派生色往深里压一档，
+         * 白底与深色模式的灰底上都更立得住，又不会看着像另一个颜色。
+         */
+        private const val BUBBLE_STROKE_DARKEN = 0.72f
 
         /**
          * 当前正在显示的宠物视图（收起时为 null；[showPet]/[removePet] 维护）。
