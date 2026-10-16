@@ -1304,24 +1304,57 @@ class MainActivity : Activity() {
     private fun alignBubbleToggleWithManage() {
         if (!::btnBubbleOnTap.isInitialized || !::btnManageBubbleSettings.isInitialized) return
         btnBubbleOnTap.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-            if (btnBubbleOnTap.width == 0 || btnManageBubbleSettings.width == 0) {
-                return@addOnLayoutChangeListener
-            }
-            val lp = btnBubbleOnTap.layoutParams as android.widget.LinearLayout.LayoutParams
-            // ① 宽度**每次**都跟随实测（初次刷新时按钮还没测量，会用兜底值 64dp；
-            //    标题行那两个按钮实测只有 50dp 上下，宽了这一截光补边距也救不回来）
-            if (lp.width != btnManageBubbleSettings.width) {
-                lp.width = btnManageBubbleSettings.width
-            }
-            // ② 按**左边界**对齐：宽度已经相同，左边齐了右边自然齐
-            val a = IntArray(2)
-            val b = IntArray(2)
-            btnManageBubbleSettings.getLocationInWindow(a)
-            btnBubbleOnTap.getLocationInWindow(b)
-            val delta = b[0] - a[0]
-            val want = (lp.marginEnd + delta).coerceAtLeast(0)
-            if (want != lp.marginEnd) lp.marginEnd = want
+            syncBubbleToggleWidth()
+        }
+        syncBubbleToggleWidth()
+    }
+
+    /**
+     * 让「单击时出现」的开关与上方「管理 / 取消 / 收起」按钮**同宽同列**。
+     *
+     * ⚠️ 为什么必须"赋完再自检"：`refreshBubbleSettings()` 在 onCreate 里就会跑一次，
+     *    那一刻标题行按钮**还没被测量**（width = 0），只能落兜底值 64dp；
+     *    而实测宽度只有 50dp 上下 —— 宽出来的那一截，光靠补边距是救不回来的
+     *    （用户 2026-10-17 连续两次反馈"没对齐""还是没对齐"）。
+     *    所以这里每赋一次就 post 再核一次，直到宽度与列位都稳定。
+     */
+    private fun syncBubbleToggleWidth() {
+        if (!::btnBubbleOnTap.isInitialized || !::btnManageBubbleSettings.isInitialized) return
+        val target = btnManageBubbleSettings.width
+        if (target <= 0) return
+        val lp = btnBubbleOnTap.layoutParams as? android.widget.LinearLayout.LayoutParams ?: return
+        val dm = resources.displayMetrics
+        var changed = false
+        if (lp.width != target) {
+            lp.width = target
+            changed = true
+        }
+        // 高度也跟标题行按钮一致（原来写死 DELETE_SLOT_DP，视觉上比「管理」高一截）
+        val wantH = btnManageBubbleSettings.height
+        if (wantH > 0 && lp.height != wantH) {
+            lp.height = wantH
+            changed = true
+        }
+        // 按左边界对齐：宽度已经相同，左边齐了右边自然齐
+        val a = IntArray(2)
+        val b = IntArray(2)
+        btnManageBubbleSettings.getLocationInWindow(a)
+        btnBubbleOnTap.getLocationInWindow(b)
+        val delta = b[0] - a[0]
+        val wantMargin = (lp.marginEnd + delta).coerceAtLeast(0)
+        if (wantMargin != lp.marginEnd) {
+            lp.marginEnd = wantMargin
+            changed = true
+        }
+        if (changed) {
             btnBubbleOnTap.layoutParams = lp
+            android.util.Log.i(
+                "BubbleGeom",
+                "toggle sync: manage=(${a[0]},${target}x${btnManageBubbleSettings.height})" +
+                    " toggle=(${b[0]},${btnBubbleOnTap.width}x${btnBubbleOnTap.height})" +
+                    " marginEnd=${lp.marginEnd}"
+            )
+            btnBubbleOnTap.post { syncBubbleToggleWidth() }
         }
     }
 
