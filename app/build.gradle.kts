@@ -742,6 +742,16 @@ android {
         //                      字号不变；左右内边距压到 4dp（三个字比标题按钮的两个字宽，
         //                      CardAction 的 14dp 会把它挤出框外）；单行、不省略号、
         //                      gravity=center、关掉字体自带上下留白 -> 真正居中）
+        //   2.1.104 -> 201104（**整理「气泡设置」卡的代码**，行为完全不变（用户 2026-10-17：
+        //                      "保持现在的效果，优化一下这个卡片的代码"）：
+        //                      · 逻辑收拢成四块并各自写明职责：setup（注册+点击+刷新）、
+        //                        refresh（文案/颜色/文字排版）、syncToggleToTitleButton（挂布局监听）、
+        //                        applyToggleSize（套尺寸）；
+        //                      · 调试用的无条件日志删除；onResume 里那次多余的补尺寸去掉
+        //                        （onResume 会把卡片全收起，那次调用没有意义）；
+        //                      · 内边距抽成常量 TOGGLE_PAD_DP = 4f 并注明来由；
+        //                      · 把"方向不能反""必须挂布局变化""minWidth 要归零"等踩坑结论
+        //                        写进注释，避免以后又被改回去）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ✅ 作者声明里的版本号与完成时间**自动跟着这行走**：
         //    版本号 = vName；完成时间 = 构建时刻（buildStamp，见文件顶部）。
@@ -750,7 +760,7 @@ android {
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
         //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
         //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
-        val vName = "2.1.103"
+        val vName = "2.1.104"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()

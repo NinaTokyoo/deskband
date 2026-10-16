@@ -771,13 +771,11 @@ class MainActivity : Activity() {
         returningFromPickerAt = 0L
         if (!fromPicker) collapseAllCards()
         refreshUi()
-        // 回到前台再核一次「气泡设置」开关的尺寸（此时标题按钮一定量好了）
-        if (::btnBubbleOnTap.isInitialized) btnBubbleOnTap.post { applyToggleSize() }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        // 获得焦点时标题按钮已经有实测尺寸了，是补尺寸最稳的时机之一
+        // 拿到焦点时标题按钮已量好尺寸：补一次「气泡设置」开关的尺寸，最稳的兜底
         if (hasFocus && ::btnBubbleOnTap.isInitialized) applyToggleSize()
     }
 
@@ -1265,15 +1263,16 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------------- 气泡设置卡
 
     /**
-     * 「气泡设置」卡：一横条 + 点「管理」向下延伸出各开关（用户 2026-10-17）。
+     * 「气泡设置」卡（用户 2026-10-17）：一横条（标题 + 管理/收起），点按钮向下延伸出各开关。
+     * 目前只有一项「单击时出现」。
      *
-     * 与其它参数卡同一套"可展开卡片"机制（[registerExpandCard]）：手风琴、锁定时不能展开、
-     * 切明暗跟着重绘都自动具备。开关**点一下立即生效**（没有"会丢东西"的中间态，
-     * 所以这张卡不需要「保存 / 取消」那一对）。
+     * 与其它参数卡共用 [registerExpandCard]（手风琴、锁定时不可展开、切明暗重绘都自动具备），
+     * 两点不同 —— 都是用户明确要求的：
+     *   · [alwaysCollapse]：开关点一下立即生效，没有"会丢东西"的中间态，
+     *     所以展开时按钮写「收起」，不写「取消」；
+     *   · 开关的几何量要**抄标题按钮**，见 [syncToggleToTitleButton]。
      */
     private fun setupBubbleSettingsControls() {
-        // alwaysCollapse：这张卡没有"会丢东西"的中间态（开关点一下即生效），
-        // 所以展开时按钮直接显示「收起」，不显示「取消」（用户 2026-10-17）
         registerExpandCard(panelBubbleSettings, btnManageBubbleSettings, alwaysCollapse = true)
         btnBubbleOnTap.setOnClickListener {
             prefs.bubbleOnTap = !prefs.bubbleOnTap
@@ -1283,10 +1282,14 @@ class MainActivity : Activity() {
     }
 
     /**
-     * 刷新「单击时出现」那个开关的文案、颜色与列宽。
+     * 刷「单击时出现」开关的**文案、颜色、文字排版**（几何量归 [syncToggleToTitleButton] 管）。
      *
-     * ⚠️ 宽度抄标题行「管理」按钮：用户要求"右侧按钮…对齐" ——
-     *    宽度与右边界都跟它一致，看着才是一列。
+     * 文字排版的四条都是踩出来的（用户逐条确认过）：
+     *   · 字号不动（13sp，用户明确要求"不要动字体大小"）；
+     *   · 左右内边距压到 [TOGGLE_PAD_DP]：三个字比标题按钮的两个字宽，
+     *     CardAction 那套 14dp 会把字挤出框外（看着像被切了）——用户已同意调整这个距离；
+     *   · 单行 + 不省略号：宁可贴边，也不要变成 "..."；
+     *   · gravity 居中 + 关掉字体自带上下留白：文字才真正落在框的正中。
      */
     private fun refreshBubbleSettings() {
         if (!::btnBubbleOnTap.isInitialized) return
@@ -1294,61 +1297,53 @@ class MainActivity : Activity() {
         val dm = resources.displayMetrics
         btnBubbleOnTap.apply {
             text = getString(if (on) R.string.bubble_text_enabled else R.string.bubble_pending)
+            // 启用态用强调色，未启用用中性文字色（与标签里的那套一致）
             setTextColor(if (on) accent else AccentTheme.skinBoxText(lightMode))
-            // 文字要**完整 + 居中**显示在框里（用户 2026-10-17）：
-            //  · 字号不动（用户明确要求）；
-            //  · 左右内边距压到最小 —— 「待启用」三个字比标题按钮的两个字宽，
-            //    CardAction 那套 14dp 内边距会把字挤到框外（看着像被切了）；
-            //  · 单行、不省略号（宁可贴边也不要变成 "..."）；
-            //  · gravity=center + 关掉字体自带上下留白 -> 真正落在框的中间。
-            setPadding(dp(dm, 4f), 0, dp(dm, 4f), 0)
-            isSingleLine = true
+            setPadding(dp(dm, TOGGLE_PAD_DP), 0, dp(dm, TOGGLE_PAD_DP), 0)
             maxLines = 1
+            isSingleLine = true
             ellipsize = null
             includeFontPadding = false
             gravity = android.view.Gravity.CENTER
-            // ⚠️ 描边背景**必须在这里给**：这个开关是 TextView（不是 Button），
-            //    AccentTheme 统一刷色时不会管它 —— 曾经删代码时把它一起删掉，
-            //    结果开关只剩下文字、没了框（用户 2026-10-17 截图）。
+            // ⚠️ 描边背景得自己给：这个开关是 TextView（不是 Button），
+            //    AccentTheme 统一刷色时管不到它（曾漏掉这行，开关只剩文字没有框）
             background = AccentTheme.ghostSelectorFor(this@MainActivity, accent, lightMode)
         }
-        syncBubbleToggleSize()
+        syncToggleToTitleButton()
     }
 
     /**
-     * 让「单击时出现」的开关**去就**上方「管理 / 收起」按钮：宽高抄它的实测值。
+     * 让开关与上方「管理 / 收起」**同宽同高、右边界同线**。
      *
-     * ⚠️ 方向不能反：早先给标题按钮加了 minWidth 想"两边一起定宽"，等于把「收起」
-     *    撑宽了 —— 用户 2026-10-17："谁让你动收起按钮了"。标题按钮保持 CardAction 原样，
-     *    开关按实测值对齐它。
+     * 为什么必须抄尺寸：两者分处标题行与展开区，各自 `wrap_content` 时「待启用」比「收起」
+     * 宽，左边必然对不齐（用户 2026-10-17 反复反馈过）。
      *
-     * ⚠️ 必须挂在**布局变化**上并自检一次：面板默认 GONE，onCreate 那次量到的是 0。
+     * ⚠️ 方向不能反 —— 给标题按钮加 minWidth 等于把它撑宽，用户明确反对
+     *    （"谁让你动收起按钮了"）。标题按钮保持 CardAction 原样，开关去就它。
+     *
+     * ⚠️ 为什么挂在布局变化上：面板默认 GONE，onCreate 那一刻标题按钮还没测量
+     *    （width = 0），一次性调用会白跑；面板一展开、尺寸一量到就必须补上。
      */
-    private fun syncBubbleToggleSize() {
+    private fun syncToggleToTitleButton() {
         if (!::btnBubbleOnTap.isInitialized || !::btnManageBubbleSettings.isInitialized) return
-        btnBubbleOnTap.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-            applyToggleSize()
-        }
+        btnBubbleOnTap.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> applyToggleSize() }
         applyToggleSize()
     }
 
+    /** 把标题按钮的实测宽高套到开关上，并让右边距归零（贴住行尾 -> 左右边界同时对齐） */
     private fun applyToggleSize() {
         val w = btnManageBubbleSettings.width
         val h = btnManageBubbleSettings.height
-        android.util.Log.i("BubbleGeom", "applyToggleSize: title=${w}x$h toggle=${btnBubbleOnTap.width}x${btnBubbleOnTap.height}")
         if (w <= 0 || h <= 0) return
-        val lp = btnBubbleOnTap.layoutParams as? android.widget.LinearLayout.LayoutParams ?: run {
-            android.util.Log.i("BubbleGeom", "applyToggleSize: layoutParams 类型不是 LinearLayout.LayoutParams")
-            return
-        }
+        val lp = btnBubbleOnTap.layoutParams as? android.widget.LinearLayout.LayoutParams ?: return
         if (lp.width == w && lp.height == h && lp.marginEnd == 0) return
         lp.width = w
         lp.height = h
-        lp.marginEnd = 0        // 贴住行尾：右边界与标题按钮同线，左边界随之相同
+        lp.marginEnd = 0
+        // TextView 的测量取 max(指定宽度, 建议最小宽度)，不归零的话宽高压不下去
         btnBubbleOnTap.minWidth = 0
         btnBubbleOnTap.minHeight = 0
         btnBubbleOnTap.layoutParams = lp
-        android.util.Log.i("BubbleGeom", "applyToggleSize -> set ${w}x$h")
     }
 
     // ---------------------------------------------------------------- 气泡内容卡
@@ -2670,6 +2665,15 @@ class MainActivity : Activity() {
          * "图与描边之间的空隙"，所以图的实际可用高度 = 该高度 − 上下内边距。
          */
         const val BUBBLE_TAG_IMAGE_LINES = 5f
+
+        /**
+         * 「气泡设置」开关里**文字到左右边框的距离**（dp）。
+         *
+         * 「已启用 / 待启用」是三个字，比标题按钮的两个字宽；CardAction 自带的 14dp
+         * 左右内边距会把它挤出框外。用户 2026-10-17 确认"这个距离可以改变"，
+         * 于是压到 4dp —— 框本身（宽高/描边）与字号都不动。
+         */
+        const val TOGGLE_PAD_DP = 4f
 
         /**
          * 气泡内容标签里"删除控件"那格的**固定宽度**（dp）。
