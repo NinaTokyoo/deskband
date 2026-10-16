@@ -1046,8 +1046,9 @@ class PetService : Service(), PetView.Host {
         // 深色模式：只把气泡内部的**白底换成灰底**，几何/描边不动
         view.grayFill = bubbleGrayFill
         // 气泡内容（用户 2026-10-16）：**顺序轮播** —— 每点一下显示下一条，到底回到第一条。
+        // 只轮播**已启用**的条目（标签右侧那个「已启用 / 启用」按钮管这件事）；
         // 文字色用**人物发色的派生色**（accentFrom(light)），与预览图一致。
-        val texts = BubbleTextStore.list(this)
+        val texts = BubbleTextStore.enabledTexts(this)
         if (texts.isNotEmpty()) {
             val i = ((prefs.bubbleTextCursor % texts.size) + texts.size) % texts.size
             view.text = texts[i]

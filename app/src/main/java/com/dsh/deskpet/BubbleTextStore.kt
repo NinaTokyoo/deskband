@@ -23,6 +23,24 @@ object BubbleTextStore {
 
     private const val KEY = "bubble_texts"
 
+    /**
+     * 一条气泡内容。
+     *
+     * [enabled] = 该条**是否会出现在气泡里**（用户 2026-10-16：标签右侧有「已启用 / 启用」
+     * 按钮管理这件事）。被停用的条目仍留在列表里、仍可编辑删除，只是轮播时跳过。
+     */
+    data class Item(val text: String, val enabled: Boolean)
+
+    /**
+     * 每行开头的"启用标志"前缀：`1\u0001` / `0\u0001`。
+     *
+     * 用一个控制字符收尾是为了**老存档兼容**：早先存的是纯文本（没有标志），
+     * 那种行不匹配前缀 -> 按"启用"处理。若只用单个 '0'/'1' 当标志，
+     * 一条以数字 1 开头的内容（例如"1号方案"）会被误吞掉首字符。
+     */
+    private const val FLAG_ON = "1\u0001"
+    private const val FLAG_OFF = "0\u0001"
+
     // ------------------------------------------------------------ 纯函数（可单测）
 
     /**
@@ -82,12 +100,37 @@ object BubbleTextStore {
         return sb.toString()
     }
 
-    /** 转义后按行拼接：[decode] 的逆运算 */
-    fun encode(items: List<String>): String = items.joinToString("\n") {
-        it.replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r")
+    /**
+     * 转义后按行拼接（**不带**启用标志）：[decode] 的逆运算。
+     *
+     * ⚠️ 带标志的是 [encodeItems] —— 两者必须配套使用：
+     *    `decode(encode(x)) == x`，`decodeItems(encodeItems(x)) == x`。
+     */
+    fun encode(items: List<String>): String = items.joinToString("\n") { escape(it) }
+
+    /** 带启用标志的编码（界面落盘用这个） */
+    fun encodeItems(items: List<Item>): String = items.joinToString("\n") {
+        (if (it.enabled) FLAG_ON else FLAG_OFF) + escape(it.text)
     }
 
-    /** 解析 [encode] 写出的串；空串 = 空列表 */
+    private fun escape(s: String): String =
+        s.replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r")
+
+    /**
+     * 解析 [encodeItems] 写出的串（带启用标志）；空串 = 空列表。
+     *
+     * 老存档（没有标志前缀）按"启用"处理 —— 见 [FLAG_ON] 的说明。
+     */
+    fun decodeItems(raw: String?): List<Item> =
+        decode(raw).filter { it.isNotEmpty() }.map { line ->
+            when {
+                line.startsWith(FLAG_OFF) -> Item(line.substring(FLAG_OFF.length), enabled = false)
+                line.startsWith(FLAG_ON) -> Item(line.substring(FLAG_ON.length), enabled = true)
+                else -> Item(line, enabled = true)          // 老存档：一律视为启用
+            }
+        }
+
+    /** 解析 [encode] 写出的串（不带标志），返回每行文字；空串 = 空列表 */
     fun decode(raw: String?): List<String> {
         if (raw.isNullOrEmpty()) return emptyList()
         val out = ArrayList<String>()
@@ -115,30 +158,54 @@ object BubbleTextStore {
 
     // ------------------------------------------------------------ 落盘
 
-    fun list(ctx: Context): List<String> =
-        decode(Prefs(ctx).bubbleTextsRaw).take(MAX_ITEMS)
+    /** 全部条目（含被停用的），顺序即界面顺序 */
+    fun items(ctx: Context): List<Item> =
+        decodeItems(Prefs(ctx).bubbleTextsRaw).take(MAX_ITEMS)
 
-    /** 覆盖式写入；超过条数上限的部分直接丢掉（界面本来就不让加） */
+    /** 只要**已启用**的条目文字 —— 气泡轮播用这个 */
+    fun enabledTexts(ctx: Context): List<String> =
+        items(ctx).filter { it.enabled }.map { it.text }
+
+    /** 文本列表（兼容旧调用：全部条目的文字） */
+    fun list(ctx: Context): List<String> = items(ctx).map { it.text }
+
+    fun saveItems(ctx: Context, items: List<Item>) {
+        Prefs(ctx).bubbleTextsRaw = encodeItems(items.take(MAX_ITEMS))
+    }
+
+    /** 覆盖式写入（全部按启用处理）；超过条数上限的部分直接丢掉 */
     fun save(ctx: Context, items: List<String>) {
-        Prefs(ctx).bubbleTextsRaw = encode(items.take(MAX_ITEMS))
+        saveItems(ctx, items.take(MAX_ITEMS).map { Item(it, enabled = true) })
     }
 
     /** 追加一条并返回新列表；已达上限或内容为空时原样返回（由界面提示） */
     fun add(ctx: Context, text: String): List<String> {
         val t = fit(text.trim())
-        val cur = list(ctx)
-        if (t.isEmpty() || cur.size >= MAX_ITEMS) return cur
-        val next = cur + t
-        save(ctx, next)
-        return next
+        val cur = items(ctx)
+        if (t.isEmpty() || cur.size >= MAX_ITEMS) return cur.map { it.text }
+        saveItems(ctx, cur + Item(t, enabled = true))
+        return items(ctx).map { it.text }
     }
 
     /** 删掉第 [index] 条（越界则原样返回） */
     fun removeAt(ctx: Context, index: Int): List<String> {
-        val cur = list(ctx)
+        val cur = items(ctx)
+        if (index !in cur.indices) return cur.map { it.text }
+        saveItems(ctx, cur.toMutableList().also { it.removeAt(index) })
+        return items(ctx).map { it.text }
+    }
+
+    /**
+     * 切换第 [index] 条的**启用**状态（用户 2026-10-16：标签右侧那个按钮）。
+     *
+     * 返回新列表；越界则原样返回。
+     */
+    fun setEnabled(ctx: Context, index: Int, enabled: Boolean): List<Item> {
+        val cur = items(ctx)
         if (index !in cur.indices) return cur
-        val next = cur.toMutableList().also { it.removeAt(index) }
-        save(ctx, next)
+        val next = cur.toMutableList()
+        next[index] = next[index].copy(enabled = enabled)
+        saveItems(ctx, next)
         return next
     }
 

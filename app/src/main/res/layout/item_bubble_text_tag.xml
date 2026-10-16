@@ -28,13 +28,14 @@
     android:paddingBottom="8dp">
 
     <!-- 文字：占满整行（右侧内边距在代码里固定预留出槽位），**垂直居中** ——
-         一行时槽位比文字高，居中后"✕ 就在这一行末尾"；两行时两者等高，控件自然落到第二行末尾 -->
+         一行时槽位比文字高，居中后"✕ 就在这一行末尾"；
+         多行时两者等高，控件自然落到**末行末尾**（用户要求：最多三行） -->
     <TextView
         android:id="@+id/txtBubbleTagText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="start|center_vertical"
-        android:maxLines="2"
+        android:maxLines="3"
         android:ellipsize="end"
         android:lineSpacingExtra="2dp"
         android:textSize="14sp" />

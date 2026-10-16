@@ -78,6 +78,9 @@
     <string name="bubble_text_need_text">请先输入内容</string>
     <string name="bubble_text_saved">已添加</string>
     <string name="bubble_text_delete_done">已删除：%1$s</string>
+    <!-- 标签右侧那个按钮（用户 2026-10-16 新增）：管理该条是否会出现在气泡中 -->
+    <string name="bubble_text_enabled">已启用</string>
+    <string name="bubble_text_disabled">启用</string>
 
     <!-- ③ 外观 -->
     <string name="section_look">外观尺寸</string>

@@ -72,6 +72,27 @@ class BubbleTextStoreTest {
     }
 
     @Test
+    fun enabled_flag_round_trip_and_legacy_compat() {
+        // 带启用标志的往返（用户 2026-10-16：标签右侧「已启用 / 启用」按钮）
+        val items = listOf(
+            BubbleTextStore.Item("开着的", enabled = true),
+            BubbleTextStore.Item("关着的", enabled = false),
+            BubbleTextStore.Item("带\n换行\\的", enabled = false)
+        )
+        assertEquals(items, BubbleTextStore.decodeItems(BubbleTextStore.encodeItems(items)))
+
+        // 老存档（没有标志前缀）一律按"启用"读，且**首字符不能被吃掉**
+        val legacy = BubbleTextStore.encode(listOf("1号方案", "0号方案"))
+        assertEquals(
+            listOf(
+                BubbleTextStore.Item("1号方案", enabled = true),
+                BubbleTextStore.Item("0号方案", enabled = true)
+            ),
+            BubbleTextStore.decodeItems(legacy)
+        )
+    }
+
+    @Test
     fun encode_decode_round_trip() {
         val items = listOf("第一句", "带\\反斜杠", "带\n换行", "emoji 🐟", "")
         assertEquals(items, BubbleTextStore.decode(BubbleTextStore.encode(items)))

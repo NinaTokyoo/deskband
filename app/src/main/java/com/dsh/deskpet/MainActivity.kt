@@ -1292,24 +1292,90 @@ class MainActivity : Activity() {
     }
 
     /**
-     * 管理列表：**一行一个**标签（用户要求）。
+     * 管理列表：**一行一个**标签（用户要求），每个标签右侧还有一个
+     * 「已启用 / 启用」按钮（管理该条是否出现在气泡里）。
      *
-     * 每次进管理、每次删除、每次切明暗都要重建 —— 标签的描边与文字色都跟强调色走。
+     * 每次进管理、每次删除/启停、每次切明暗都要重建 —— 颜色都跟强调色走。
      */
     private fun renderBubbleTextTags() {
         rowsBubbleText.removeAllViews()
-        val items = BubbleTextStore.list(this)
+        val items = BubbleTextStore.items(this)
         txtBubbleTextEmpty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
 
         val gap = (resources.displayMetrics.density * 8f).toInt()
         for (i in items.indices) {
-            val tag = makeBubbleTextTag(i, items[i])
-            if (rowsBubbleText.childCount > 0) {
-                (tag.layoutParams as android.widget.LinearLayout.LayoutParams).topMargin = gap
-            }
-            rowsBubbleText.addView(tag)
+            val row = makeBubbleTextRow(i, items[i], topMargin = if (i == 0) 0 else gap)
+            rowsBubbleText.addView(row)
         }
         refreshBubbleTextButton()
+    }
+
+    /**
+     * 一行 = [标签] + [已启用 / 启用 按钮]。
+     *
+     * 用户 2026-10-16 的三条对齐要求，全部在这里落实：
+     *   · 标签的**右边界与「新增」按钮的右边界对齐** —— 靠"启用按钮宽度 = 「管理 / 收起」
+     *     按钮宽度" + "两者间距 = 标题行里两个按钮的间距"实现（见下面实测取值的注释）；
+     *   · 启用按钮的**左右位置与上方「收起」按钮一致** —— 同上，宽度与间距都抄标题行；
+     *   · 启用按钮**与标签等高** —— 布局完成后按标签实测高度设一次。
+     */
+    private fun makeBubbleTextRow(index: Int, item: BubbleTextStore.Item, topMargin: Int): View {
+        val dm = resources.displayMetrics
+        val row = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { this.topMargin = topMargin }
+        }
+        val tag = makeBubbleTextTag(index, item.text)
+        row.addView(tag, android.widget.LinearLayout.LayoutParams(
+            0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+        ))
+
+        val toggle = Button(this).apply {
+            // 宽度与「管理 / 收起」按钮一致；水平位置因此也与它一致（间距同样抄标题行）
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                btnBubbleTextManage.width.coerceAtLeast(dp(dm, 64f)),
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { marginStart = titleButtonGap() }
+            isAllCaps = false
+            text = getString(
+                if (item.enabled) R.string.bubble_text_enabled else R.string.bubble_text_disabled
+            )
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setOnClickListener {
+                BubbleTextStore.setEnabled(this@MainActivity, index, !item.enabled)
+                renderBubbleTextTags()
+            }
+        }
+        row.addView(toggle)
+
+        // 与标签等高 + 描边/文字色（都要等布局完成后才知道真实高度）
+        row.post {
+            val h = tag.height
+            if (h > 0) {
+                toggle.layoutParams = (toggle.layoutParams as android.widget.LinearLayout.LayoutParams)
+                    .apply { height = h }
+                toggle.requestLayout()
+            }
+            styleBubbleToggle(toggle, item.enabled)
+        }
+        return row
+    }
+
+    /**
+     * 启用按钮的配色（与 App 里其它"选中态"同一套约定，见 refreshThemeButtons）：
+     *   镂空描边恒常不变，**选中**的那个用强调色文字，未选中用中性文字色。
+     */
+    private fun styleBubbleToggle(btn: Button, enabled: Boolean) {
+        btn.background = AccentTheme.ghostSelectorFor(this, accent, lightMode)
+        btn.setTextColor(if (enabled) accent else AccentTheme.skinBoxText(lightMode))
+    }
+
+    /** 标题行里两个按钮之间的间距（启用按钮要靠它对齐到与「管理 / 收起」同一列） */
+    private fun titleButtonGap(): Int {
+        val lp = btnBubbleTextManage.layoutParams as? android.widget.LinearLayout.LayoutParams
+        return lp?.marginStart ?: dp(resources.displayMetrics, 8f)
     }
 
     /**
@@ -1342,17 +1408,17 @@ class MainActivity : Activity() {
             text = content
             setTextColor(AccentTheme.skinBoxText(lightMode))
             setPadding(0, 0, slotW + gap, 0)
-            maxLines = 2
+            maxLines = 3
             ellipsize = android.text.TextUtils.TruncateAt.END
             // 显示不下就用**省略号（三个点）**收尾（用户要求）。
             // ⚠️ 不只靠 ellipsize：它画的是单个"…"字形、点数不是三个，
             //    而且这里的宽度被"预留槽位"改过，渲染期行为不好预测 ——
-            //    所以按 TextView 的真实可用宽度自行截到两行，再补三个点。
+            //    所以按 TextView 的真实可用宽度自行截到三行，再补三个点。
             post {
                 val avail = width - paddingStart - paddingEnd
                 if (avail <= 0) return@post
                 val full = text?.toString() ?: return@post
-                val fit = fitTwoLines(full, paint, avail, lineSpacingExtra)
+                val fit = fitLines(full, paint, avail, lineSpacingExtra, 3)
                 if (fit != full) text = fit + "..."
             }
         }
@@ -1427,17 +1493,17 @@ class MainActivity : Activity() {
      * 用系统的 [android.text.StaticLayout] 试排一次（与 TextView 自己同一套折行规则），
      * 行数没超就原样返回；超了取前 maxLines 行能放下的部分。
      */
-    private fun fitTwoLines(
-        text: String, paint: android.text.TextPaint, width: Int, extraSpacing: Float
+    private fun fitLines(
+        text: String, paint: android.text.TextPaint, width: Int, extraSpacing: Float, maxLines: Int
     ): String {
         if (width <= 0) return text
         val layout = android.text.StaticLayout.Builder
             .obtain(text, 0, text.length, paint, width)
             .setLineSpacing(extraSpacing, 1f)
             .build()
-        if (layout.lineCount <= 2) return text
+        if (layout.lineCount <= maxLines) return text
         // ⚠️ 少留一个字：后面还要补"..."，正好一个汉字的宽度
-        val end = (layout.getLineEnd(1) - 1).coerceIn(1, text.length)
+        val end = (layout.getLineEnd(maxLines - 1) - 1).coerceIn(1, text.length)
         return text.substring(0, end).trimEnd()
     }
 
