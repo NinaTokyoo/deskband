@@ -209,7 +209,13 @@ class BubbleView(context: Context) : View(context) {
 
         // 文字：画在**窗口坐标系**里（不跟着气泡图案转）——图案可能转了 ±90°，
         // 文字必须永远是正的（用户 2026-10-16 定的排版原则见 [drawText]）。
-        if (text.isNotEmpty()) drawText(canvas)
+        //
+        // ⚠️ 出现/消失与**大气泡**严格对齐（用户 2026-10-16）：
+        //    · 大气泡完全出现那一刻（= 出现段结束 APPEAR_MS）才显示文字；
+        //    · 大气泡开始缩小的那一瞬间（= 停留段结束 APPEAR_MS + HOLD_MS）文字立刻消失。
+        //    三块的消失顺序是大->中->小，所以"大气泡开始缩"正好是消失段的起点。
+        //    拖动/再点触发的 [vanishNow] 把时间轴拨到同一个点，于是文字也同时消失 —— 天然一致。
+        if (text.isNotEmpty() && t >= APPEAR_MS && t < APPEAR_MS + HOLD_MS) drawText(canvas)
 
         if (!finished(now)) postInvalidateOnAnimation()
     }
