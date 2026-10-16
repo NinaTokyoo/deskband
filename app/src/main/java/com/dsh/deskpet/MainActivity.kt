@@ -1283,13 +1283,17 @@ class MainActivity : Activity() {
     }
 
     /**
-     * 右上角按钮的文案与颜色 —— 与自定义形象同一套状态机：
-     *   收起 -> 「管理」；新增表单 / 有待确认删除 -> 「取消」（红字）；
-     *   管理列表（无待确认） -> 「收起」。
+     * 右上角按钮的文案与颜色。
+     *
+     * 收起 -> 「管理」；管理列表里**有待确认删除** -> 「取消」（红字）；
+     * 其余（选类型 / 输入表单 / 管理列表）-> 「收起」。
+     *
+     * ⚠️ 用户 2026-10-16 明确："这两个界面的取消改成收起" —— 也就是**选类型**与**输入表单**
+     *    这两步不再显示「取消」（它们并没有会丢东西的中间态，只是把展开区收回去），
+     *    只有"管理列表里点了删除、等你确认"那一步才叫「取消」（那才是真的会退掉一个操作）。
      */
     private fun refreshBubbleTextButton() {
-        val cancel = bubbleTextMode == BUBBLE_ADD || bubbleTextMode == BUBBLE_KIND ||
-            (bubbleTextMode == BUBBLE_MANAGE && pendingBubbleDelete != null)
+        val cancel = bubbleTextMode == BUBBLE_MANAGE && pendingBubbleDelete != null
         btnBubbleTextManage.text = getString(
             when {
                 bubbleTextMode == BUBBLE_NONE -> R.string.card_manage
@@ -1423,10 +1427,12 @@ class MainActivity : Activity() {
             }
         }
 
-        // 图片条目：把缩略图放在标签**最前面（第一个字的位置）**，大小与一行文字相同。
+        // 图片条目：把缩略图放在标签**最前面（第一个字的位置）**。
+        // 用户 2026-10-16 先要求"跟文字相同的大小"，随后改为**字号的 4 倍**。
         // 用 inSampleSize 直接解到接近缩略图尺寸，20 条一起建也不会慢。
         if (item.isImage) {
-            val side = editBubbleText.textSize.toInt().coerceAtLeast(dp(dm, 16f))
+            val side = (editBubbleText.textSize * BUBBLE_TAG_IMAGE_SCALE)
+                .toInt().coerceAtLeast(dp(dm, 16f))
             val iv = android.widget.ImageView(this).apply {
                 layoutParams = android.widget.LinearLayout.LayoutParams(side, side)
                     .apply { marginEnd = gap / 2 }
@@ -2540,6 +2546,12 @@ class MainActivity : Activity() {
 
         /** 先选类型（文本 / 图片）那一小块 —— 用户要求"卡片向下延伸，在卡片里选择" */
         const val BUBBLE_KIND = 3
+
+        /**
+         * 管理列表里**图片条目缩略图**的边长 = 内容字号的这个倍数（用户 2026-10-16：
+         * "若此标签为图片，则图片大小为字号的 4 倍"；最初是 1 倍 = 一行文字那么高）。
+         */
+        const val BUBBLE_TAG_IMAGE_SCALE = 4f
 
         /**
          * 气泡内容标签里"删除控件"那格的**固定宽度**（dp）。
