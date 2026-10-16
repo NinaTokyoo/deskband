@@ -212,6 +212,21 @@ object PetState {
     const val BUBBLE_SIDE_LEFT = -1
 
     /**
+     * 条件1 的那条线：人物吸附边中点在右侧框"上 **1/[这个数]** 点"及以上就翻到左上。
+     *
+     * 沿革：用户最初给 1/3，2.1.34 改成 **1/5.5**（更靠上 = 更不容易翻边）。
+     */
+    private const val EDGE_LINE_DIV = 5.5f
+
+    /**
+     * 条件2 的那条线：按默认（右上）摆法时气泡最上沿在右侧框"上 **1/[这个数]** 点"
+     * 及以上就翻到左上。
+     *
+     * 沿革：用户最初给 1/5，2.1.34 改成 **1/7**。
+     */
+    private const val TOP_LINE_DIV = 7f
+
+    /**
      * 气泡摆在哪一侧 —— 纯函数，便于单测。
      *
      * ⚠️ 返回值是**人物素材自己坐标系**里的侧别（+1 = 素材右侧＝人物右上；
@@ -220,25 +235,31 @@ object PetState {
      *
      * 用户规则（对应 2.1.33 的推广）：
      *   1. 贴右边框：默认**右上**；命中任一条件则**左上** ——
-     *        · 条件1：人物**吸附边中点**在右边框"上 1/3 点"及以上（含压线）
-     *        · 条件2：按默认摆法时气泡的**最上沿**在右边框"上 1/5 点"及以上（含压线）
+     *        · 条件1：人物**吸附边中点**在右边框"上 1/[EDGE_LINE_DIV] 点"及以上（含压线）
+     *        · 条件2：按默认摆法时气泡的**最上沿**在右边框"上 1/[TOP_LINE_DIV] 点"及以上（含压线）
      *   2. 右下角 -> 左上；左下角是它的左右镜像 -> 右上；
      *      上方的两个角是下方的**上下镜像**（左右不变）-> 右上角左上、左上角右上
      *   3/4. 贴底边 / 贴顶边：吸附边中点在屏幕水平中线**及右侧** -> 左上，否则右上
      *        （贴顶边 = 底边的上下镜像，判据相同）
-     *   5. 贴左边框 = 贴右边框的**左右镜像**：判据完全一样，只是屏幕上左右相反
+     *   5. 贴左边框 = 贴右边框的**左右镜像**：判据完全一样（左右镜像不改变上下，
+     *      所以左边用的也是 [EDGE_LINE_DIV] / [TOP_LINE_DIV] 这两条线，从屏幕**顶端**量），
+     *      只是屏幕上左右相反。
      *
      * @param edgeMidX 吸附边中点的屏幕 x（贴底/顶边时 = 足迹盒中心 x）
-     * @param edgeMidY 吸附边中点的屏幕 y（贴左/右边框时 = 足迹盒中心 y）
+     * @param edgeMidY 吸附边中点的屏幕 y（贴左/右边框时 = 足迹盒中心 y；两边共用）
      * @param defaultTopY 按默认（右上）摆法时，气泡窗口的**最上沿** y（条件2 用）
      */
     fun bubbleSide(
         state: Int, edgeMidX: Float, edgeMidY: Float,
         screenW: Float, screenH: Float, defaultTopY: Float
     ): Int = when (state) {
+        // 左、右两条边框共用同一套判据（1/5.5 与 1/7 两条线都从屏幕顶端量）
         BORDER_R, BORDER_L ->
-            if (edgeMidY <= screenH / 3f || defaultTopY <= screenH / 5f) BUBBLE_SIDE_LEFT
-            else BUBBLE_SIDE_RIGHT
+            if (edgeMidY <= screenH / EDGE_LINE_DIV || defaultTopY <= screenH / TOP_LINE_DIV) {
+                BUBBLE_SIDE_LEFT
+            } else {
+                BUBBLE_SIDE_RIGHT
+            }
 
         CORNER_BR, CORNER_TR -> BUBBLE_SIDE_LEFT
         CORNER_BL, CORNER_TL -> BUBBLE_SIDE_RIGHT

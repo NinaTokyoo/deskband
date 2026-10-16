@@ -1856,17 +1856,20 @@ class PetStateTest {
     // ---------------------------------------------------------------- 思考气泡摆哪一侧
 
     /**
-     * 气泡侧别规则（用户 2026-10-16 定的推广规则，位置一律按"人物素材自己的视角"）。
+     * 气泡侧别规则（用户 2026-10-16 定，2.1.34 把两条线改成 1/5.5 与 1/7）。
      *
-     * 屏幕 1440 x 3084：中线 x = 720，上 1/3 = 1028，上 1/5 = 616.8。
+     * 屏幕 1440 x 3084：中线 x = 720，条件1 线 = 3084/5.5 = 560.7，条件2 线 = 3084/7 = 440.6。
      */
+    private val EDGE_LINE = SH / 5.5f
+    private val TOP_LINE = SH / 7f
+
     private fun sideOf(
         state: Int, x: Float, y: Float, defaultTop: Float = 1e5f
     ) = PetState.bubbleSide(state, x, y, SW, SH, defaultTop)
 
     @Test
     fun bubble_on_right_border_defaults_to_character_right() {
-        // 下半屏、气泡也不会顶出上 1/5 线 -> 默认（素材右侧 = 人物右上）
+        // 下半屏、气泡也不会顶出条件2 那条线 -> 默认（素材右侧 = 人物右上）
         assertEquals(
             PetState.BUBBLE_SIDE_RIGHT,
             sideOf(PetState.BORDER_R, SW - 100f, SH * 0.75f, defaultTop = 2000f)
@@ -1874,31 +1877,40 @@ class PetStateTest {
     }
 
     @Test
-    fun bubble_flips_when_pet_is_in_top_third() {
-        // 条件1：吸附边中点在上 1/3 点及以上（含正好压线）
-        assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.BORDER_R, SW - 100f, SH / 3f))
-        assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.BORDER_R, SW - 100f, SH / 3f - 1f))
+    fun bubble_flips_when_pet_is_above_the_fifth_and_a_half_line() {
+        // 条件1：吸附边中点在"上 1/5.5 点"及以上（含正好压线）
+        assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.BORDER_R, SW - 100f, EDGE_LINE))
+        assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.BORDER_R, SW - 100f, EDGE_LINE - 1f))
         // 差一点就还在默认侧
-        assertEquals(PetState.BUBBLE_SIDE_RIGHT, sideOf(PetState.BORDER_R, SW - 100f, SH / 3f + 1f, 2000f))
+        assertEquals(PetState.BUBBLE_SIDE_RIGHT, sideOf(PetState.BORDER_R, SW - 100f, EDGE_LINE + 1f, 2000f))
+        // 旧的 1/3 线已经不再触发（1/3 = 1028，明显低于新线 560.7）
+        assertEquals(PetState.BUBBLE_SIDE_RIGHT, sideOf(PetState.BORDER_R, SW - 100f, SH / 3f, 2000f))
     }
 
     @Test
-    fun bubble_flips_when_default_placement_would_cross_top_fifth() {
-        // 条件2：默认摆法的最上沿在上 1/5 点及以上（含正好压线）
-        assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.BORDER_R, SW - 100f, SH * 0.6f, SH / 5f))
-        assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.BORDER_R, SW - 100f, SH * 0.6f, SH / 5f - 1f))
-        assertEquals(PetState.BUBBLE_SIDE_RIGHT, sideOf(PetState.BORDER_R, SW - 100f, SH * 0.6f, SH / 5f + 1f))
+    fun bubble_flips_when_default_placement_would_cross_the_seventh_line() {
+        // 条件2：默认摆法的最上沿在"上 1/7 点"及以上（含正好压线）
+        assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.BORDER_R, SW - 100f, SH * 0.6f, TOP_LINE))
+        assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.BORDER_R, SW - 100f, SH * 0.6f, TOP_LINE - 1f))
+        assertEquals(PetState.BUBBLE_SIDE_RIGHT, sideOf(PetState.BORDER_R, SW - 100f, SH * 0.6f, TOP_LINE + 1f))
+        // 旧的 1/5 线不再触发（1/5 = 616.8，低于新线 440.6）
+        assertEquals(PetState.BUBBLE_SIDE_RIGHT, sideOf(PetState.BORDER_R, SW - 100f, SH * 0.6f, SH / 5f))
     }
 
     @Test
     fun bubble_on_left_border_mirrors_right_border() {
-        // 规则5：贴左边框 = 贴右边框的左右镜像 -> 判据完全相同
+        // 规则5：贴左边框 = 贴右边框的左右镜像 —— 判据完全相同（同两条线、同样从顶端量），
+        // 用户 2.1.34 特别要求"左边也对应修改"，所以这里逐条对拍。
         assertEquals(
             PetState.BUBBLE_SIDE_RIGHT,
             sideOf(PetState.BORDER_L, 100f, SH * 0.75f, defaultTop = 2000f)
         )
-        assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.BORDER_L, 100f, SH / 3f))
-        assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.BORDER_L, 100f, SH * 0.6f, SH / 5f))
+        assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.BORDER_L, 100f, EDGE_LINE))
+        assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.BORDER_L, 100f, EDGE_LINE - 1f))
+        assertEquals(PetState.BUBBLE_SIDE_RIGHT, sideOf(PetState.BORDER_L, 100f, EDGE_LINE + 1f, 2000f))
+        assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.BORDER_L, 100f, SH * 0.6f, TOP_LINE))
+        assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.BORDER_L, 100f, SH * 0.6f, TOP_LINE - 1f))
+        assertEquals(PetState.BUBBLE_SIDE_RIGHT, sideOf(PetState.BORDER_L, 100f, SH * 0.6f, TOP_LINE + 1f))
     }
 
     @Test
