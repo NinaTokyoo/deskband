@@ -322,9 +322,15 @@ class BubbleView(context: Context) : View(context) {
         val rx = box[2]
         val ry = box[3]
         if (rx <= 2f || ry <= 2f || bmp.width <= 0 || bmp.height <= 0) return
-        // 椭圆内切矩形（边长 = 半轴 × √2），再乘 0.66 作为"合适大小"
-        val maxW = rx * 1.4142f * 2f * IMAGE_FIT
-        val maxH = ry * 1.4142f * 2f * IMAGE_FIT
+        // ⚠️ 必须用**内缘**椭圆（扣掉描边）再算"合适大小"：
+        //    外框含描边厚度，按它算会让图片盖到描边上、甚至溢出气泡（用户实测）。
+        val inset = minOf(rx, ry) * STROKE_INSET_RATIO
+        val ew = (rx - inset) * 2f
+        val eh = (ry - inset) * 2f
+        if (ew <= 4f || eh <= 4f) return
+        // 内切矩形（边长 = 半轴 × √2）再乘 IMAGE_FIT 留一圈空隙
+        val maxW = ew * 0.7071f * IMAGE_FIT
+        val maxH = eh * 0.7071f * IMAGE_FIT
         val k = minOf(maxW / bmp.width, maxH / bmp.height)
         val w = bmp.width * k
         val h = bmp.height * k
@@ -361,42 +367,46 @@ class BubbleView(context: Context) : View(context) {
         val ry = box[3]
         if (rx <= 2f || ry <= 2f) return
 
-        // 抠掉描边后的内缘椭圆（半轴）
+        // 抠掉描边后的内缘椭圆（半轴）—— 所有尺寸判定都基于它，保证**不压线**
         val inset = minOf(rx, ry) * STROKE_INSET_RATIO
         val ew = (rx - inset) * 2f
         val eh = (ry - inset) * 2f
         if (ew <= 4f || eh <= 4f) return
 
-        val minSize = eh * MIN_SIZE_RATIO
-        val cap = ew * CHAR_W_RATIO / 3f      // ≈ 3 个字的字号（封顶）
         val paint = textPaint.apply { color = textColor }
 
-        // 行数由少到多试，取"字号不低于最小可读字号"的第一个行数
-        var chosen: Pair<Float, List<String>>? = null
-        for (k in 1..6) {
-            if (k * minSize * LINE_SPACING > eh * V_MARGIN) break
+        // 字数（按 Unicode 码点，标点 / emoji 各算 1 个）
+        val n = text.codePointCount(0, text.length)
+        // 用户 2026-10-17：**不多于 4 个字就排一行**；超过 4 个才积极换行去换字号
+        val maxLines = if (n <= ONE_LINE_MAX_CHARS) 1 else MAX_LINES
+
+        // 字号上限：按"4 个汉字一行放得下"封顶（免得一两个字撑满整个气泡；
+        // 用字体自身的字宽量，中英文都适用）
+        val cap = capSize(paint, ew)
+
+        var best: Triple<Float, List<String>, Float>? = null   // 字号 / 行 / 行高
+        for (k in 1..maxLines) {
             var size = cap
-            var found: Pair<Float, List<String>>? = null
             while (size >= 9f) {
                 paint.textSize = size
                 val lh = size * LINE_SPACING
-                if (k * lh <= eh * V_MARGIN) {
-                    val lines = wrapForEllipse(paint, k, lh, ew, eh)
+                // 竖直方向也要放得下（留 V_MARGIN 的余量）
+                if ((k - 1) * lh + size <= eh * V_MARGIN) {
+                    val lines = wrapForEllipse(paint, k, lh, size, ew, eh)
                     if (lines != null) {
-                        found = size to lines
+                        // 用户要求"积极换行以保证字体最大"：行数多、字号更大就换
+                        if (best == null || size > best!!.first) best = Triple(size, lines, lh)
                         break
                     }
                 }
                 size -= 1f
             }
-            if (found != null && found.first >= minSize) {
-                chosen = found
-                break
-            }
         }
-        val (size, lines) = chosen ?: return
+        val chosen = best ?: return
+        val size = chosen.first
+        val lines = chosen.second
+        val lh = chosen.third
         paint.textSize = size
-        val lh = size * LINE_SPACING
         // 竖直居中：让**文字块**的中心落在椭圆中心上，再按视觉补偿上移 0.05em。
         // ⚠️ 必须减掉 `size/2`：这里算的是**首行的行顶**，而一行文字自身还占约一个行高，
         //    只减 (n-1)/2*lh 的话整块会往下偏半个字（实测 0.4em，行数越多越明显，
@@ -406,14 +416,27 @@ class BubbleView(context: Context) : View(context) {
         // ⚠️ 文字**跟着大气泡一起缩放**（用户 2026-10-16："大气泡缩小的时候不要遮盖文字"）：
         //    按压缩小时椭圆内缘往里收，文字若保持原尺寸就会被环压住/露到环外；
         //    以椭圆中心为基准同比例缩放，两者始终同步 —— 看起来是"整块气泡在呼吸"。
-        val k = pressScale(PART_COUNT - 1, SystemClock.uptimeMillis())
+        val k2 = pressScale(PART_COUNT - 1, SystemClock.uptimeMillis())
         canvas.save()
-        canvas.scale(k, k, cx, cy)
+        canvas.scale(k2, k2, cx, cy)
         for ((j, line) in lines.withIndex()) {
             val w = paint.measureText(line)
             canvas.drawText(line, cx - w / 2f, y0 + j * lh + size * BASELINE_RATIO, paint)
         }
         canvas.restore()
+    }
+
+    /**
+     * 字号上限：让 **4 个汉字**（用字体自身的 advance 量）在 [ew] 宽的内缘椭圆正中最宽处放得下。
+     *
+     * 这么定是为了避免"一两个字撑满整个气泡"；中英文都能用（量的是同一套字宽）。
+     */
+    private fun capSize(paint: android.text.TextPaint, ew: Float): Float {
+        val probe = "测".repeat(ONE_LINE_MAX_CHARS)
+        val unit = paint.measureText(probe) / ONE_LINE_MAX_CHARS      // 当前字号下的单字宽
+        if (unit <= 0f) return MAX_FONT_PX
+        val widest = ew * CHORD_MARGIN                                 // 椭圆最宽处的可用宽度
+        return (widest / unit * paint.textSize).coerceAtMost(MAX_FONT_PX)
     }
 
     /**
@@ -426,11 +449,14 @@ class BubbleView(context: Context) : View(context) {
      * 否则逐字断（中文可以任意字之间断）。
      */
     private fun wrapForEllipse(
-        paint: android.text.TextPaint, k: Int, lh: Float, ew: Float, eh: Float
+        paint: android.text.TextPaint, k: Int, lh: Float, size: Float, ew: Float, eh: Float
     ): List<String>? {
+        // ⚠️ 弦宽取该行**外缘**（行心 ± 半个字高）里更窄的那一处：
+        //    行心的弦宽偏宽，短气泡里会让首/末行压到描边上（用户实测"气泡较小时长文本压线"）。
         val widths = FloatArray(k) { j ->
-            val dy = (j - (k - 1) / 2f) * lh
-            val t = minOf(0.995f, Math.abs(2f * dy / eh))
+            val yc = (j - (k - 1) / 2f) * lh
+            val outer = maxOf(Math.abs(yc - size / 2f), Math.abs(yc + size / 2f))
+            val t = minOf(0.995f, 2f * outer / eh)
             ew * kotlin.math.sqrt((1f - t * t).coerceAtLeast(0f)) * CHORD_MARGIN
         }
         val lines = ArrayList<String>()
@@ -625,22 +651,32 @@ class BubbleView(context: Context) : View(context) {
         private const val CHORD_MARGIN = 0.78f
         /** 文字块总高最多占椭圆高的比例 */
         private const val V_MARGIN = 0.86f
-        /** 最小可读字号 = 椭圆高 × 这个比例，用来决定行数 */
-        private const val MIN_SIZE_RATIO = 0.16f
+        /** 最多排几行（超过 4 个字时才可能用到） */
+        private const val MAX_LINES = 6
+
+        /**
+         * **不多于这个字数就排一行**（用户 2026-10-17：4 个 —— 汉字或等数量的其它字符，
+         * 标点与 emoji 各算 1 个）；超过才"积极换行以保证字体最大"。
+         */
+        private const val ONE_LINE_MAX_CHARS = 4
+
+        /** 字号硬上限（px）：再大就成了"一个字撑满气泡"，只在极端小气泡里才可能触到 */
+        private const val MAX_FONT_PX = 260f
         /** 行高倍数 */
         private const val LINE_SPACING = 1.18f
         /** 视觉居中补偿：墨迹中心比 em 中心低约 5%，整体上移这么多 */
         private const val OPTICAL_DY_EM = 0.05f
         /** 居中对齐时"行顶 -> 基线"的比例（近似 ascent 在 em 里的位置） */
         private const val BASELINE_RATIO = 0.80f
-        /** 一个汉字约占字号的这个比例（用于算"3 个字的字号"封顶） */
+        /** 一个汉字约占字号的这个比例（用于算封顶字号） */
         private const val CHAR_W_RATIO = 1.0f
 
         /**
-         * 图片条目占"椭圆内切矩形"的比例 —— 用户要求"以合适大小居中放到气泡里面"。
-         * 0.66 是"明显但不贴边"的取值（图片与文字一样，四周都要留出空隙）。
+         * 图片条目占"内缘椭圆的内切矩形"的比例 —— 用户要求"以合适大小居中放到气泡里面"，
+         * 且**不得盖到描边、不得溢出**（2026-10-17 实测反馈）。
+         * 0.82 留出一圈明显空隙；矩形的四角仍在椭圆之内。
          */
-        private const val IMAGE_FIT = 0.66f
+        private const val IMAGE_FIT = 0.82f
 
         // ---- 点气泡时的"压缩回弹" ----
         /** 整段动画时长 */
