@@ -1325,43 +1325,38 @@ class MainActivity : Activity() {
         val target = btnManageBubbleSettings.width
         if (target <= 0) return
         val lp = btnBubbleOnTap.layoutParams as? android.widget.LinearLayout.LayoutParams ?: return
-        val dm = resources.displayMetrics
         var changed = false
         if (lp.width != target) {
             lp.width = target
             changed = true
         }
-        // 高度也跟标题行按钮一致（原来写死 DELETE_SLOT_DP，视觉上比「管理」高一截）
         val wantH = btnManageBubbleSettings.height
         if (wantH > 0 && lp.height != wantH) {
             lp.height = wantH
             changed = true
         }
-        // 按左边界对齐：宽度已经相同，左边齐了右边自然齐
-        val a = IntArray(2)
-        val b = IntArray(2)
-        btnManageBubbleSettings.getLocationInWindow(a)
-        btnBubbleOnTap.getLocationInWindow(b)
-        val delta = b[0] - a[0]
-        val wantMargin = (lp.marginEnd + delta).coerceAtLeast(0)
-        if (wantMargin != lp.marginEnd) {
-            lp.marginEnd = wantMargin
+        // ⚠️ **右边距必须是 0**：宽度已经等于标题按钮，只要让开关贴住行尾，
+        //    它的右边界就与「管理/取消」在同一条线上，左边界也随之相同 ——
+        //    位置**不需要**任何计算。
+        //    早先这里按"实测坐标差"累加 marginEnd，读到的是上一帧坐标 -> 越修越偏，
+        //    开关被推到左边 124px（用户 2026-10-17 截图："跑哪去了"）。
+        if (lp.marginEnd != 0) {
+            lp.marginEnd = 0
             changed = true
         }
         if (changed) {
             btnBubbleOnTap.minWidth = 0
             btnBubbleOnTap.minHeight = 0
             btnBubbleOnTap.layoutParams = lp
-        }
-        // 只在"改了"或"量出来仍不等于目标"时打日志：正常一次就能收敛，日志只留证据
-        if (changed || btnBubbleOnTap.width != target) {
             android.util.Log.i(
                 "BubbleGeom",
-                "toggle sync: manage=(${a[0]},${target}x${btnManageBubbleSettings.height})" +
-                    " toggle=(${b[0]},${btnBubbleOnTap.width}x${btnBubbleOnTap.height})" +
-                    " want=${lp.width}x${lp.height} marginEnd=${lp.marginEnd} changed=$changed"
+                "toggle sync: want=${lp.width}x${lp.height} actual=${btnBubbleOnTap.width}x${btnBubbleOnTap.height}"
             )
-            if (changed) btnBubbleOnTap.post { syncBubbleToggleWidth() }
+        } else if (btnBubbleOnTap.width != target) {
+            android.util.Log.i(
+                "BubbleGeom",
+                "toggle still off: manage=$target actual=${btnBubbleOnTap.width}"
+            )
         }
     }
 

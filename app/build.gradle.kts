@@ -709,6 +709,11 @@ android {
         //                     syncBubbleToggleWidth 决定，并把 minWidth/minHeight 显式清零
         //                     （TextView 测量取 max(指定宽度, 建议最小宽度)）。
         //                     日志改为"改了或仍不达标"时打印，便于一步定位）
+        //   2.1.98 -> 20198（气泡设置开关：**位置不做任何计算**（用户 2026-10-17 截图"跑哪去了"）：
+        //                     宽度改对了（255≈254）之后，上一版那句"按实测坐标差累加 marginEnd"
+        //                     读到的是上一帧坐标 -> 越修越偏，开关被推到左边 124px。
+        //                     现在只做两件事：宽度/高度 = 标题按钮的实测值、marginEnd = 0 ——
+        //                     贴住行尾后右边界与「管理/取消」同线，左边界自然也相同）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ✅ 作者声明里的版本号与完成时间**自动跟着这行走**：
         //    版本号 = vName；完成时间 = 构建时刻（buildStamp，见文件顶部）。
@@ -717,7 +722,7 @@ android {
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
         //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
         //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
-        val vName = "2.1.97"
+        val vName = "2.1.98"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()
