@@ -920,25 +920,22 @@ class PetService : Service(), PetView.Host {
         fx += nudgeSign * Math.round(nudge[0] * bw)
         fy -= Math.round(nudge[1] * bh)          // 下边那套：向上
 
-        // 上边组（flipV）：把**整个窗口**对人物矩形做竖直镜像 ——
-        // 相对矩形顶边的距离，翻成相对矩形底边的同距离。图案由 BubbleView.flipV 翻转。
-        if (flipV) {
-            val pr = petParams
-            fy = if (pr != null) {
-                pr.y + pr.height - (fy - pr.y) - bh
-            } else {
-                2 * a[1] - (fy + bh)             // 兜底：对人物中心翻
-            }
-        }
-
         // 原则（用户对右下角提的）：气泡**有效区域**（可见的椭圆/小圈）不得进入人物素材矩形。
         // ⚠️ 按椭圆判、不按外框判 —— 外框四角是透明的，拿外框判会把"只是角擦到"误判成相交。
         // 相交时按"最小位移"把该椭圆推到矩形外侧。
+        //
+        // ⚠️⚠️ 上边组（flipV）这里必须**在"下边那套"坐标系里判**：把人物矩形一起竖翻过去，
+        //      推完再把结果整体翻回来（见下面的 mirrorToTop）。否则会出现"角对了、边不对"——
+        //      上边的可见椭圆与人物矩形相交时，"最小位移"会把它**往下推**一大截，
+        //      而角落素材更窄、根本不触发，于是看起来像两套规则。
         if (PetState.bubbleKeepOutOfPetRect(pet.state)) {
             val pl = a[9]
-            val pt = a[10]
-            val pr = pl + a[11]
-            val pb = pt + a[12]
+            val pw = a[11]
+            val ph = a[12]
+            val ptReal = a[10]
+            val pt = if (flipV) 2 * a[1] - (ptReal + ph) else ptReal
+            val pr = pl + pw
+            val pb = pt + ph
             val ellipses = BubbleView.visibleEllipses(bw, bh, bubbleRot, artMirror, flipV)
             for (e in ellipses) {
                 val ecx = fx + e[0]
@@ -962,6 +959,17 @@ class PetService : Service(), PetView.Host {
                     fx = best.second[0]
                     fy = best.second[1]
                 }
+            }
+        }
+
+        // 上边组（flipV）：最后把**整个窗口**对人物矩形做竖直镜像 ——
+        // 相对矩形顶边的距离，翻成相对矩形底边的同距离。图案由 BubbleView.flipV 翻转。
+        if (flipV) {
+            val pr = petParams
+            fy = if (pr != null) {
+                pr.y + pr.height - (fy - pr.y) - bh
+            } else {
+                2 * a[1] - (fy + bh)             // 兜底：对人物中心翻
             }
         }
         val x = fx.coerceIn(0, (b.width() - bw).coerceAtLeast(0))
