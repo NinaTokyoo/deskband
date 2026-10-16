@@ -1071,6 +1071,11 @@ class PetService : Service(), PetView.Host {
         val view = BubbleView(this)
         // 深色模式：只把气泡内部的**白底换成灰底**，几何/描边不动
         view.grayFill = bubbleGrayFill
+        // ⚠️ 窗口四周留一圈**透明余量**给"压缩回弹"的过冲用：回弹段会略微超过原尺寸
+        //    （约 +3.5%），窗口若不贴余量，放大那几帧的四周会被切掉（用户实测）。
+        //    余量对称，所以画面仍居中，位置/大小规则不受影响。
+        val bubblePad = Math.round(bw * BUBBLE_PAD_RATIO)
+        view.padPx = bubblePad
         // 气泡内容（用户 2026-10-16）：每次冒泡**随机**取一条（"不需要按顺序"），
         // 且**不连着两条相同**（[pickBubbleText] 里排除上一条）。
         // 只从**已启用**的条目里取；文字色用人物发色的派生色。
@@ -1100,7 +1105,7 @@ class PetService : Service(), PetView.Host {
         view.mirror = artMirror
         view.flipV = flipV
         val p = WindowManager.LayoutParams(
-            bw, bh,
+            bw + 2 * bubblePad, bh + 2 * bubblePad,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             // ⚠️ 这里**不能**加 FLAG_NOT_TOUCHABLE：WMS 对"系统悬浮窗 + 不可触摸
             //    + LayoutParams.alpha > 0.80"会把整窗 alpha 强制压到 0.80
@@ -1113,8 +1118,10 @@ class PetService : Service(), PetView.Host {
             PixelFormat.RGBA_8888
         )
         p.gravity = Gravity.TOP or Gravity.START
-        p.x = x
-        p.y = y
+        // x/y 是**素材组**左上角（按无余量的尺寸算出来的）。窗口比素材组大一圈余量，
+        // 且素材组在窗口里居中，所以窗口左上角要往左上各退一个余量。
+        p.x = x - bubblePad
+        p.y = y - bubblePad
         p.alpha = 1f
         try {
             wm.addView(view, p)
@@ -1204,6 +1211,15 @@ class PetService : Service(), PetView.Host {
 
         /** 气泡时间轴走完后再多留一点余量才收窗口（毫秒） */
         private const val BUBBLE_TAIL_MS = 80L
+
+        /**
+         * 气泡窗口四周的**透明余量**占整组宽度的比例。
+         *
+         * 点气泡的"压缩回弹"在回弹段会过冲（幅度最大 0.14 × 包络 0.25 ≈ +3.5%），
+         * 窗口若贴着素材外框开，放大那几帧的四边就会被窗口边界切掉（用户实测）。
+         * 7% 足够覆盖过冲、还留一点余地；余量对称，画面仍居中，位置/大小规则不受影响。
+         */
+        private const val BUBBLE_PAD_RATIO = 0.07f
 
         /**
          * 当前正在显示的宠物视图（收起时为 null；[showPet]/[removePet] 维护）。

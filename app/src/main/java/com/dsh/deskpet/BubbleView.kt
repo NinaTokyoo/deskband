@@ -110,6 +110,20 @@ class BubbleView(context: Context) : View(context) {
     var textColor: Int = 0xFF000000.toInt()
 
     /**
+     * 窗口四周的**透明余量**（像素，由服务下发）。
+     *
+     * ⚠️ 为什么需要它：点气泡的"压缩回弹"在回弹段会略微**超过原尺寸**（过冲约 3.5%），
+     *    而窗口是按素材外框一比一开的、一点余量都没有 —— 于是放大那几帧会被窗口边界
+     *    切掉四边（用户实测："气泡放大回弹的时候，气泡四周有被切割的现象"）。
+     *    留出余量后画面仍然居中（余量对称），所以位置与大小规则都不受影响。
+     */
+    var padPx = 0
+
+    /** 素材组自身的绘制尺寸（= 窗口尺寸减去两侧余量） */
+    private val groupW: Float get() = (width - 2 * padPx).toFloat()
+    private val groupH: Float get() = (height - 2 * padPx).toFloat()
+
+    /**
      * 点击气泡时的回调（用户 2026-10-16：点大气泡要有"缩小回弹"效果）。
      *
      * ⚠️ 只在"大气泡稳定存在"（停留段）里才回调 —— 出现/消失过程中点它不做事。
@@ -180,8 +194,8 @@ class BubbleView(context: Context) : View(context) {
 
     private fun rebuildScaled() {
         if (width <= 0 || height <= 0) return
-        val gw = if (rotated) height.toFloat() else width.toFloat()
-        val gh = if (rotated) width.toFloat() else height.toFloat()
+        val gw = if (rotated) groupH else groupW
+        val gh = if (rotated) groupW else groupH
         val boxes = PART_BOX
         for (i in parts.indices) {
             val src = parts[i] ?: continue
@@ -238,9 +252,11 @@ class BubbleView(context: Context) : View(context) {
             onPressRebound?.invoke()
         }
 
-        // 组自身坐标系：转过 90° 时，窗口的宽高与组宽高互换
-        val gw = if (rotated) height.toFloat() else width.toFloat()
-        val gh = if (rotated) width.toFloat() else height.toFloat()
+        // 组自身坐标系：转过 90° 时，窗口的宽高与组宽高互换。
+        // ⚠️ 用 groupW/groupH（窗口尺寸减去四周透明余量）—— 余量是给"压缩回弹过冲"留的，
+        //    不属于素材本身，算进去会把气泡整体放大。
+        val gw = if (rotated) groupH else groupW
+        val gh = if (rotated) groupW else groupH
 
         canvas.save()
         canvas.translate(width / 2f, height / 2f)
@@ -406,8 +422,8 @@ class BubbleView(context: Context) : View(context) {
      * 旋转都是 90° 的整数倍，所以包围盒就是轴对齐的，椭圆内切其中。
      */
     private fun bigEllipseScreenBox(): FloatArray? {
-        val gw = if (rotated) height.toFloat() else width.toFloat()
-        val gh = if (rotated) width.toFloat() else height.toFloat()
+        val gw = if (rotated) groupH else groupW
+        val gh = if (rotated) groupW else groupH
         if (gw <= 0f || gh <= 0f) return null
         val box = PART_BOX[PART_COUNT - 1]      // 大气泡那一格
         val l = box[0] * gw
@@ -459,10 +475,15 @@ class BubbleView(context: Context) : View(context) {
         // 只在松手时判断"点没点到气泡上"
         if (event.actionMasked != MotionEvent.ACTION_UP) return true
         if (!isHolding()) return true
-        val es = visibleEllipses(width, height, rotationDeg, mirror, flipV)
+        // 命中判定用"素材组的尺寸"（不是窗口尺寸）：窗口四周那圈透明余量不算气泡。
+        // 事件坐标是**窗口**坐标，而椭圆坐标是**素材组**坐标（组在窗口里居中），
+        // 所以要把余量减掉再比。
+        val es = visibleEllipses(
+            (width - 2 * padPx), (height - 2 * padPx), rotationDeg, mirror, flipV
+        )
         for (e in es) {
-            val dx = (event.x - e[0]) / e[2].coerceAtLeast(1f)
-            val dy = (event.y - e[1]) / e[3].coerceAtLeast(1f)
+            val dx = (event.x - padPx - e[0]) / e[2].coerceAtLeast(1f)
+            val dy = (event.y - padPx - e[1]) / e[3].coerceAtLeast(1f)
             if (dx * dx + dy * dy <= 1f) {
                 onPressed?.invoke()
                 return true
