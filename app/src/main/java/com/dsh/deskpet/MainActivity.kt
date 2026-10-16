@@ -1328,22 +1328,30 @@ class MainActivity : Activity() {
         )
         tag.background = AccentTheme.accentBoxBackground(this, accent, lightMode)
 
+        val dm = resources.displayMetrics
+        val scale = resources.configuration.fontScale
+        val slotW = dp(dm, BUBBLE_DELETE_SLOT_DP * scale)
+        val slotH = dp(dm, DELETE_SLOT_DP * scale)
+        val gap = dp(dm, 6f)
+
+        // ⚠️ 给文字**固定预留**整条右侧槽位（宽度两态一致）：
+        //    并排布局时文字的可用宽度会随「✕ / 确认删除」变化 -> 一点错号文字就重新折行、
+        //    标签变高、字也挪位（用户实测）。预留成常量后，两种形态下文字宽度完全相同，
+        //    而且文字永远不会画进槽位里（两行也不会被按钮压住）。
         tag.findViewById<TextView>(R.id.txtBubbleTagText).apply {
             text = content
             setTextColor(AccentTheme.skinBoxText(lightMode))
+            setPadding(0, 0, slotW + gap, 0)
         }
 
         val pending = index == pendingBubbleDelete
-        val dm = resources.displayMetrics
         tag.findViewById<TextView>(R.id.txtBubbleTagDelete).apply {
-            // 高度：两态写死同一个值（✕ 17sp / 确认删除 13sp 的行高不同，不写死会"标签变窄"）
-            val slotH = DELETE_SLOT_DP * resources.configuration.fontScale
-            layoutParams = android.widget.LinearLayout.LayoutParams(
-                dp(dm, BUBBLE_DELETE_SLOT_DP * resources.configuration.fontScale),
-                dp(dm, slotH)
-            )
+            // 宽高两态**都写死**：高度不同会让标签变矮，宽度不同会让上面的文字重排
+            layoutParams = android.widget.FrameLayout.LayoutParams(slotW, slotH).apply {
+                gravity = android.view.Gravity.END or android.view.Gravity.BOTTOM
+            }
             includeFontPadding = false
-            gravity = android.view.Gravity.CENTER
+            gravity = android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
             text = getString(
                 if (pending) R.string.custom_confirm_delete else R.string.custom_delete_mark
             )
