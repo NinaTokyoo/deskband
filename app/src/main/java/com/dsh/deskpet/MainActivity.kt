@@ -1304,18 +1304,24 @@ class MainActivity : Activity() {
     private fun alignBubbleToggleWithManage() {
         if (!::btnBubbleOnTap.isInitialized || !::btnManageBubbleSettings.isInitialized) return
         btnBubbleOnTap.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            if (btnBubbleOnTap.width == 0 || btnManageBubbleSettings.width == 0) {
+                return@addOnLayoutChangeListener
+            }
+            val lp = btnBubbleOnTap.layoutParams as android.widget.LinearLayout.LayoutParams
+            // ① 宽度**每次**都跟随实测（初次刷新时按钮还没测量，会用兜底值 64dp；
+            //    标题行那两个按钮实测只有 50dp 上下，宽了这一截光补边距也救不回来）
+            if (lp.width != btnManageBubbleSettings.width) {
+                lp.width = btnManageBubbleSettings.width
+            }
+            // ② 按**左边界**对齐：宽度已经相同，左边齐了右边自然齐
             val a = IntArray(2)
             val b = IntArray(2)
             btnManageBubbleSettings.getLocationInWindow(a)
             btnBubbleOnTap.getLocationInWindow(b)
-            if (btnBubbleOnTap.width == 0 || btnManageBubbleSettings.width == 0) return@addOnLayoutChangeListener
-            val delta = (b[0] + btnBubbleOnTap.width) - (a[0] + btnManageBubbleSettings.width)
-            val lp = btnBubbleOnTap.layoutParams as android.widget.LinearLayout.LayoutParams
+            val delta = b[0] - a[0]
             val want = (lp.marginEnd + delta).coerceAtLeast(0)
-            if (want != lp.marginEnd) {
-                lp.marginEnd = want
-                btnBubbleOnTap.layoutParams = lp
-            }
+            if (want != lp.marginEnd) lp.marginEnd = want
+            btnBubbleOnTap.layoutParams = lp
         }
     }
 
