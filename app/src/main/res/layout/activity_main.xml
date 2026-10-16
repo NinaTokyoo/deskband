@@ -1139,6 +1139,44 @@
                     android:text="@string/card_manage" />
             </LinearLayout>
 
+            <!-- ============ 展开区零：先选类型（默认隐藏） ============
+                 用户 2026-10-16：点「新增」后**卡片自己向下延伸**给出"文本 / 图片"两个选项，
+                 不要弹窗。选文本 -> 进入下面的输入表单；选图片 -> 直接开系统文件选择器。 -->
+            <LinearLayout
+                android:id="@+id/panelBubbleTextKind"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp"
+                    android:text="@string/bubble_text_pick_kind" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="horizontal"
+                    android:gravity="center">
+
+                    <Button
+                        android:id="@+id/btnBubbleKindText"
+                        style="@style/CardBottomAction"
+                        android:text="@string/bubble_text_kind_text" />
+
+                    <Button
+                        android:id="@+id/btnBubbleKindImage"
+                        style="@style/CardBottomAction"
+                        android:layout_marginStart="10dp"
+                        android:text="@string/bubble_text_kind_image" />
+                </LinearLayout>
+            </LinearLayout>
+
             <!-- ============ 展开区一：新增表单（默认隐藏） ============ -->
             <LinearLayout
                 android:id="@+id/panelBubbleTextAdd"

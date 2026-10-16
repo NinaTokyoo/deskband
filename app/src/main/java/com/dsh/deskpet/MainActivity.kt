@@ -183,6 +183,9 @@ class MainActivity : Activity() {
     private lateinit var btnBubbleTextManage: Button
     private lateinit var panelBubbleTextAdd: View
     private lateinit var panelBubbleTextManage: View
+    private lateinit var panelBubbleTextKind: View
+    private lateinit var btnBubbleKindText: Button
+    private lateinit var btnBubbleKindImage: Button
     private lateinit var rowsBubbleText: android.widget.LinearLayout
     private lateinit var txtBubbleTextEmpty: TextView
     private lateinit var editBubbleText: EditText
@@ -343,6 +346,9 @@ class MainActivity : Activity() {
         btnBubbleTextManage = findViewById(R.id.btnBubbleTextManage)
         panelBubbleTextAdd = findViewById(R.id.panelBubbleTextAdd)
         panelBubbleTextManage = findViewById(R.id.panelBubbleTextManage)
+        panelBubbleTextKind = findViewById(R.id.panelBubbleTextKind)
+        btnBubbleKindText = findViewById(R.id.btnBubbleKindText)
+        btnBubbleKindImage = findViewById(R.id.btnBubbleKindImage)
         rowsBubbleText = findViewById(R.id.rowsBubbleText)
         txtBubbleTextEmpty = findViewById(R.id.txtBubbleTextEmpty)
         editBubbleText = findViewById(R.id.editBubbleText)
@@ -1248,6 +1254,7 @@ class MainActivity : Activity() {
             collapseCustomCard()
             closeSkinMenuIfOpen()
         }
+        panelBubbleTextKind.visibility = if (mode == BUBBLE_KIND) View.VISIBLE else View.GONE
         panelBubbleTextAdd.visibility = if (mode == BUBBLE_ADD) View.VISIBLE else View.GONE
         panelBubbleTextManage.visibility = if (mode == BUBBLE_MANAGE) View.VISIBLE else View.GONE
         btnBubbleTextAdd.text = getString(
@@ -1281,7 +1288,7 @@ class MainActivity : Activity() {
      *   管理列表（无待确认） -> 「收起」。
      */
     private fun refreshBubbleTextButton() {
-        val cancel = bubbleTextMode == BUBBLE_ADD ||
+        val cancel = bubbleTextMode == BUBBLE_ADD || bubbleTextMode == BUBBLE_KIND ||
             (bubbleTextMode == BUBBLE_MANAGE && pendingBubbleDelete != null)
         btnBubbleTextManage.text = getString(
             when {
@@ -1579,7 +1586,10 @@ class MainActivity : Activity() {
     /**
      * 「新增」先给两个选项（用户 2026-10-16）：**文本** 或 **图片**。
      *
-     * · 文本 -> 展开原来的输入表单（[BUBBLE_ADD]）；
+     * ⚠️ 选项**长在卡片里**（卡片向下延伸出 [panelBubbleTextKind] 那一小块），
+     *    不弹对话框 —— 用户明确要求"应该是卡片向下延伸，在卡片里选择"。
+     *
+     * · 文本 -> 再展开原来的输入表单（[BUBBLE_ADD]）；
      * · 图片 -> 直接开系统文件选择器（`ACTION_OPEN_DOCUMENT`，类型选所有图片）——
      *   常见格式与 GIF 都在里面（GIF 取第一帧转存成 PNG，见 [BubbleTextStore.importImage]）。
      *
@@ -1591,21 +1601,7 @@ class MainActivity : Activity() {
             Toast.makeText(this, R.string.bubble_text_full, Toast.LENGTH_SHORT).show()
             return
         }
-        android.app.AlertDialog.Builder(this)
-            .setTitle(R.string.bubble_text_pick_kind)
-            .setItems(
-                arrayOf(
-                    getString(R.string.bubble_text_kind_text),
-                    getString(R.string.bubble_text_kind_image)
-                )
-            ) { _, which ->
-                if (which == 0) {
-                    setBubbleTextMode(BUBBLE_ADD)
-                } else {
-                    pickBubbleImage()
-                }
-            }
-            .show()
+        setBubbleTextMode(BUBBLE_KIND)
     }
 
     /** 选图片：与自定义形象用同一套（系统文件选择器，无需任何存储权限） */
@@ -1639,6 +1635,8 @@ class MainActivity : Activity() {
                 )
             }
         }
+        btnBubbleKindText.setOnClickListener { setBubbleTextMode(BUBBLE_ADD) }
+        btnBubbleKindImage.setOnClickListener { pickBubbleImage() }
         btnBubbleTextSave.setOnClickListener { saveBubbleText() }
         btnBubbleTextCancel.setOnClickListener { setBubbleTextMode(BUBBLE_NONE) }
         editBubbleText.filters = arrayOf(BubbleTextStore.inputFilter())
@@ -2539,6 +2537,9 @@ class MainActivity : Activity() {
         const val BUBBLE_NONE = 0
         const val BUBBLE_ADD = 1
         const val BUBBLE_MANAGE = 2
+
+        /** 先选类型（文本 / 图片）那一小块 —— 用户要求"卡片向下延伸，在卡片里选择" */
+        const val BUBBLE_KIND = 3
 
         /**
          * 气泡内容标签里"删除控件"那格的**固定宽度**（dp）。
