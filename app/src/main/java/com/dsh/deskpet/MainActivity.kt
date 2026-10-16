@@ -690,6 +690,10 @@ class MainActivity : Activity() {
     private fun collapseAllCards() {
         for (c in expandCards) setCardExpanded(c.body, false)
         collapseCustomCard()
+        // 「气泡内容」卡也算一张（用户 2026-10-16：锁定时它也要跟着收起）——
+        // ⚠️ 只是**收起**：这张卡不受锁定限制，收起后照样能再点开、照样能增删改
+        //    （与「自定义形象」同性质）。
+        collapseBubbleTextCard()
         // 二级菜单同样要收（用户要求：它也算一张展开的卡片）
         closeSkinMenuIfOpen()
     }

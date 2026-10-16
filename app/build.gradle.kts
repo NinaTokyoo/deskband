@@ -543,6 +543,10 @@ android {
         //                     改法：两处都**在点击时现读**当前状态（pendingBubbleDelete / 重新读表））
         //   2.1.66 -> 20166（标签内容由"最多三行"改回**最多两行**（用户 2026-10-16）；
         //                     截断补三点省略号的逻辑随之按两行算）
+        //   2.1.67 -> 20167（锁定时「气泡内容」卡也一起收起（用户 2026-10-16）：
+        //                     collapseAllCards() 里补一次 collapseBubbleTextCard()。
+        //                     ⚠️ 只是"收起" —— 这张卡与「自定义形象」同性质、不受锁定限制，
+        //                     收起后照样能再展开、照样能增删改）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ✅ 作者声明里的版本号与完成时间**自动跟着这行走**：
         //    版本号 = vName；完成时间 = 构建时刻（buildStamp，见文件顶部）。
@@ -551,7 +555,7 @@ android {
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
         //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
         //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
-        val vName = "2.1.66"
+        val vName = "2.1.67"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()
