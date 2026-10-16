@@ -176,6 +176,9 @@ class MainActivity : Activity() {
      * 这个标志保证"量到 0 就延后一帧重排"，且只重排一次（不会自己套自己）。
      */
     private var bubbleTagsAwaitLayout = false
+
+    /** 管理列表里每一行的视图（下标 = 条目下标）—— 点按钮时**原地更新**它们，不重建 */
+    private val bubbleTagRows = ArrayList<View>()
     private lateinit var btnBubbleTextAdd: Button
     private lateinit var btnBubbleTextManage: Button
     private lateinit var panelBubbleTextAdd: View
@@ -1304,15 +1307,22 @@ class MainActivity : Activity() {
      * ⚠️ 两个按钮的**列位置是抄标题行**的（删除对齐「新增」、启用对齐「管理/收起」），
      *    而标题行要布局完才有宽度 —— 首次渲染发生在 onCreate 里、那时量到 0，
      *    所以量到 0 时延后一帧重排一次（有标志位，不会循环）。
+     *
+     * ⚠️ 只在"列表本身变了"（进管理、增删、切主题）时重建。
+     *    点「删除 / 启用」**不重建**，只原地改按钮文字与颜色（[refreshBubbleTagButtons]）——
+     *    重建会让所有标签的按钮一起重新出现，用户看到的就是"所有按钮闪一下"。
      */
     private fun renderBubbleTextTags() {
         rowsBubbleText.removeAllViews()
+        bubbleTagRows.clear()
         val items = BubbleTextStore.items(this)
         txtBubbleTextEmpty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
 
         val gap = (resources.displayMetrics.density * 8f).toInt()
         for (i in items.indices) {
-            rowsBubbleText.addView(makeBubbleTextTag(i, items[i], topMargin = if (i == 0) 0 else gap))
+            val row = makeBubbleTextTag(i, items[i], topMargin = if (i == 0) 0 else gap)
+            bubbleTagRows.add(row)
+            rowsBubbleText.addView(row)
         }
         refreshBubbleTextButton()
 
@@ -1325,6 +1335,31 @@ class MainActivity : Activity() {
                 }
             }
         }
+    }
+
+    /**
+     * **原地**刷新每一行按钮的文字与颜色（不重建视图）。
+     *
+     * 点「删除」-> 本行变「确认」、其余行保持「删除」、顶部按钮变「取消」；
+     * 点「启用 / 已启用」-> 只改本行按钮。都不重建，所以不会闪。
+     */
+    private fun refreshBubbleTagButtons() {
+        val items = BubbleTextStore.items(this)
+        for ((i, row) in bubbleTagRows.withIndex()) {
+            val item = items.getOrNull(i) ?: continue
+            val pending = i == pendingBubbleDelete
+            row.findViewById<TextView>(R.id.txtBubbleTagDelete)?.text = getString(
+                if (pending) R.string.bubble_text_confirm else R.string.bubble_text_delete
+            )
+            row.findViewById<TextView>(R.id.btnBubbleTagToggle)?.apply {
+                text = getString(
+                    if (item.enabled) R.string.bubble_text_enabled else R.string.bubble_text_disabled
+                )
+                setTextColor(if (item.enabled) accent else AccentTheme.skinBoxText(lightMode))
+            }
+        }
+        // 顶部按钮（管理/收起/取消）的文案也要跟着待确认状态走
+        refreshBubbleTextButton()
     }
 
     /** 标题行里两个按钮之间的间距（启用按钮要靠它对齐到与「管理 / 收起」同一列） */
@@ -1384,8 +1419,11 @@ class MainActivity : Activity() {
             )
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             setTextColor(TAG_DELETE_RED)                       // 红字固定，不跟强调色
-            // 背景延后到布局完成再给：圆角要按**实测高度**算，否则单行标签的按钮
-            // （矮）会因固定 10dp 圆角看起来变成胶囊（用户实测反馈）
+            // 背景**立刻**给（圆角先用上限值），等这一帧量到高度后再按高度精修 ——
+            // 若留到 post 里才设，按钮会"先没背景、后出背景"，点一下所有按钮闪一下。
+            background = AccentTheme.accentBoxBackground(
+                this@MainActivity, TAG_DELETE_RED, lightMode, radiusDp = 8f
+            )
             post {
                 background = AccentTheme.accentBoxBackground(
                     this@MainActivity, TAG_DELETE_RED, lightMode,
@@ -1396,16 +1434,17 @@ class MainActivity : Activity() {
                 if (pending) {
                     BubbleTextStore.removeAt(this@MainActivity, index)
                     pendingBubbleDelete = null
-                    renderBubbleTextTags()
+                    renderBubbleTextTags()          // 列表少了一条 -> 只能重建
                     Toast.makeText(
                         this@MainActivity,
                         getString(R.string.bubble_text_delete_done, item.text),
                         Toast.LENGTH_SHORT
                     ).show()
                 } else {
-                    // 进入待确认：本按钮变「确认」，顶部按钮变「取消」（刷新在 render 里）
+                    // 进入待确认：本按钮变「确认」、顶部变「取消」——
+                    // 只原地刷按钮文字，不重建列表（重建会让所有按钮闪一下）
                     pendingBubbleDelete = index
-                    renderBubbleTextTags()
+                    refreshBubbleTagButtons()
                 }
             }
         }
@@ -1433,7 +1472,7 @@ class MainActivity : Activity() {
             setTextColor(
                 if (item.enabled) accent else AccentTheme.skinBoxText(lightMode)
             )
-            // 同删除按钮：圆角按实测高度算（单行标签的矮按钮不能是胶囊）
+            // 同删除按钮：立刻给背景，量到高度后再精修圆角（避免"没背景 -> 有背景"的闪烁）
             post {
                 background = AccentTheme.ghostSelectorFor(
                     this@MainActivity, accent, lightMode,
@@ -1442,7 +1481,8 @@ class MainActivity : Activity() {
             }
             setOnClickListener {
                 BubbleTextStore.setEnabled(this@MainActivity, index, !item.enabled)
-                renderBubbleTextTags()
+                // 只原地刷按钮（不重建列表：重建会让所有按钮闪一下）
+                refreshBubbleTagButtons()
             }
         }
         return tag
