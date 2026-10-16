@@ -1420,26 +1420,35 @@ class MainActivity : Activity() {
             setTextColor(AccentTheme.skinBoxText(lightMode))
         }
 
-        // 图片条目：把缩略图放在标签**最前面（第一个字的位置）**。
-        // 用户 2026-10-16 先要求"跟文字相同的大小"，随后改为**字号的 4 倍**。
-        // 用 inSampleSize 直接解到接近缩略图尺寸，20 条一起建也不会慢。
+        // 图片条目：缩略图放在**内容框内部**的最前面。
+        // 用户 2026-10-17：**标签框高度按三行字高**，图在框内**尽量放大**，
+        // 但四边留空隙、不得压线 —— 所以图的可用高度 = 三行字高 − 框的上下内边距，
+        // 宽度交给 adjustViewBounds 按图片自身比例撑开（受父容器约束，不会越界）。
         if (item.isImage) {
-            val side = (editBubbleText.textSize * BUBBLE_TAG_IMAGE_SCALE)
-                .toInt().coerceAtLeast(dp(dm, 16f))
+            val box = tag.findViewById<android.widget.LinearLayout>(R.id.boxBubbleTagContent)
+            val boxPadV = dp(dm, 8f)
+            val lineHeight = editBubbleText.textSize * 1.2f          // 一行字的高度（px）
+            val boxHeight = (lineHeight * BUBBLE_TAG_IMAGE_LINES).toInt()
+            box.layoutParams = (box.layoutParams as android.widget.LinearLayout.LayoutParams)
+                .apply { height = boxHeight }
+            val imgH = (boxHeight - 2 * boxPadV).coerceAtLeast(dp(dm, 16f))
             val iv = android.widget.ImageView(this).apply {
-                layoutParams = android.widget.LinearLayout.LayoutParams(side, side)
-                    .apply { marginEnd = gap / 2 }
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, imgH
+                ).apply { marginEnd = gap / 2 }
+                // 保持比例、在给定高度内尽量放大；宽度随之自适应（受父容器约束）
                 scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                adjustViewBounds = true
             }
             BubbleTextStore.imageFile(this, item.image)?.let { f ->
                 val opts = android.graphics.BitmapFactory.Options().apply {
-                    inSampleSize = sampleSizeFor(f, side)
+                    inSampleSize = sampleSizeFor(f, imgH)
                 }
                 android.graphics.BitmapFactory.decodeFile(f.absolutePath, opts)?.let {
                     iv.setImageBitmap(it)
                 }
             }
-            tag.findViewById<android.widget.LinearLayout>(R.id.boxBubbleTagContent).addView(iv, 0)
+            box.addView(iv, 0)
         }
 
         val pending = index == pendingBubbleDelete
@@ -2541,10 +2550,12 @@ class MainActivity : Activity() {
         const val BUBBLE_KIND = 3
 
         /**
-         * 管理列表里**图片条目缩略图**的边长 = 内容字号的这个倍数（用户 2026-10-16：
-         * "若此标签为图片，则图片大小为字号的 4 倍"；最初是 1 倍 = 一行文字那么高）。
+         * 图片条目的标签框高度 = **几行字的高度**（用户 2026-10-17：三行）。
+         *
+         * 行高按 `字号 × 1.2` 估（与 TextView 的默认行距一致）；框的上下内边距留作
+         * "图与描边之间的空隙"，所以图的实际可用高度 = 三行字高 − 上下内边距。
          */
-        const val BUBBLE_TAG_IMAGE_SCALE = 4f
+        const val BUBBLE_TAG_IMAGE_LINES = 3f
 
         /**
          * 气泡内容标签里"删除控件"那格的**固定宽度**（dp）。
