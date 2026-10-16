@@ -1291,12 +1291,22 @@ class MainActivity : Activity() {
     private fun refreshBubbleSettings() {
         if (!::btnBubbleOnTap.isInitialized) return
         val on = prefs.bubbleOnTap
+        val dm = resources.displayMetrics
         btnBubbleOnTap.apply {
-            // ⚠️ 宽/高/内边距**全部交给 XML**（style=CardAction + minWidth=72dp，与上方
-            //    「管理/取消/收起」逐项相同）——运行时代码改 layoutParams 在这个 TextView 上
-            //    实测不生效（日志：want=254x157 actual=223x81），所以这里只改文字与颜色。
             text = getString(if (on) R.string.bubble_text_enabled else R.string.bubble_pending)
             setTextColor(if (on) accent else AccentTheme.skinBoxText(lightMode))
+            // 文字要**完整 + 居中**显示在框里（用户 2026-10-17）：
+            //  · 字号不动（用户明确要求）；
+            //  · 左右内边距压到最小 —— 「待启用」三个字比标题按钮的两个字宽，
+            //    CardAction 那套 14dp 内边距会把字挤到框外（看着像被切了）；
+            //  · 单行、不省略号（宁可贴边也不要变成 "..."）；
+            //  · gravity=center + 关掉字体自带上下留白 -> 真正落在框的中间。
+            setPadding(dp(dm, 4f), 0, dp(dm, 4f), 0)
+            isSingleLine = true
+            maxLines = 1
+            ellipsize = null
+            includeFontPadding = false
+            gravity = android.view.Gravity.CENTER
             // ⚠️ 描边背景**必须在这里给**：这个开关是 TextView（不是 Button），
             //    AccentTheme 统一刷色时不会管它 —— 曾经删代码时把它一起删掉，
             //    结果开关只剩下文字、没了框（用户 2026-10-17 截图）。
