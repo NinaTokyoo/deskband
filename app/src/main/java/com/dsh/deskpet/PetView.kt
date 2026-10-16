@@ -2595,12 +2595,18 @@ class PetView(context: Context) : View(context) {
         val w = up[0].toFloat()
         val mirror = PetState.needsMirror(state)
         val flipV = PetState.flipVFor(state)
-        // 气泡整组的旋转角：默认跟人物一致，右下角另有规定（见 PetState.bubbleRotation）
-        val rot = PetState.bubbleRotation(state, PetState.rotationForSnap(state))
+        // ⚠️ 两个旋转角必须分开：
+        //   spriteRot —— **人物**的吸附旋转角，决定"气泡摆在人物的哪一侧"（偏移用这个）
+        //   bubbleRot —— **气泡图案**自己的旋转角（右下角另有规定，见 PetState.bubbleRotation）
+        // 2.1.36 把 bubbleRot 误用到了偏移上，于是右下角气泡被摆到人物**左下**去了。
+        val spriteRot = PetState.rotationForSnap(state)
+        val bubbleRot = PetState.bubbleRotation(state, spriteRot)
 
         // 条件2：按默认（素材右侧）摆法时，气泡窗口的最上沿落在哪
-        val size = BubbleView.windowSize(w, rot)
-        val offDefault = BubbleView.screenOffset(w, PetState.BUBBLE_SIDE_RIGHT, mirror, flipV, rot)
+        val size = BubbleView.windowSize(w, bubbleRot)
+        val offDefault = BubbleView.screenOffset(
+            w, PetState.BUBBLE_SIDE_RIGHT, mirror, flipV, spriteRot
+        )
         val defaultTopY = curCenterY() + offDefault[1] - size[1] / 2f
 
         val side = PetState.bubbleSide(
@@ -2608,7 +2614,8 @@ class PetView(context: Context) : View(context) {
         )
         return intArrayOf(
             curCenterX().roundToInt(), curCenterY().roundToInt(), up[0], side,
-            if (mirror) 1 else 0, if (flipV) 1 else 0, rot.toInt(),
+            if (mirror) 1 else 0, if (flipV) 1 else 0,
+            spriteRot.toInt(), bubbleRot.toInt(),
             // 人物**素材矩形**在屏幕上的位置（供"气泡不得进入"这条原则用）
             curTrackLeft().roundToInt(), curTrackTop().roundToInt(), trackW, trackH
         )

@@ -892,17 +892,20 @@ class PetService : Service(), PetView.Host {
     private fun showBubble() {
         val pet = petView ?: return
         val a = pet.bubbleAnchor()
-        if (a.size < 11) return
+        if (a.size < 12) return
         val w = a[2].toFloat()                                   // 人物正立素材宽 W = 2a
         val side = a[3]
         val mirror = a[4] == 1
         val flipV = a[5] == 1
-        val rot = a[6].toFloat()
+        val spriteRot = a[6].toFloat()                           // 人物旋转角 -> 决定摆位
+        val bubbleRot = a[7].toFloat()                           // 气泡图案旋转角 -> 决定朝向
 
-        val size = BubbleView.windowSize(w, rot)
+        val size = BubbleView.windowSize(w, bubbleRot)
         val bw = size[0]
         val bh = size[1]
-        val off = BubbleView.screenOffset(w, side, mirror, flipV, rot)
+        // ⚠️ 偏移用 **spriteRot**（气泡摆在人物的哪一侧是人物朝向决定的）；
+        //    bubbleRot 只管气泡图案自己怎么转（右下角 -90°）。
+        val off = BubbleView.screenOffset(w, side, mirror, flipV, spriteRot)
         val b = bounds()
         var fx = Math.round(a[0] + off[0] - bw / 2f).toInt()
         var fy = Math.round(a[1] + off[1] - bh / 2f).toInt()
@@ -910,10 +913,10 @@ class PetService : Service(), PetView.Host {
         // 原则（用户对右下角提的）：气泡**不能进入人物素材矩形**。
         // 相交时按"最小位移"推到矩形外侧（左右上下四个方向里位移最小的那个）。
         if (PetState.bubbleKeepOutOfPetRect(pet.state)) {
-            val pl = a[7]
-            val pt = a[8]
-            val pr = pl + a[9]
-            val pb = pt + a[10]
+            val pl = a[8]
+            val pt = a[9]
+            val pr = pl + a[10]
+            val pb = pt + a[11]
             if (fx < pr && fx + bw > pl && fy < pb && fy + bh > pt) {
                 val cands = arrayOf(
                     Math.abs(fx - (pl - bw)) to intArrayOf(pl - bw, fy),
@@ -933,7 +936,7 @@ class PetService : Service(), PetView.Host {
         val view = BubbleView(this)
         // 与人物素材同一套变换；"摆素材左侧"时整组要在素材系里翻过来（尾巴才朝着人物）
         // —— 右下角例外（用户确认的 C 形态），由 PetState.bubbleArtMirror 统一决定
-        view.rotationDeg = rot
+        view.rotationDeg = bubbleRot
         view.mirror = PetState.bubbleArtMirror(pet.state, mirror, side)
         view.flipV = flipV
         val p = WindowManager.LayoutParams(
@@ -967,7 +970,8 @@ class PetService : Service(), PetView.Host {
         runCatching {
             android.util.Log.i(
                 "BubbleGeom",
-                "bubble=($x,$y ${bw}x$bh rot=$rot side=$side mir=$mirror flipV=$flipV) " +
+                "bubble=($x,$y ${bw}x$bh bubbleRot=$bubbleRot spriteRot=$spriteRot " +
+                    "side=$side mir=$mirror flipV=$flipV) " +
                     "petCenter=(${a[0]},${a[1]}) W=${a[2]} state=${pet.state} pet=" +
                     (petParams?.let { "(${it.x},${it.y} ${it.width}x${it.height})" } ?: "?")
             )
