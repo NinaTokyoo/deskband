@@ -906,27 +906,46 @@ class PetService : Service(), PetView.Host {
         // ⚠️ 偏移用 **spriteRot**（气泡摆在人物的哪一侧是人物朝向决定的）；
         //    bubbleRot 只管气泡图案自己怎么转（右下角 -90°）。
         val off = BubbleView.screenOffset(w, side, mirror, flipV, spriteRot)
+        val artMirror = PetState.bubbleArtMirror(pet.state, mirror, side)
+        val nudge = PetState.bubbleNudge(pet.state)
         val b = bounds()
         var fx = Math.round(a[0] + off[0] - bw / 2f).toInt()
         var fy = Math.round(a[1] + off[1] - bh / 2f).toInt()
+        // 个别状态再挪一点（右下角：右移 0.3 个气泡宽、上移 0.2 个气泡高）
+        fx += Math.round(nudge[0] * bw)
+        fy -= Math.round(nudge[1] * bh)
 
-        // 原则（用户对右下角提的）：气泡**不能进入人物素材矩形**。
-        // 相交时按"最小位移"推到矩形外侧（左右上下四个方向里位移最小的那个）。
+        // 原则（用户对右下角提的）：气泡**有效区域**（可见的椭圆/小圈）不得进入人物素材矩形。
+        // ⚠️ 按椭圆判、不按外框判 —— 外框四角是透明的，拿外框判会把"只是角擦到"误判成相交。
+        // 相交时按"最小位移"把该椭圆推到矩形外侧。
         if (PetState.bubbleKeepOutOfPetRect(pet.state)) {
             val pl = a[8]
             val pt = a[9]
             val pr = pl + a[10]
             val pb = pt + a[11]
-            if (fx < pr && fx + bw > pl && fy < pb && fy + bh > pt) {
-                val cands = arrayOf(
-                    Math.abs(fx - (pl - bw)) to intArrayOf(pl - bw, fy),
-                    Math.abs(fx - pr) to intArrayOf(pr, fy),
-                    Math.abs(fy - (pt - bh)) to intArrayOf(fx, pt - bh),
-                    Math.abs(fy - pb) to intArrayOf(fx, pb)
-                )
-                val best = cands.minByOrNull { it.first }!!
-                fx = best.second[0]
-                fy = best.second[1]
+            val ellipses = BubbleView.visibleEllipses(bw, bh, bubbleRot, artMirror, flipV)
+            for (e in ellipses) {
+                val ecx = fx + e[0]
+                val ecy = fy + e[1]
+                val nx = ecx.coerceIn(pl.toFloat(), pr.toFloat())
+                val ny = ecy.coerceIn(pt.toFloat(), pb.toFloat())
+                val ux = (ecx - nx) / e[2].coerceAtLeast(1f)
+                val uy = (ecy - ny) / e[3].coerceAtLeast(1f)
+                if (ux * ux + uy * uy < 1f) {
+                    val el = (fx + e[0] - e[2]).toInt()
+                    val et = (fy + e[1] - e[3]).toInt()
+                    val er = (fx + e[0] + e[2]).toInt()
+                    val eb = (fy + e[1] + e[3]).toInt()
+                    val cands = arrayOf(
+                        Math.abs(el - (pl - (er - el))) to intArrayOf(pl - (er - el), fy),
+                        Math.abs(er - pr) to intArrayOf(pr, fy),
+                        Math.abs(et - (pt - (eb - et))) to intArrayOf(fx, pt - (eb - et)),
+                        Math.abs(eb - pb) to intArrayOf(fx, pb)
+                    )
+                    val best = cands.minByOrNull { it.first }!!
+                    fx = best.second[0]
+                    fy = best.second[1]
+                }
             }
         }
         val x = fx.coerceIn(0, (b.width() - bw).coerceAtLeast(0))
@@ -937,7 +956,7 @@ class PetService : Service(), PetView.Host {
         // 与人物素材同一套变换；"摆素材左侧"时整组要在素材系里翻过来（尾巴才朝着人物）
         // —— 右下角例外（用户确认的 C 形态），由 PetState.bubbleArtMirror 统一决定
         view.rotationDeg = bubbleRot
-        view.mirror = PetState.bubbleArtMirror(pet.state, mirror, side)
+        view.mirror = artMirror
         view.flipV = flipV
         val p = WindowManager.LayoutParams(
             bw, bh,

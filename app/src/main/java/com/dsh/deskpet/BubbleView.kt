@@ -202,6 +202,65 @@ class BubbleView(context: Context) : View(context) {
             return if (pop < POP_MIN) null else pop
         }
 
+        /**
+         * 气泡**有效区域**（真正画出来的可见部分）在**窗口坐标系**里的内切椭圆：
+         * 每项 `[cx, cy, rx, ry]`（大气泡一个椭圆、两个小圈各一个圆）。
+         *
+         * 为什么要这个：三块素材各自的外框见 [PART_BOX]，框的四角是**透明**的
+         * （大气泡是框内切椭圆）。判"气泡有没有压到人物矩形"必须按可见部分算 ——
+         * 拿外框判会把"只是透明角擦到"误判成相交（用户 2026-10-16 明确要求）。
+         */
+        fun visibleEllipses(
+            winW: Int, winH: Int, rotDeg: Float, mirror: Boolean, flipV: Boolean
+        ): Array<FloatArray> {
+            val q = ((rotDeg % 360f) + 360f) % 360f
+            val swapped = q == 90f || q == 270f
+            val gw = if (swapped) winH.toFloat() else winW.toFloat()
+            val gh = if (swapped) winW.toFloat() else winH.toFloat()
+            val out = ArrayList<FloatArray>(PART_BOX.size)
+            for (box in PART_BOX) {
+                val l = box[0] * gw
+                val t = box[1] * gh
+                val r = l + box[2] * gw
+                val b = t + box[3] * gh
+                var minX = Float.MAX_VALUE
+                var maxX = -Float.MAX_VALUE
+                var minY = Float.MAX_VALUE
+                var maxY = -Float.MAX_VALUE
+                for (px in floatArrayOf(l, r)) {
+                    for (py in floatArrayOf(t, b)) {
+                        val p = mapGroupPoint(
+                            px, py, gw, gh, winW.toFloat(), winH.toFloat(), rotDeg, mirror, flipV
+                        )
+                        minX = minOf(minX, p[0]); maxX = maxOf(maxX, p[0])
+                        minY = minOf(minY, p[1]); maxY = maxOf(maxY, p[1])
+                    }
+                }
+                out.add(
+                    floatArrayOf(
+                        (minX + maxX) / 2f, (minY + maxY) / 2f,
+                        (maxX - minX) / 2f, (maxY - minY) / 2f
+                    )
+                )
+            }
+            return out.toTypedArray()
+        }
+
+        /** 组自身坐标 -> 窗口坐标（变换链与 [BubbleView.onDraw] 严格一致） */
+        private fun mapGroupPoint(
+            x: Float, y: Float, gw: Float, gh: Float, w: Float, h: Float,
+            rotDeg: Float, mirror: Boolean, flipV: Boolean
+        ): FloatArray {
+            var px = x - gw / 2f
+            var py = y - gh / 2f
+            if (mirror) px = -px
+            if (flipV) py = -py
+            val r = Math.toRadians(rotDeg.toDouble())
+            val c = Math.cos(r).toFloat()
+            val s = Math.sin(r).toFloat()
+            return floatArrayOf(px * c - py * s + w / 2f, px * s + py * c + h / 2f)
+        }
+
         /** 按人物正立素材的屏幕宽度，算气泡整组**自身**的尺寸（未旋转） */
         fun groupSize(petUprightW: Float): IntArray {
             val w = (petUprightW * GROUP_W_RATIO).toInt().coerceIn(24, 8192)

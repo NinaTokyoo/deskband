@@ -1953,11 +1953,17 @@ class PetStateTest {
         assertTrue(
             PetState.bubbleArtMirror(PetState.BORDER_L, true, PetState.BUBBLE_SIDE_RIGHT)
         )
-        // "气泡不得进入人物素材矩形"这条原则只对角落状态生效（左右边框保持原样）
+        // "气泡有效区域不得进入人物素材矩形"这条原则只对角落状态生效（左右边框保持原样）
         assertTrue(PetState.bubbleKeepOutOfPetRect(PetState.CORNER_BR))
         assertTrue(PetState.bubbleKeepOutOfPetRect(PetState.CORNER_TR))
         assertFalse(PetState.bubbleKeepOutOfPetRect(PetState.BORDER_R))
         assertFalse(PetState.bubbleKeepOutOfPetRect(PetState.BORDER_L))
+        // 右下角在标准摆位之上再挪：右 0.3 个气泡宽、上 0.2 个气泡高（= 先上 0.3 再下 0.1）
+        val nudge = PetState.bubbleNudge(PetState.CORNER_BR)
+        assertEquals(0.3f, nudge[0], 1e-6f)
+        assertEquals(0.2f, nudge[1], 1e-6f)
+        assertEquals(0f, PetState.bubbleNudge(PetState.BORDER_R)[0], 1e-6f)
+        assertEquals(0f, PetState.bubbleNudge(PetState.BORDER_R)[1], 1e-6f)
     }
 
     @Test
