@@ -110,6 +110,90 @@ class BubbleView(context: Context) : View(context) {
     var textColor: Int = 0xFF000000.toInt()
 
     /**
+     * 描边颜色（0 = 保持素材原色）。用户 2026-10-17："三个气泡的边框也改成人物发色" ——
+     * 服务下发的是**发色派生色**（与气泡内文字、界面强调色同一个色）。
+     */
+    var strokeColor: Int = 0
+        set(value) {
+            if (field == value) return
+            field = value
+            // 颜色变了，缩放着色后的缓存全部作废（否则会一直留着上一个形象的图）
+            for (i in scaled.indices) {
+                val s = scaled[i]
+                if (s != null && s !== parts[i] && !s.isRecycled) s.recycle()
+                scaled[i] = null
+            }
+            SRC_CACHE.clear()
+            parts = arrayOf(
+                decode(context, "b0_small"),
+                decode(context, "b1_mid"),
+                decode(context, "b2_big")
+            )
+            rebuildScaled()
+            invalidate()
+        }
+
+    /**
+     * 把素材的**描边**换成 [stroke] 色，填充保持 [fill] 色。
+     *
+     * 素材是"描边色 C 盖在填充色 F 上"的**不透明**图：每个像素都满足
+     * `P = a·C + (1-a)·F`（a = 描边覆盖度）。由已知的 C、F 反推 a，再合成
+     * `a·stroke + (1-a)·F` —— 于是抗锯齿边缘一起跟着变，不会留下原来深蓝的毛边。
+     */
+    private fun recolorStroke(src: Bitmap, stroke: Int, fill: Int): Bitmap {
+        val w = src.width
+        val h = src.height
+        val px = IntArray(w * h)
+        src.getPixels(px, 0, w, 0, 0, w, h)
+        // 原描边色：挑"最暗且不透明"的那个像素当样本（素材描边是深蓝，远暗于填充）
+        var base = 0
+        var bestLum = Int.MAX_VALUE
+        for (c in px) {
+            if ((c ushr 24) < 200) continue
+            val lum = ((c shr 16) and 0xFF) + ((c shr 8) and 0xFF) + (c and 0xFF)
+            if (lum < bestLum) {
+                bestLum = lum
+                base = c
+            }
+        }
+        val br = (base shr 16) and 0xFF
+        val bg = (base shr 8) and 0xFF
+        val bb = base and 0xFF
+        val fr = (fill shr 16) and 0xFF
+        val fg = (fill shr 8) and 0xFF
+        val fb = fill and 0xFF
+        val sr = (stroke shr 16) and 0xFF
+        val sg = (stroke shr 8) and 0xFF
+        val sb = stroke and 0xFF
+        // 逐通道反推覆盖度；挑"|F-C| 最大"的通道最稳（深蓝与白在红通道差得最多）
+        val dr = fr - br
+        val dg = fg - bg
+        val db = fb - bb
+        val useR = Math.abs(dr) >= Math.abs(dg) && Math.abs(dr) >= Math.abs(db)
+        val useG = !useR && Math.abs(dg) >= Math.abs(db)
+        for (i in px.indices) {
+            val c = px[i]
+            val a0 = c ushr 24
+            if (a0 == 0) continue
+            val r0 = (c shr 16) and 0xFF
+            val g0 = (c shr 8) and 0xFF
+            val b0 = c and 0xFF
+            val cov = when {
+                useR -> if (dr != 0) (fr - r0).toFloat() / dr else 0f
+                useG -> if (dg != 0) (fg - g0).toFloat() / dg else 0f
+                else -> if (db != 0) (fb - b0).toFloat() / db else 0f
+            }.coerceIn(0f, 1f)
+            if (cov <= 0f) continue
+            val r = (sr * cov + fr * (1 - cov)).toInt().coerceIn(0, 255)
+            val g = (sg * cov + fg * (1 - cov)).toInt().coerceIn(0, 255)
+            val b = (sb * cov + fb * (1 - cov)).toInt().coerceIn(0, 255)
+            px[i] = (a0 shl 24) or (r shl 16) or (g shl 8) or b
+        }
+        val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        out.setPixels(px, 0, w, 0, 0, w, h)
+        return out
+    }
+    /**
      * **图片条目**的位图（用户 2026-10-16 新增；null = 显示 [text]）。
      *
      * 图片以"合适大小居中"放进大椭圆（见 [drawImage]），与文字走同一套出现/消失时机，
@@ -566,14 +650,21 @@ class BubbleView(context: Context) : View(context) {
      *    （大气泡 654×896 / 145KB，解码是 10ms 量级），出现动画的头几帧就会顿一下。
      */
     private fun decode(ctx: Context, name: String): Bitmap? {
-        val key = if (grayFill) "gray/$name" else name
+        // 缓存键要把两种着色都算进去：深色模式的灰底、以及描边着色
+        val key = (if (grayFill) "gray/" else "") + (if (strokeColor != 0) "s${strokeColor}/" else "") + name
         SRC_CACHE[key]?.let { if (!it.isRecycled) return it }
         val raw = try {
             ctx.assets.open("$DIR/$name.png").use { BitmapFactory.decodeStream(it) }
         } catch (e: Exception) {
             null
         } ?: return null
-        val bmp = if (grayFill) grayWhiteFill(raw) else raw
+        var bmp = if (grayFill) grayWhiteFill(raw) else raw
+        // 描边着色（用户 2026-10-17：三个气泡的边框也跟人物发色）——
+        // 填充色要跟着深色模式走（浅色模式是白、深色模式是灰），否则抗锯齿边会算出脏色
+        if (strokeColor != 0) {
+            val fill = if (grayFill) 0xFFA9A9A9.toInt() else 0xFFFFFFFF.toInt()
+            bmp = recolorStroke(bmp, strokeColor, fill)
+        }
         SRC_CACHE[key] = bmp
         return bmp
     }

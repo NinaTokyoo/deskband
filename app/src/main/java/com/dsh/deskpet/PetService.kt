@@ -1090,6 +1090,9 @@ class PetService : Service(), PetView.Host {
         val view = BubbleView(this)
         // 深色模式：只把气泡内部的**白底换成灰底**，几何/描边不动
         view.grayFill = bubbleGrayFill
+        // 描边也用人物发色派生色（用户 2026-10-17："三个气泡的边框也改成人物发色"）——
+        // 与气泡内文字、界面强调色同一个色
+        view.strokeColor = bubbleTextColor(pet)
         // ⚠️ 窗口四周留一圈**透明余量**给"压缩回弹"的过冲用：回弹段会略微超过原尺寸
         //    （约 +3.5%），窗口若不贴余量，放大那几帧的四周会被切掉（用户实测）。
         //    余量对称，所以画面仍居中，位置/大小规则不受影响。
