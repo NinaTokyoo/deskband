@@ -1905,16 +1905,15 @@ class MainActivity : Activity() {
             // 删除是**固定的红**，不跟强调色（强调色本身可能就是红的，就分不出"删除"了）
             setTextColor(TAG_DELETE_RED)
             // 上下内边距给 0（靠 gravity 居中），描边背景正好铺满这个固定高度的框 ——
-            // 于是"确认删除"按钮到标签描边的上 / 下 / 右三边距离 = 标签自己的内边距，
+            // 于是"删除 / 确定"按钮到标签描边的上 / 下 / 右三边距离 = 标签自己的内边距，
             // 三边天然相等（用户要求）。左右内边距只影响按钮的横向留白。
             setPadding(dp(dm, 8f), 0, dp(dm, 8f), 0)
-            background = if (pending) {
-                AccentTheme.accentBoxBackground(
-                    this@MainActivity, TAG_DELETE_RED, lightMode, radiusDp = 8f
-                )
-            } else {
-                null
-            }
+            // ⚠️ **两态都要描边**：原先常态是纯文字（✕ 时代留下的写法），
+            //    改成「删除」之后就成了"一行红字"，看着不像按钮（用户 2026-10-17：
+            //    "删除加上边框呀"）。现在常态与确定态都是红描边圆角框。
+            background = AccentTheme.accentBoxBackground(
+                this@MainActivity, TAG_DELETE_RED, lightMode, radiusDp = 8f
+            )
             setOnClickListener {
                 if (pending) {
                     deleteCustomSkin(id, name)
