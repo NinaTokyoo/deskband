@@ -281,8 +281,11 @@ class BubbleView(context: Context) : View(context) {
         val (size, lines) = chosen ?: return
         paint.textSize = size
         val lh = size * LINE_SPACING
-        // 居中：块的竖直中心对齐椭圆中心，再上移 0.05em
-        val y0 = cy - (lines.size - 1) / 2f * lh - size * OPTICAL_DY_EM
+        // 竖直居中：让**文字块**的中心落在椭圆中心上，再按视觉补偿上移 0.05em。
+        // ⚠️ 必须减掉 `size/2`：这里算的是**首行的行顶**，而一行文字自身还占约一个行高，
+        //    只减 (n-1)/2*lh 的话整块会往下偏半个字（实测 0.4em，行数越多越明显，
+        //    用户截图里 4 行文字明显贴到了椭圆下沿）。
+        val y0 = cy - (lines.size - 1) / 2f * lh - size / 2f - size * OPTICAL_DY_EM
         for ((j, line) in lines.withIndex()) {
             val w = paint.measureText(line)
             canvas.drawText(line, cx - w / 2f, y0 + j * lh + size * BASELINE_RATIO, paint)
