@@ -191,6 +191,63 @@ object PetState {
     fun needsMirror(state: Int) = isLeft(state)
 
     /**
+     * 是否处于某个**稳定吸附状态**（角落 / 贴边）—— 也就是"能冒思考气泡"的那些状态。
+     *
+     * 拖拽、滑动过程中 state 也是这些值，但那一刻并没有停稳，所以冒泡时机由
+     * PetView 的点击动画控制（只有真的"点了一下"才会走到这里）。
+     */
+    fun isSnapped(state: Int): Boolean = when (state) {
+        CORNER_BR, CORNER_BL, CORNER_TR, CORNER_TL,
+        BORDER_R, BORDER_L, BORDER_R_UPRIGHT, BORDER_L_UPRIGHT,
+        EDGE_TOP_R, EDGE_TOP_L -> true
+        else -> false
+    }
+
+    // ---------------------------------------------------------------- 思考气泡摆哪一侧
+
+    /** 气泡摆在人物**素材坐标系**的右侧（= 人物右上，默认） */
+    const val BUBBLE_SIDE_RIGHT = 1
+
+    /** 气泡摆在人物**素材坐标系**的左侧（= 人物左上） */
+    const val BUBBLE_SIDE_LEFT = -1
+
+    /**
+     * 气泡摆在哪一侧 —— 纯函数，便于单测。
+     *
+     * ⚠️ 返回值是**人物素材自己坐标系**里的侧别（+1 = 素材右侧＝人物右上；
+     *    -1 = 素材左侧＝人物左上），不是屏幕左右。用户 2026-10-16 明确：
+     *    "后面我说的位置均为从人物自己的角度看"。
+     *
+     * 用户规则（对应 2.1.33 的推广）：
+     *   1. 贴右边框：默认**右上**；命中任一条件则**左上** ——
+     *        · 条件1：人物**吸附边中点**在右边框"上 1/3 点"及以上（含压线）
+     *        · 条件2：按默认摆法时气泡的**最上沿**在右边框"上 1/5 点"及以上（含压线）
+     *   2. 右下角 -> 左上；左下角是它的左右镜像 -> 右上；
+     *      上方的两个角是下方的**上下镜像**（左右不变）-> 右上角左上、左上角右上
+     *   3/4. 贴底边 / 贴顶边：吸附边中点在屏幕水平中线**及右侧** -> 左上，否则右上
+     *        （贴顶边 = 底边的上下镜像，判据相同）
+     *   5. 贴左边框 = 贴右边框的**左右镜像**：判据完全一样，只是屏幕上左右相反
+     *
+     * @param edgeMidX 吸附边中点的屏幕 x（贴底/顶边时 = 足迹盒中心 x）
+     * @param edgeMidY 吸附边中点的屏幕 y（贴左/右边框时 = 足迹盒中心 y）
+     * @param defaultTopY 按默认（右上）摆法时，气泡窗口的**最上沿** y（条件2 用）
+     */
+    fun bubbleSide(
+        state: Int, edgeMidX: Float, edgeMidY: Float,
+        screenW: Float, screenH: Float, defaultTopY: Float
+    ): Int = when (state) {
+        BORDER_R, BORDER_L ->
+            if (edgeMidY <= screenH / 3f || defaultTopY <= screenH / 5f) BUBBLE_SIDE_LEFT
+            else BUBBLE_SIDE_RIGHT
+
+        CORNER_BR, CORNER_TR -> BUBBLE_SIDE_LEFT
+        CORNER_BL, CORNER_TL -> BUBBLE_SIDE_RIGHT
+
+        // 贴底边（BORDER_*_UPRIGHT）与贴顶边（EDGE_TOP_*）：看吸附边中点在中线哪一侧
+        else -> if (edgeMidX >= screenW / 2f) BUBBLE_SIDE_LEFT else BUBBLE_SIDE_RIGHT
+    }
+
+    /**
      * 素材要不要**上下翻转**（flipV）。
      *
      * 上边组的形态就是下边组沿水平轴镜像过来的：贴在底边是"站在地上"，

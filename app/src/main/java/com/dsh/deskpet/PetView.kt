@@ -2567,6 +2567,7 @@ class PetView(context: Context) : View(context) {
         hopping = true
         hopStart = SystemClock.uptimeMillis() - (t0 * HOP_MS).toLong()
         bubbleFired = false          // 这一次点击还没冒过泡
+        android.util.Log.i("BubbleGeom", "onTapped state=$state fromSquash=$fromSquash")
         choreographer.removeFrameCallback(frameCallback)
         scheduleFrame()
         host?.onTapped()
@@ -2575,40 +2576,54 @@ class PetView(context: Context) : View(context) {
     // ---------------------------------------------------------------- 思考气泡
 
     /**
-     * 思考气泡的锚点：`[人物盒中心X, 人物盒中心Y, 人物正立素材宽W, 人物旋转角]`。
+     * 思考气泡的锚点：
+     * `[人物盒中心X, 人物盒中心Y, 人物正立素材宽W, side, mirror, flipV, 旋转角]`。
      *
-     * 全部按**记录基线**（合成图）来：
-     *   · 尺寸基准 W = 人物**正立素材**的屏幕宽度（那张 1024×875 就是"包围矩形 A"，
-     *     宽 2a 高 b；气泡整组 1.984375a × 1.974609a = 0.99219W × 0.98730W）；
-     *   · 中心 = 人物盒中心 + 旋转后的偏移（见 [BubbleView.OFFSET_RIGHT_RATIO]）；
-     *   · **整组随人物一起转**（吸附右边框时 -90°），所以要把角度一并交给服务。
+     *   · 尺寸基准 W = 人物**正立素材**的屏幕宽度（那张 1024×875 就是"包围矩形 A"）；
+     *   · `side` = 气泡摆素材坐标系的哪一侧（[PetState.bubbleSide] 按用户规则算，含条件1/条件2）；
+     *   · `mirror` / `flipV` / 旋转角 = 人物**素材**当前的变换（气泡要走同一条链）。
      *
      * ⚠️ 用**正立素材**而不是当前素材来定尺寸：气泡大小只应跟人物大小有关，
-     * 不能因为"躺倒 / 正立"两套素材尺寸不同而变。
+     * 不能因为"角落 / 正立"两套素材尺寸不同而变。
      */
     fun bubbleAnchor(): IntArray {
         val s = sprite ?: return IntArray(0)
-        val screenH = (host?.bounds()?.height() ?: 1080).toFloat()
+        val b = host?.bounds() ?: return IntArray(0)
+        val screenH = b.height().toFloat()
+        val screenW = b.width().toFloat()
         val up = PetState.scaledSize(s.uprightW, s.uprightH, screenH * sizeFrac)
+        val w = up[0].toFloat()
+        val mirror = PetState.needsMirror(state)
+        val flipV = PetState.flipVFor(state)
+        val rot = PetState.rotationForSnap(state)
+
+        // 条件2：按默认（素材右侧）摆法时，气泡窗口的最上沿落在哪
+        val size = BubbleView.windowSize(w, rot)
+        val offDefault = BubbleView.screenOffset(w, PetState.BUBBLE_SIDE_RIGHT, mirror, flipV, rot)
+        val defaultTopY = curCenterY() + offDefault[1] - size[1] / 2f
+
+        val side = PetState.bubbleSide(
+            state, curCenterX(), curCenterY(), screenW, screenH, defaultTopY
+        )
         return intArrayOf(
-            curCenterX().roundToInt(), curCenterY().roundToInt(), up[0],
-            PetState.rotationForSnap(state).toInt()
+            curCenterX().roundToInt(), curCenterY().roundToInt(), up[0], side,
+            if (mirror) 1 else 0, if (flipV) 1 else 0, rot.toInt()
         )
     }
 
     /**
-     * 能不能冒泡 —— 用户规定：**当且仅当人物吸附在右边框、且位于下半屏**。
+     * 能不能冒泡 —— 用户 2026-10-16 改为：**推广到所有吸附状态**。
      *
-     * 为什么限定下半屏：气泡挂在人物左侧、而且比人物还高（竖直中心对着头部），
-     * 人物贴在右上半屏时气泡会顶出屏幕上沿。
+     * 之前"当且仅当吸附右边框 + 下半屏"是旧限制；现在每个吸附位都能冒泡，
+     * 位置/朝向由 [PetState.bubbleSide] 按规则算（右侧框那两个"条件"就是
+     * 用来替代旧的"下半屏"限制的：人物太靠上时气泡自动改摆左侧）。
      *
-     * 只认 [PetState.BORDER_R]（贴右边框的躺倒形态），不含右下角 [PetState.CORNER_BR]
-     * 与贴底边的 [PetState.BORDER_R_UPRIGHT] —— "右边框"就是右边框。
+     * ⚠️ 仍然只在**稳定吸附状态**下冒泡：拖拽 / 滑动过程中 state 会变，那会儿不冒。
      */
     private fun bubbleAllowed(): Boolean {
-        if (state != PetState.BORDER_R) return false
-        val h = (host?.bounds()?.height() ?: return false).toFloat()
-        return curCenterY() > h / 2f
+        val ok = PetState.isSnapped(state)
+        android.util.Log.i("BubbleGeom", "decide state=$state snapped=$ok center=(${curCenterX()},${curCenterY()})")
+        return ok
     }
 
     // ---------------------------------------------------------------- 绘制

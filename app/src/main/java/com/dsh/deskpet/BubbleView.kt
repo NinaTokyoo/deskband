@@ -54,6 +54,19 @@ class BubbleView(context: Context) : View(context) {
      */
     var rotationDeg = 0f
 
+    /**
+     * 与人物素材**同一套**的左右镜像 / 上下翻转（旋转见 [rotationDeg]）。
+     *
+     * 整套变换链与 `PetSprite.bitmap` + `PetView` 的画布旋转严格一致：
+     *   素材 -> 镜像(x) -> 上下翻转(y) -> 旋转(0/∓90)
+     * 于是"人物素材怎么翻，气泡就怎么翻"，四种朝向（右下/左下/贴右/贴左 …）自动成立。
+     *
+     * ⚠️ 注意 [mirror] 已经含了"气泡摆左侧"那一层：摆左侧时整组要在素材系里反过来，
+     *    由 [PetService.showBubble] 用 `素材镜像 xor 摆左侧` 算好再传进来。
+     */
+    var mirror = false
+    var flipV = false
+
     /** 是否已经转过 90°（窗口宽高与组自身宽高互换） */
     private val rotated: Boolean get() = (rotationDeg % 180f) != 0f
 
@@ -78,6 +91,7 @@ class BubbleView(context: Context) : View(context) {
         canvas.save()
         canvas.translate(width / 2f, height / 2f)
         if (rotationDeg != 0f) canvas.rotate(rotationDeg)
+        if (mirror || flipV) canvas.scale(if (mirror) -1f else 1f, if (flipV) -1f else 1f)
         canvas.translate(-gw / 2f, -gh / 2f)
 
         for (i in parts.indices) {
@@ -121,29 +135,36 @@ class BubbleView(context: Context) : View(context) {
             floatArrayOf(0.27291f, 0.00000f, 0.72709f, 1.00000f)    // b2_big   大气泡
         )
 
-        /** 整组外接框纵横比（宽 / 高），与素材裁切框一致 */
-        const val GROUP_ASPECT = 1.00448f
+        /** 整组外接框纵横比（宽 / 高），与素材裁切框一致（1.2 倍后同理） */
+        const val GROUP_ASPECT = 1.00495f
 
         /**
-         * 整组宽度 / 人物**正立素材**的屏幕宽度。
+         * 整组尺寸 / 人物**正立素材**的屏幕宽度。
          *
          * 记录的相对尺寸：人物正立素材（1024×875）即"包围矩形 A"（宽 2a、高 b），
-         * 气泡整组 1.984375a × 1.974609a —— 于是 1.984375 / 2 = 0.99219。
+         * 气泡整组 1.984375a × 1.974609a = 0.99219W × 0.98730W；
+         * **再乘用户 2026-10-16 要求的 1.2 倍** —— 于是：
+         *   宽 0.99219 × 1.2 = 1.190628，高 0.98730 × 1.2 = 1.184760
+         *
+         * ⚠️ 放大是**以小气泡最左点为基准**整体放大：那个点在放大前后不动，
+         *    所以整组中心相对人物盒中心的偏移也跟着变大（见 [ART_RIGHT_RATIO]）。
          */
-        const val GROUP_W_RATIO = 0.99219f
+        const val GROUP_W_RATIO = 1.190628f
+        const val GROUP_H_RATIO = 1.184760f
 
         /**
-         * 气泡中心相对**人物包围盒中心**的偏移（单位 = 人物正立素材宽 W），
-         * 在"人物正立"的坐标系里：向右 [OFFSET_RIGHT_RATIO]、向上 [OFFSET_UP_RATIO]。
+         * 整组中心相对**人物素材盒中心**的偏移（换算基准 = 人物正立素材宽 W），
+         * 用**人物素材自己的坐标系**描述：向素材右侧 [ART_RIGHT_RATIO]、向素材上方 [ART_UP_RATIO]。
          *
-         * 来自记录的合成图：人物盒 1024×875、气泡整组 871×867、组中心在 (1504.5, 474.5)，
-         * 人物盒中心在 (553, 911.5) —— 于是偏移 = (951.5, -437) px = (0.9292W, 0.4268W)。
+         * 1.0 倍基线（合成图量得）：右 1.0000W、上 0.4268W（= 齐头顶）；
+         * 以"小气泡最左点"(右 0.5039W、上 0.4300W) 为基准放大 1.2 倍后：
+         *   右 0.5039 + (1.0000 − 0.5039)×1.2 = 1.0992W
+         *   上 0.4300 + (0.4268 − 0.4300)×1.2 = 0.4262W
          *
-         * ⚠️ 人物躺倒时**整组跟着转同一个角度**，这两个偏移也要一起转
-         * （见 PetService.showBubble 里的旋转矩阵）—— 转完气泡就跑到人物上方去了。
+         * ⚠️ 这两个偏移必须与人物素材走**同一条变换链**（见 [screenOffset]）。
          */
-        const val OFFSET_RIGHT_RATIO = 0.9292f
-        const val OFFSET_UP_RATIO = 0.4268f
+        const val ART_RIGHT_RATIO = 1.0992f
+        const val ART_UP_RATIO = 0.4262f
 
         /** 小圈开始出现到大气泡完全出现（用户指定 0.15s） */
         private const val APPEAR_MS = 150f
@@ -183,8 +204,8 @@ class BubbleView(context: Context) : View(context) {
 
         /** 按人物正立素材的屏幕宽度，算气泡整组**自身**的尺寸（未旋转） */
         fun groupSize(petUprightW: Float): IntArray {
-            val w = (petUprightW * GROUP_W_RATIO).toInt().coerceIn(24, 4096)
-            val h = (w / GROUP_ASPECT).toInt().coerceAtLeast(1)
+            val w = (petUprightW * GROUP_W_RATIO).toInt().coerceIn(24, 8192)
+            val h = (petUprightW * GROUP_H_RATIO).toInt().coerceAtLeast(1)
             return intArrayOf(w, h)
         }
 
@@ -197,6 +218,31 @@ class BubbleView(context: Context) : View(context) {
             val g = groupSize(petUprightW)
             val q = ((rotDeg % 360f) + 360f) % 360f
             return if (q == 90f || q == 270f) intArrayOf(g[1], g[0]) else g
+        }
+
+        /**
+         * 整组中心的偏移：**素材坐标系** -> 屏幕偏移（屏幕坐标 y 向下）。
+         *
+         * 变换链与人物素材严格一致（顺序不能换）：
+         *   1. 先在素材系里按 [side] 取"素材右侧 / 素材左侧"（见 [PetState.bubbleSide]）；
+         *   2. 再套人物素材的**镜像(x)**；
+         *   3. 再套人物素材的**上下翻转(y)**；
+         *   4. 最后按吸附旋转角旋转（与 `canvas.rotate` 同向：正数 = 屏幕顺时针）。
+         *
+         * @return `[dx, dy]`：屏幕偏移，加在人物盒中心上就是气泡窗口中心
+         */
+        fun screenOffset(
+            petUprightW: Float, side: Int,
+            mirror: Boolean, flipV: Boolean, rotDeg: Float
+        ): FloatArray {
+            var x = side * ART_RIGHT_RATIO * petUprightW
+            var y = -ART_UP_RATIO * petUprightW          // 素材坐标 y 向下，"上"取负
+            if (mirror) x = -x
+            if (flipV) y = -y
+            val r = Math.toRadians(rotDeg.toDouble())
+            val c = Math.cos(r)
+            val s = Math.sin(r)
+            return floatArrayOf((x * c - y * s).toFloat(), (x * s + y * c).toFloat())
         }
     }
 }

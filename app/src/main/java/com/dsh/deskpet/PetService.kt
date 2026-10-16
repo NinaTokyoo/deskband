@@ -882,38 +882,39 @@ class PetService : Service(), PetView.Host {
     override fun onJumpStart() = showBubble()
 
     /**
-     * 让思考气泡出现。位置与大小**整组跟着人物转**，与合成图（记录基线）一致：
+     * 让思考气泡出现。位置、大小、朝向**全部与人物素材同步**（用户 2026-10-16 的推广规则）：
      *
-     *   · **大小**：组自身 = 0.99219W × 0.98730W（W = 人物正立素材屏幕宽）；
-     *   · **方向**：组随人物一起转同一个角度 —— 人物躺倒在右边框时气泡也倒 90°，
-     *     于是大气泡整个飘到人物**上方**、两个小圈从下往上指着脑袋；
-     *   · **位置**：人物盒中心 + 旋转后的偏移（正立时是"向右上"，转完就成"向左上"）。
+     *   · **大小**：整组 = 1.190628W × 1.184760W（记录基线的 0.99219/0.98730 各乘 1.2）；
+     *   · **朝向**：与人物素材走同一条变换链 —— 镜像(x) → 上下翻转(y) → 旋转(0/∓90)；
+     *   · **位置**：人物盒中心 + 素材坐标系偏移（向素材右 1.0992W 或左、素材上 0.4262W），
+     *     再套同一条变换链。摆哪一侧由 [PetState.bubbleSide] 按用户规则算。
      */
     private fun showBubble() {
         val pet = petView ?: return
         val a = pet.bubbleAnchor()
-        if (a.size < 4) return
+        if (a.size < 7) return
         val w = a[2].toFloat()                                   // 人物正立素材宽 W = 2a
-        val rot = a[3].toFloat()
+        val side = a[3]
+        val mirror = a[4] == 1
+        val flipV = a[5] == 1
+        val rot = a[6].toFloat()
+
         val size = BubbleView.windowSize(w, rot)
         val bw = size[0]
         val bh = size[1]
-        // 偏移：正立坐标系里 (向右 0.9292W, 向上 0.4268W)，按人物旋转角一起转过来
-        val rad = Math.toRadians(rot.toDouble())
-        val dx = w * BubbleView.OFFSET_RIGHT_RATIO
-        val dy = -w * BubbleView.OFFSET_UP_RATIO
-        val ox = dx * Math.cos(rad) - dy * Math.sin(rad)
-        val oy = dx * Math.sin(rad) + dy * Math.cos(rad)
+        val off = BubbleView.screenOffset(w, side, mirror, flipV, rot)
         val b = bounds()
-        val x = Math.round(a[0] + ox - bw / 2f).toInt()
+        val x = Math.round(a[0] + off[0] - bw / 2f).toInt()
             .coerceIn(0, (b.width() - bw).coerceAtLeast(0))
-        val y = Math.round(a[1] + oy - bh / 2f).toInt()
+        val y = Math.round(a[1] + off[1] - bh / 2f).toInt()
             .coerceIn(0, (b.height() - bh).coerceAtLeast(0))
 
         hideBubble()
         val view = BubbleView(this)
-        // 整组随人物一起转（吸附右边框 = -90）：不镜像、只旋转
+        // 与人物素材同一套变换；"摆素材左侧"时整组要在素材系里翻过来（尾巴才朝着人物）
         view.rotationDeg = rot
+        view.mirror = mirror != (side == PetState.BUBBLE_SIDE_LEFT)
+        view.flipV = flipV
         val p = WindowManager.LayoutParams(
             bw, bh,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -945,7 +946,8 @@ class PetService : Service(), PetView.Host {
         runCatching {
             android.util.Log.i(
                 "BubbleGeom",
-                "bubble=($x,$y ${bw}x$bh rot=$rot) petCenter=(${a[0]},${a[1]}) W=${a[2]} pet=" +
+                "bubble=($x,$y ${bw}x$bh rot=$rot side=$side mir=$mirror flipV=$flipV) " +
+                    "petCenter=(${a[0]},${a[1]}) W=${a[2]} state=${pet.state} pet=" +
                     (petParams?.let { "(${it.x},${it.y} ${it.width}x${it.height})" } ?: "?")
             )
         }

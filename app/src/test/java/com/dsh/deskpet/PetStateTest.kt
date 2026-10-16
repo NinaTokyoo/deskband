@@ -1852,4 +1852,74 @@ class PetStateTest {
         // 四分之三周期处是谷
         assertEquals(-1f, PetState.breathWave(1950f, 0f, 2600f), eps)
     }
+
+    // ---------------------------------------------------------------- 思考气泡摆哪一侧
+
+    /**
+     * 气泡侧别规则（用户 2026-10-16 定的推广规则，位置一律按"人物素材自己的视角"）。
+     *
+     * 屏幕 1440 x 3084：中线 x = 720，上 1/3 = 1028，上 1/5 = 616.8。
+     */
+    private fun sideOf(
+        state: Int, x: Float, y: Float, defaultTop: Float = 1e5f
+    ) = PetState.bubbleSide(state, x, y, SW, SH, defaultTop)
+
+    @Test
+    fun bubble_on_right_border_defaults_to_character_right() {
+        // 下半屏、气泡也不会顶出上 1/5 线 -> 默认（素材右侧 = 人物右上）
+        assertEquals(
+            PetState.BUBBLE_SIDE_RIGHT,
+            sideOf(PetState.BORDER_R, SW - 100f, SH * 0.75f, defaultTop = 2000f)
+        )
+    }
+
+    @Test
+    fun bubble_flips_when_pet_is_in_top_third() {
+        // 条件1：吸附边中点在上 1/3 点及以上（含正好压线）
+        assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.BORDER_R, SW - 100f, SH / 3f))
+        assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.BORDER_R, SW - 100f, SH / 3f - 1f))
+        // 差一点就还在默认侧
+        assertEquals(PetState.BUBBLE_SIDE_RIGHT, sideOf(PetState.BORDER_R, SW - 100f, SH / 3f + 1f, 2000f))
+    }
+
+    @Test
+    fun bubble_flips_when_default_placement_would_cross_top_fifth() {
+        // 条件2：默认摆法的最上沿在上 1/5 点及以上（含正好压线）
+        assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.BORDER_R, SW - 100f, SH * 0.6f, SH / 5f))
+        assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.BORDER_R, SW - 100f, SH * 0.6f, SH / 5f - 1f))
+        assertEquals(PetState.BUBBLE_SIDE_RIGHT, sideOf(PetState.BORDER_R, SW - 100f, SH * 0.6f, SH / 5f + 1f))
+    }
+
+    @Test
+    fun bubble_on_left_border_mirrors_right_border() {
+        // 规则5：贴左边框 = 贴右边框的左右镜像 -> 判据完全相同
+        assertEquals(
+            PetState.BUBBLE_SIDE_RIGHT,
+            sideOf(PetState.BORDER_L, 100f, SH * 0.75f, defaultTop = 2000f)
+        )
+        assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.BORDER_L, 100f, SH / 3f))
+        assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.BORDER_L, 100f, SH * 0.6f, SH / 5f))
+    }
+
+    @Test
+    fun bubble_at_corners_follows_horizontal_side_only() {
+        // 规则2：右下角 -> 左上（素材左侧）；左下角 = 左右镜像 -> 右上
+        assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.CORNER_BR, SW - 120f, SH - 120f))
+        assertEquals(PetState.BUBBLE_SIDE_RIGHT, sideOf(PetState.CORNER_BL, 120f, SH - 120f))
+        // 上方的两个角 = 下方的上下镜像（左右不变）-> 右上角仍是左上、左上角仍是右上
+        assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.CORNER_TR, SW - 120f, 120f))
+        assertEquals(PetState.BUBBLE_SIDE_RIGHT, sideOf(PetState.CORNER_TL, 120f, 120f))
+    }
+
+    @Test
+    fun bubble_on_bottom_and_top_edges_uses_screen_middle() {
+        // 规则3：吸附边中点在屏幕中线及右侧 -> 左上；否则右上（含正好压线）
+        assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.BORDER_R_UPRIGHT, SW / 2f, SH - 100f))
+        assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.BORDER_R_UPRIGHT, SW / 2f + 1f, SH - 100f))
+        assertEquals(PetState.BUBBLE_SIDE_RIGHT, sideOf(PetState.BORDER_R_UPRIGHT, SW / 2f - 1f, SH - 100f))
+        assertEquals(PetState.BUBBLE_SIDE_RIGHT, sideOf(PetState.BORDER_L_UPRIGHT, SW * 0.2f, SH - 100f))
+        // 规则4：贴顶边同判据（素材上下翻转，屏幕上的表现上下镜像）
+        assertEquals(PetState.BUBBLE_SIDE_LEFT, sideOf(PetState.EDGE_TOP_R, SW / 2f, 100f))
+        assertEquals(PetState.BUBBLE_SIDE_RIGHT, sideOf(PetState.EDGE_TOP_L, SW / 2f - 1f, 100f))
+    }
 }

@@ -91,11 +91,12 @@ class BubbleViewTest {
     }
 
     @Test
-    fun window_size_follows_recorded_ratio() {
-        // 记录：气泡整组宽 = 0.99219 × 人物正立素材宽；整组纵横比 1.00448
+    fun window_size_is_baseline_times_1_2() {
+        // 基线整组 = 0.99219W × 0.98730W；用户要求整体放大 1.2 倍（以小气泡最左点为基准）
+        // -> 1.190628W × 1.184760W。W = 1024 时应为 1219 × 1213。
         val size = BubbleView.windowSize(1024f, 0f)
-        assertEquals(1016, size[0])
-        assertEquals(1011, size[1])
+        assertEquals(1219, size[0])
+        assertEquals(1213, size[1])
     }
 
     @Test
@@ -105,6 +106,28 @@ class BubbleViewTest {
         val lying = BubbleView.windowSize(1024f, -90f)
         assertEquals("转过 90° 后窗口宽 = 原来的高", upright[1], lying[0])
         assertEquals("转过 90° 后窗口高 = 原来的宽", upright[0], lying[1])
+    }
+
+    @Test
+    fun screen_offset_follows_same_transform_as_sprite() {
+        val w = 1000f
+        // 素材右侧、不镜像不翻转不旋转：向右 ART_RIGHT、向上 ART_UP（屏幕 y 向下，故为负）
+        val right = BubbleView.screenOffset(w, PetState.BUBBLE_SIDE_RIGHT, false, false, 0f)
+        assertEquals(1099.2f, right[0], 0.5f)
+        assertEquals(-426.2f, right[1], 0.5f)
+        // 素材左侧就是它的左右镜像
+        val left = BubbleView.screenOffset(w, PetState.BUBBLE_SIDE_LEFT, false, false, 0f)
+        assertEquals(-1099.2f, left[0], 0.5f)
+        assertEquals(-426.2f, left[1], 0.5f)
+        // 吸附右边框（素材旋转 -90°）：素材"右"落到屏幕上、"上"落到屏幕左
+        //   -> 屏幕偏移 = (左 426.2, 上 1099.2)（屏幕 y 向下，故 y 为负）
+        val lying = BubbleView.screenOffset(w, PetState.BUBBLE_SIDE_RIGHT, false, false, -90f)
+        assertEquals("素材上方 -> 屏幕左", -426.2f, lying[0], 0.5f)
+        assertEquals("素材右侧 -> 屏幕上", -1099.2f, lying[1], 0.5f)
+        // 贴左边框（镜像 + 旋转 +90°）：成为右边框的左右镜像
+        val leftBorder = BubbleView.screenOffset(w, PetState.BUBBLE_SIDE_RIGHT, true, false, 90f)
+        assertEquals("镜像后落在屏幕右侧", 426.2f, leftBorder[0], 0.5f)
+        assertEquals("仍在屏幕上方", -1099.2f, leftBorder[1], 0.5f)
     }
 
     @Test
