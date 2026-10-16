@@ -427,6 +427,13 @@ android {
         //                     （vanishNow），于是三块仍按既定的由大到小顺序在 0.15s 内缩没
         //                     —— 与自然消失共用同一套动画；窗口收掉仍走原来那条路。
         //                     气泡位置规则本次一行未动）
+        //   2.1.49 -> 20149（新增规则：**拖动人物时气泡立刻播放消失动画**。触发阈值最终定为
+        //                     touchSlop（系统标准滑动距离，约 8px），与人物起拖同一门槛；
+        //                     独立于拖动分支，所以「锁定」时也生效。做法：PetView 回调
+        //                     Host.onDragStart() -> BubbleView.vanishNow() 把时间轴拨到
+        //                     "停留结束、消失开始"那一帧，三块仍按由大到小顺序 0.15s 缩没，
+        //                     与自然消失共用同一套动画。手势内一次性标志 bubbleDragNotified。
+        //                     气泡位置规则一行未动）
         // 规律：去掉小数点当整数（单调递增）。发版时把这行末位 +1 即可。
         // ✅ 作者声明里的版本号与完成时间**自动跟着这行走**：
         //    版本号 = vName；完成时间 = 构建时刻（buildStamp，见文件顶部）。
@@ -435,7 +442,7 @@ android {
         // ⚠️ 手改这一行，别用脚本/正则批量替换 —— 会把文件编码和换行搞坏
         //    （本项目已经踩过两次：PowerShell 的 Get-Content|Set-Content 会把
         //     中文注释变成双重编码乱码，恢复只能 git checkout 重来）。
-        val vName = "2.1.48"
+        val vName = "2.1.49"
         versionName = vName
         versionCode = vName.split(".").let {
             it[0].toInt() * 10000 + it[1].toInt() * 100 + it[2].toInt()

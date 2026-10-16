@@ -586,6 +586,15 @@ class PetView(context: Context) : View(context) {
     private var bubbleFired = false
 
     /**
+     * 这一次手势是否已经因为"移动超过 touchSlop"通知过服务让气泡消失。
+     *
+     * 用户 2026-10-16："拖动人物时气泡立刻播放消失动画"；阈值最终定为 touchSlop
+     * （系统标准滑动距离，约 8px），与人物起拖同一个门槛。
+     * 每次 DOWN 复位；只影响气泡，不影响人物自己的起拖逻辑（见 onTouchEvent）。
+     */
+    private var bubbleDragNotified = false
+
+    /**
      * 长按压缩：**按住不放就一直往下压**，最深 [PRESS_MAX_SQ]（50%），松手回弹。
      *
      * **四条边都启用**，规则统一为"**吸附边不动，另一侧压过来**"：
@@ -2207,6 +2216,7 @@ class PetView(context: Context) : View(context) {
                 dragOffsetX = 0f
                 dragOffsetY = 0f
                 dragging = false
+                bubbleDragNotified = false      // 这次手势还没因为位移通知过气泡
                 // 按下会取消在途的吸附补间（"抓住了就停住"）。先把落点记下来：
                 // 如果只是点一下，松手时要把它补完（见 [pendingSnapX]）。
                 holdSnapTarget()
@@ -2231,6 +2241,20 @@ class PetView(context: Context) : View(context) {
                 // 于是这次手势仍然只是"点击 / 长按"。同样是现读 prefs。
                 // [downAccepted] 也要看：DOWN 没被受理时 downRawX/Y 是上一次的陈旧值，
                 // 拿它算位移会凭空拖起来。
+                // 用户 2026-10-16 新增规则：**拖动人物时气泡立刻播放消失动画**。
+                // 阈值用 touchSlop（系统标准滑动距离，约 8px）—— 与人物起拖同一个门槛。
+                //
+                // 这里之所以独立于下面的拖动分支：人物的拖动还受「锁定」限制，
+                // 而气泡的消失只看"手指确实移动了"，锁定时也该生效。
+                if (downAccepted && !bubbleDragNotified &&
+                    (abs(dx) > touchSlop || abs(dy) > touchSlop)
+                ) {
+                    bubbleDragNotified = true
+                    android.util.Log.i("BubbleGeom", "moveBeyondSlop dx=$dx dy=$dy -> onDragStart")
+                    host?.onDragStart()
+                }
+
+                // 真正开始拖动人物（越过 touchSlop）
                 if (downAccepted && !moveLocked() && !dragging &&
                     (abs(dx) > touchSlop || abs(dy) > touchSlop)
                 ) {
@@ -2245,8 +2269,6 @@ class PetView(context: Context) : View(context) {
                     anchorY = downRawY
                     dragOffsetX = 0f
                     dragOffsetY = 0f
-                    // 用户 2026-10-16 新增：一开始拖动，气泡就立刻播放消失动画
-                    host?.onDragStart()
                 }
                 if (dragging) {
                     // 用户规则：**手指按在哪里，素材中心点就在哪里**

@@ -92,7 +92,9 @@ class BubbleView(context: Context) : View(context) {
     fun vanishNow() {
         if (startAt == 0L) return
         val target = SystemClock.uptimeMillis() - (APPEAR_MS + HOLD_MS).toLong()
-        if (target > startAt) startAt = target
+        val shift = target - startAt
+        if (shift > 0) startAt = target
+        android.util.Log.i("BubbleGeom", "vanishNow shift=${shift}ms (<=0 表示已经在消失段)")
         invalidate()
     }
 

@@ -889,6 +889,10 @@ class PetService : Service(), PetView.Host {
      * 正在出现 / 停留中的气泡都适用；没有气泡时什么都不做。
      */
     override fun onDragStart() {
+        android.util.Log.i(
+            "BubbleGeom",
+            "onDragStart bubble=${bubbleView != null} params=${bubbleParams != null}"
+        )
         bubbleView?.vanishNow()
     }
 
