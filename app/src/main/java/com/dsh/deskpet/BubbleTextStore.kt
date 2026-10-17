@@ -345,6 +345,24 @@ object BubbleTextStore {
     }
 
     /**
+     * 改第 [index] 条的**文本**（用户 2026-10-17：点标签进入行内编辑）。
+     *
+     * · 只对**文本条目**有效（图片条目没有可编辑的文本，原样返回）；
+     * · 传进来的文本仍按 [MAX_CHARS] 收敛（标点不计），与新增表单同一套规则；
+     * · 启用状态、图片文件名都保持不动；返回新列表（越界原样返回）。
+     */
+    fun updateText(ctx: Context, index: Int, text: String): List<Item> {
+        val cur = items(ctx)
+        if (index !in cur.indices) return cur
+        val old = cur[index]
+        if (old.isImage) return cur
+        val next = cur.toMutableList()
+        next[index] = old.copy(text = fit(text).also { consumeTruncated() })
+        saveItems(ctx, next)
+        return next
+    }
+
+    /**
      * 输入框用的过滤器：**标点不占额度**，超出 20 个非标点字符的部分直接拒收。
      *
      * ⚠️ 不能只在 XML 写 `android:maxLength="20"` —— 那个把标点也算进去，

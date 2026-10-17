@@ -14,6 +14,27 @@ import org.junit.Test
 class BubbleTextStoreTest {
 
     @Test
+    fun edit_keeps_other_fields_and_truncates_by_same_rule() {
+        // 用户 2026-10-17：点标签进入行内编辑，保存时把文本写回那一条。
+        // 落盘要 Context（单测里没有），所以这里钉两件与落盘无关、却最容易写错的事：
+        // ① 改文本只换 text，enabled / image 原样保留；
+        // ② 超长文本仍按"标点不计的 20 字"收敛 —— 与新增表单同一条规则。
+        val long = "一二三四五六七八九十一二三四五六七八九十，多出来的一截"
+        assertEquals(BubbleTextStore.MAX_CHARS, BubbleTextStore.charCount(BubbleTextStore.fit(long)))
+
+        val img = BubbleTextStore.Item("", enabled = true, image = "a.png")
+        val edited = img.copy(text = "改过的文本")
+        assertEquals("改过的文本", edited.text)
+        assertEquals("a.png", edited.image)
+        assertTrue(edited.enabled)
+
+        val once = BubbleTextStore.Item("旧的", enabled = false)
+        val changed = once.copy(text = "新的")
+        assertEquals("新的", changed.text)
+        org.junit.Assert.assertFalse(changed.enabled)          // 停用状态不能被编辑顺手改掉
+    }
+
+    @Test
     fun limits_match_the_spec() {
         // 用户给定：最多 20 条，每条最多 20 个字
         assertEquals(20, BubbleTextStore.MAX_ITEMS)

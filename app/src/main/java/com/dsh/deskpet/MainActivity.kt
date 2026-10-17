@@ -1495,6 +1495,11 @@ class MainActivity : Activity() {
      */
     private fun setBubbleTextMode(mode: Int) {
         bubbleTextMode = mode
+        // 离开管理态就退出行内编辑（用户 2026-10-17 的行内编辑：收起/换形态时未保存的改动作废）
+        if (mode != BUBBLE_MANAGE) {
+            editingBubbleIndex = null
+            editingView = null
+        }
         // 手风琴：这张卡展开时其余卡片一并收起（反方向在 setCardExpanded 里）
         if (mode != BUBBLE_NONE) {
             for (c in expandCards) setCardExpanded(c.body, false)
@@ -1578,6 +1583,8 @@ class MainActivity : Activity() {
         rowsBubbleText.removeAllViews()
         bubbleTagRows.clear()
         val items = BubbleTextStore.items(this)
+        // 列表变了（增删）之后，正在编辑的那条可能已经换了位置 —— 直接退出编辑态更安全
+        editingBubbleIndex?.let { if (it !in items.indices) editingBubbleIndex = null }
         txtBubbleTextEmpty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
 
         val gap = (resources.displayMetrics.density * 8f).toInt()
@@ -1662,12 +1669,77 @@ class MainActivity : Activity() {
         val delW = btnBubbleTextAdd.width.takeIf { it > 0 } ?: dp(dm, 56f)
         val togW = btnBubbleTextManage.width.takeIf { it > 0 } ?: dp(dm, 64f)
 
+        // ---- 行内编辑态（用户 2026-10-17）：内容换成输入框、全文展示（不再截两行），
+        //      右侧两个按钮临时变成「取消 / 保存」；因为两个按钮是 match_parent 高，
+        //      内容一长它们会跟着一起向下延伸（用户要求）。
+        if (editingBubbleIndex == index && !item.isImage) {
+            val box = tag.findViewById<android.widget.LinearLayout>(R.id.boxBubbleTagContent)
+            box.removeAllViews()
+            val input = EditText(this).apply {
+                setText(item.text)
+                setSelection(text.length)                      // 光标放到末尾，方便接着打
+                setTextColor(AccentTheme.skinBoxText(lightMode))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                setLineSpacing(dp(dm, 2f).toFloat(), 1f)
+                background = null                              // 外框由内容框那层画
+                isSingleLine = false
+                inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                    android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                gravity = android.view.Gravity.TOP or android.view.Gravity.START
+                // 与新增表单同一个过滤器：标点不占 20 字额度
+                filters = arrayOf(BubbleTextStore.inputFilter())
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+                )
+            }
+            box.addView(input)
+            editingView = input
+            // 弹键盘：post 一帧，等输入框真正挂上去
+            input.post {
+                input.requestFocus()
+                (getSystemService(INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager)
+                    ?.showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+            }
+            // 右侧：取消（红，沿用删除按钮的框） + 保存（强调色）
+            tag.findViewById<TextView>(R.id.txtBubbleTagDelete).apply {
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    delW, ViewGroup.LayoutParams.MATCH_PARENT
+                ).apply { marginStart = gap }
+                text = getString(R.string.card_cancel)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                setTextColor(TAG_DELETE_RED)
+                background = AccentTheme.boxSelectorFor(this@MainActivity, TAG_DELETE_RED, lightMode)
+                setOnClickListener { cancelBubbleTextEdit() }
+            }
+            tag.findViewById<TextView>(R.id.btnBubbleTagToggle).apply {
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    togW, ViewGroup.LayoutParams.MATCH_PARENT
+                ).apply { marginStart = gap }
+                text = getString(R.string.card_save)
+                isSingleLine = true
+                maxLines = 1
+                ellipsize = null
+                setPadding(dp(dm, 2f), 0, dp(dm, 2f), 0)
+                setTextColor(accent)
+                background = AccentTheme.ghostSelectorFor(this@MainActivity, accent, lightMode)
+                setOnClickListener { saveBubbleTextEdit(index) }
+            }
+            return tag
+        }
+        editingView = null
+
         tag.findViewById<BubbleTagTextView>(R.id.txtBubbleTagText).apply {
             // ⚠️ 用 setFullText：截断与"补三个点"由这个 View 自己在**布局阶段**做，
             //    不是先塞全文再 `post{}` 改 —— 后者会让省略号闪一下、文字瞬移
             //    （用户 2026-10-17 实测反馈）。
             setFullText(item.text)
             setTextColor(AccentTheme.skinBoxText(lightMode))
+        }
+
+        // 点内容 = 进入行内编辑（用户 2026-10-17）。图片条目没有文本可改，不响应。
+        if (!item.isImage) {
+            tag.findViewById<android.widget.LinearLayout>(R.id.boxBubbleTagContent)
+                .setOnClickListener { beginBubbleTextEdit(index) }
         }
 
         // 图片条目：缩略图放在**内容框内部**的最前面。
@@ -1782,6 +1854,55 @@ class MainActivity : Activity() {
         }
         return tag
     }
+
+    /** 正在**行内编辑**的那一条（用户 2026-10-17：点标签即可改内容；null = 没有在编辑） */
+    private var editingBubbleIndex: Int? = null
+
+    /**
+     * 点标签内容 → 进入行内编辑（用户 2026-10-17）。
+     *
+     * · 被截断的标签在这一刻**向下展开到全文**（内容框与右侧两个按钮一起变高 ✓）；
+     * · 右侧「删除」变「取消」✓、「已启用」变「保存」✓；
+     * · 同一时间只允许一行在编辑 —— 另一行正在编辑时点别的行不响应
+     *   （避免"点一下就把没保存的改动丢了"）。
+     */
+    private fun beginBubbleTextEdit(index: Int) {
+        if (editingBubbleIndex != null) return
+        pendingBubbleDelete = null
+        editingBubbleIndex = index
+        renderBubbleTextTags()
+    }
+
+    /** 行内编辑的「取消」：放弃本次编辑，文本保持原样 */
+    private fun cancelBubbleTextEdit() {
+        editingBubbleIndex = null
+        clearInputFocus()
+        renderBubbleTextTags()
+    }
+
+    /**
+     * 行内编辑的「保存」：把输入框里的内容写回该条。
+     *
+     * 空内容不接受（一条空文案在气泡里没有意义）；长度上限仍由
+     * [BubbleTextStore.inputFilter] 在输入时就挡住。
+     */
+    private fun saveBubbleTextEdit(index: Int) {
+        val edit = editingView
+        val raw = edit?.text?.toString() ?: ""
+        if (raw.isBlank()) {
+            Toast.makeText(this, R.string.bubble_text_need_text, Toast.LENGTH_SHORT).show()
+            return
+        }
+        BubbleTextStore.updateText(this, index, raw)
+        editingBubbleIndex = null
+        editingView = null
+        clearInputFocus()
+        renderBubbleTextTags()
+        Toast.makeText(this, R.string.bubble_text_saved, Toast.LENGTH_SHORT).show()
+    }
+
+    /** 当前正在编辑的那个输入框（保存时读它；重建列表时置空） */
+    private var editingView: EditText? = null
 
     /** 保存按钮：把输入框里的内容存成一条（达到 20 条 / 内容为空时给提示，不关表单） */
     private fun saveBubbleText() {
