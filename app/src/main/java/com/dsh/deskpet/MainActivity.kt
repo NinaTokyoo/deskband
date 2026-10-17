@@ -1582,6 +1582,11 @@ class MainActivity : Activity() {
     private fun renderBubbleTextTags() {
         rowsBubbleText.removeAllViews()
         bubbleTagRows.clear()
+        // ⚠️ 这里清一次就行，**不能**放在 makeBubbleTextTag 的普通行分支里：
+        //    列表是逐行渲染的，编辑那一行先把输入框记进 editingView，
+        //    紧接着渲染下一行时又被清空 —— 保存时读到空字符串，误报"未输入内容"
+        //    （用户 2026-10-17 实测）。
+        editingView = null
         val items = BubbleTextStore.items(this)
         // 列表变了（增删）之后，正在编辑的那条可能已经换了位置 —— 直接退出编辑态更安全
         editingBubbleIndex?.let { if (it !in items.indices) editingBubbleIndex = null }
@@ -1726,7 +1731,6 @@ class MainActivity : Activity() {
             }
             return tag
         }
-        editingView = null
 
         tag.findViewById<BubbleTagTextView>(R.id.txtBubbleTagText).apply {
             // ⚠️ 用 setFullText：截断与"补三个点"由这个 View 自己在**布局阶段**做，
