@@ -1902,7 +1902,8 @@ class MainActivity : Activity() {
         editingView = null
         clearInputFocus()
         renderBubbleTextTags()
-        Toast.makeText(this, R.string.bubble_text_saved, Toast.LENGTH_SHORT).show()
+        // ⚠️ 这里**不弹**保存提示（用户 2026-10-17 截图："绿圈里面的不要"）——
+        //    标签内容当场变成新文字，本身就是反馈。
     }
 
     /** 当前正在编辑的那个输入框（保存时读它；重建列表时置空） */
